@@ -228,3 +228,21 @@ Next: Ghidra (offline, open source, needs a JDK) so REA can decompile native cod
 - 6 measurements in 956 s (the old search needed 12 in 1195 s). The winner is the point the corrected planner predicted out of sample earlier: 16 layers, ubatch 256. Every flash-attention arm is under the 100 tok/s prompt floor again.
 - `forge serve` accepted the tuned result ("fits the server's memory estimate"), loaded on the first attempt, and served at **9.85 / 9.82 / 9.88 tok/s** (200 tokens each). Before the fix the server path gave 8.0 tok/s at 11 layers after a failed load; Ollama's own default was 7.6.
 - Trade-off of ubatch 256: prompt processing at depth drops from 187 to 146 tok/s (still above the floor). For an agent turn that re-reads ~1,500 new tokens and writes ~400, the two settings are within a few seconds of each other; generation-heavy work favours 256.
+
+## 2026-11-08 — REA decompiles offline (Ghidra 12.1.4 + JDK 25)
+
+`tools/ghidra-install.ps1` installs Ghidra and a Temurin JDK into `C:\Users\arthu\llm\rea\`, both checked against their published SHA-256, nothing global; REA finds them through `GHIDRA_INSTALL_DIR` and `JAVA_HOME`.
+
+First attempt failed honestly: Ghidra 12.2 + JDK 21 installed fine and `rea doctor` called them healthy, but `rea decompile` refused with `unsupported_version` ("accepted releases are 12.1.x (verified build 12.1.4)", "a 64-bit full JDK 25 or newer"). `doctor` checks presence, the provider checks versions. Replaced with Ghidra 12.1.4 and JDK 25.0.5.
+
+Test on a binary with known source (`tools/rea-target/checksum.c`, built on the host with TDM-GCC `-O1`; the host's mingw64 gcc fails to load its LTO plugin): `rea decompile --procedure forge_checksum checksum.exe --provider ghidra`, 34 s cold. Raw: `results/rea/decompile-forge_checksum.json`.
+
+| source | Ghidra via REA |
+|---|---|
+| `acc = 0x1505u` | `uVar2 = 0x1505` |
+| `acc = ((acc << 5) + acc) ^ buf[i]` | `uVar2 = uVar2 * 0x21 ^ (uint)*param_1` (x*32+x = x*33) |
+| `if (buf[i] == 0x2A) acc += 7` | `if (*param_1 == 0x2a) uVar2 = uVar2 + 7` |
+| `for (i = 0; i < len; i++)` | `if (param_2 < 1) ... do { ... param_1++ } while (param_1 != end)` |
+| `return (int)(acc & 0x7FFFFFFF)` | `return uVar2 & 0x7fffffff` |
+
+Every operation, constant and branch of the original is recovered; only names are lost (the binary has symbols for the function name, not for locals). Issue #11 is done; next is wiring REA's MCP server into the local agent (#12).
