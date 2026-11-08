@@ -1,0 +1,11 @@
+{
+  "defaults": {"temperature": 0.0, "samples": 1, "think_budget": 2048},
+  "arms": [
+    {"id": "A", "title": "default: forge's tuned config, thinking off", "serve": [], "thinking": "off"},
+    {"id": "B", "title": "A with thinking on (capped)", "serve": [], "thinking": "on"},
+    {"id": "C", "title": "KV q8_0 + flash attention on, ubatch 256 (planner re-places the layers)", "serve": ["--kv", "q8_0", "--fa", "on", "--ubatch", "256"], "thinking": "off"},
+    {"id": "D", "title": "32K context, ubatch 256 (planner re-places the layers)", "serve": ["--ctx", "32768", "--ubatch", "256"], "thinking": "off"},
+    {"id": "E", "title": "speculative decoding ngram-mod", "serve": ["--spec", "ngram-mod"], "thinking": "off"},
+    {"id": "A-t0.6", "title": "A, 3 samples per problem at temperature 0.6 (pass@3 estimate)", "serve": [], "thinking": "off", "temperature": 0.6, "samples": 3}
+  ]
+}

@@ -1,0 +1,555 @@
+[
+ {
+  "id": "js_01_camel_to_snake",
+  "lang": "js",
+  "entries": [
+   "camelToSnake"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "string"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_02_deep_equal",
+  "lang": "js",
+  "entries": [
+   "deepEqual"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "algorithm",
+   "data-structure"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_03_chunk",
+  "lang": "js",
+  "entries": [
+   "chunk"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "algorithm",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_04_group_by",
+  "lang": "js",
+  "entries": [
+   "groupBy"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "data-structure",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_05_parse_query",
+  "lang": "js",
+  "entries": [
+   "parseQuery"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 896,
+  "tags": [
+   "parsing",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_06_format_bytes",
+  "lang": "js",
+  "entries": [
+   "formatBytes"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "string",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_07_add_days",
+  "lang": "js",
+  "entries": [
+   "addDays"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 896,
+  "tags": [
+   "datetime",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_08_age_on",
+  "lang": "js",
+  "entries": [
+   "ageOn"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "datetime",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_09_luhn",
+  "lang": "js",
+  "entries": [
+   "isValidCardNumber"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "validation",
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_10_flatten",
+  "lang": "js",
+  "entries": [
+   "flatten"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "algorithm",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_11_memoize",
+  "lang": "js",
+  "entries": [
+   "memoize"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "data-structure"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_12_retry",
+  "lang": "js",
+  "entries": [
+   "retry"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "async",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_13_render",
+  "lang": "js",
+  "entries": [
+   "render"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 896,
+  "tags": [
+   "parsing",
+   "string"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_14_emitter",
+  "lang": "js",
+  "entries": [
+   "Emitter"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 1024,
+  "tags": [
+   "data-structure"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_15_lower_bound",
+  "lang": "js",
+  "entries": [
+   "lowerBound"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_16_common_prefix",
+  "lang": "js",
+  "entries": [
+   "longestCommonPrefix"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "string"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_17_topo_sort",
+  "lang": "js",
+  "entries": [
+   "topoSort"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 1024,
+  "tags": [
+   "algorithm"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "js_18_expand_ranges",
+  "lang": "js",
+  "entries": [
+   "expandRanges"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "parsing",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_19_format_table",
+  "lang": "js",
+  "entries": [
+   "formatTable"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "string"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "js_20_token_bucket",
+  "lang": "js",
+  "entries": [
+   "createLimiter"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 896,
+  "tags": [
+   "data-structure",
+   "algorithm"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_01_parse_duration",
+  "lang": "py",
+  "entries": [
+   "parse_duration"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "parsing",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_02_roman",
+  "lang": "py",
+  "entries": [
+   "roman_to_int"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "parsing",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_03_iso_week",
+  "lang": "py",
+  "entries": [
+   "iso_week"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 512,
+  "tags": [
+   "datetime",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_04_add_months",
+  "lang": "py",
+  "entries": [
+   "add_months"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "datetime",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_05_business_days",
+  "lang": "py",
+  "entries": [
+   "business_days"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "datetime",
+   "algorithm"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_06_csv_line",
+  "lang": "py",
+  "entries": [
+   "parse_csv_line"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 896,
+  "tags": [
+   "parsing",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_07_balanced",
+  "lang": "py",
+  "entries": [
+   "is_balanced"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "parsing",
+   "algorithm"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_08_merge_intervals",
+  "lang": "py",
+  "entries": [
+   "merge_intervals"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_09_lru_cache",
+  "lang": "py",
+  "entries": [
+   "LRUCache"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "data-structure",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_10_semver_compare",
+  "lang": "py",
+  "entries": [
+   "compare_versions"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 1024,
+  "tags": [
+   "parsing",
+   "validation",
+   "algorithm"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_11_wrap_text",
+  "lang": "py",
+  "entries": [
+   "wrap_text"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "string",
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_12_validate_username",
+  "lang": "py",
+  "entries": [
+   "validate_username"
+  ],
+  "difficulty": "easy",
+  "max_tokens": 512,
+  "tags": [
+   "validation",
+   "string"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_13_flatten_dict",
+  "lang": "py",
+  "entries": [
+   "flatten"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "data-structure",
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_14_run_length",
+  "lang": "py",
+  "entries": [
+   "rle_encode",
+   "rle_decode"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 768,
+  "tags": [
+   "string",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_15_rotated_search",
+  "lang": "py",
+  "entries": [
+   "search_rotated"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 640,
+  "tags": [
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_16_top_words",
+  "lang": "py",
+  "entries": [
+   "top_words"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "string",
+   "parsing"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_17_allocate_cents",
+  "lang": "py",
+  "entries": [
+   "allocate"
+  ],
+  "difficulty": "hard",
+  "max_tokens": 768,
+  "tags": [
+   "algorithm",
+   "validation"
+  ],
+  "subtle": true
+ },
+ {
+  "id": "py_18_spiral",
+  "lang": "py",
+  "entries": [
+   "spiral_order"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "algorithm"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_19_time_12h",
+  "lang": "py",
+  "entries": [
+   "to_24h"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 640,
+  "tags": [
+   "datetime",
+   "parsing",
+   "validation"
+  ],
+  "subtle": false
+ },
+ {
+  "id": "py_20_maze_steps",
+  "lang": "py",
+  "entries": [
+   "maze_steps"
+  ],
+  "difficulty": "medium",
+  "max_tokens": 896,
+  "tags": [
+   "algorithm",
+   "validation"
+  ],
+  "subtle": false
+ }
+]
