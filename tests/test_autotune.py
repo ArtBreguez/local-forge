@@ -38,24 +38,40 @@ class Parsing(unittest.TestCase):
 
 
 class CandidateOrder(unittest.TestCase):
-    def test_plan_point_first_then_nearest_upward_first(self):
-        order = autotune.candidate_order(16, (False, "f16"), 32, True)
-        self.assertEqual(order[0], (16, False, "f16"))
-        self.assertEqual(order[1:3], [(18, False, "f16"), (14, False, "f16")])   # same setting before another setting at equal distance
+    CENTERS = {(False, "f16", 512): 14, (False, "f16", 256): 16, (True, "f16", 512): 16, (True, "f16", 256): 18,
+               (True, "q8_0", 512): 16, (True, "q8_0", 256): 18}
+    PLAN = (False, "f16", 512)
+
+    def cost(self, o):
+        n, fa, kv, ub = o
+        return (autotune.OFFSET_COST * (self.CENTERS[(fa, kv, ub)] - n) + (autotune.COMBO_COST if (fa, kv) != self.PLAN[:2] else 0)
+                + (autotune.UBATCH_COST if ub != self.PLAN[2] else 0))
+
+    def test_plan_point_first_then_the_other_ubatch_then_other_attention_settings(self):
+        order = autotune.candidate_order(self.CENTERS, self.PLAN, 33, True)
+        self.assertEqual(order[0], (14, False, "f16", 512))
+        self.assertEqual(order[1], (16, False, "f16", 256))                                 # a different ubatch costs 1
+        self.assertEqual({o[1:] for o in order[2:4]}, {(True, "f16", 512), (True, "q8_0", 512)})   # a different attention/KV costs 2
         self.assertEqual(len(order), len(set(order)))
-        self.assertEqual({n for n, _, _ in order}, {12, 14, 16, 18, 20})
-        self.assertEqual({(f, k) for _, f, k in order}, set(autotune.COMBOS))
+        self.assertEqual(len(order), 6 * len(autotune.LAYER_OFFSETS))
+        costs = [self.cost(o) for o in order]
+        self.assertEqual(costs, sorted(costs))
+        for n, fa, kv, ub in order:
+            self.assertLessEqual(n, self.CENTERS[(fa, kv, ub)])                             # never above what the server can hold
+        self.assertEqual({(f, k) for _, f, k, _ in order}, set(autotune.COMBOS))
+        self.assertEqual({u for *_, u in order}, {512, 256})
 
     def test_cpu_only_has_no_layer_axis(self):
-        order = autotune.candidate_order(0, (False, "f16"), 32, False)
-        self.assertEqual({n for n, _, _ in order}, {0})
+        centers = {(f, k, 512): 0 for f, k in autotune.COMBOS}
+        order = autotune.candidate_order(centers, (False, "f16", 512), 33, False)
+        self.assertEqual({n for n, *_ in order}, {0})
         self.assertEqual(len(order), 3)
 
-    def test_clamped_to_valid_layer_counts(self):
-        order = autotune.candidate_order(1, (False, "f16"), 32, True)
-        self.assertTrue(all(0 <= n <= 33 for n, _, _ in order))
-        order = autotune.candidate_order(33, (False, "f16"), 32, True)
-        self.assertTrue(all(n <= 33 for n, _, _ in order))
+    def test_clamped_to_valid_layer_counts_and_settings_without_room_are_skipped(self):
+        order = autotune.candidate_order({(False, "f16", 512): 2, (False, "f16", 256): 0, (True, "f16", 512): 40}, (False, "f16", 512), 34, True)
+        self.assertTrue(all(1 <= n <= 34 for n, *_ in order))
+        self.assertEqual({o[1:] for o in order}, {(False, "f16", 512), (True, "f16", 512)})        # nothing fits with ubatch 256: no point
+        self.assertEqual([n for n, f, *_ in order if not f], [2, 1])
 
 
 class Objective(unittest.TestCase):
@@ -85,11 +101,11 @@ class WithFakeBench(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.dir = Path(self.tmp.name)
         self.log = self.dir / "bench.log"
-        self.env = mock.patch.dict(os.environ, {"FAKE_BENCH_LOG": str(self.log), "FAKE_BENCH_OOM_NGL": "18", "FAKE_BENCH_BUILD": "12207"})
+        self.env = mock.patch.dict(os.environ, {"FAKE_BENCH_LOG": str(self.log), "FAKE_BENCH_OOM_NGL": "99", "FAKE_BENCH_BUILD": "12207"})
         self.env.start()
         self.m = replace(real_model(), path=str(self.dir / "model.gguf"))
         self.prof = profile()
-        self.plan = plan.build_plan(self.prof, self.m)            # ngl 15, FA off, f16, ctx 16384
+        self.plan = plan.build_plan(self.prof, self.m)            # ngl 14, FA off, f16, ubatch 512, ctx 16384
 
     def tearDown(self):
         self.env.stop()
@@ -101,33 +117,61 @@ class WithFakeBench(unittest.TestCase):
     def run_tune(self, **kw):
         return autotune.tune(self.prof, self.m, self.plan, FAKE_BENCH, **kw)
 
-    def test_finds_best_and_stops_at_oom(self):
+    def statuses(self, res):
+        return {(p.ngl, p.fa, p.kv, p.ub): p.status for p in res.points}
+
+    def test_picks_the_best_setting_and_measures_one_point_per_setting(self):
         res = self.run_tune(budget_s=3600)
         self.assertTrue(res.complete)
-        self.assertEqual(self.plan.config.ngl, 15)
+        self.assertEqual((self.plan.config.ngl, self.plan.config.ubatch), (14, 512))
+        self.assertEqual(len(self.calls()), 6)                    # 3 attention/KV settings x 2 ubatch, the top layer count of each; lower counts skipped
+        self.assertEqual(self.statuses(res)[(16, False, "f16", 256)], "ok")
+        self.assertEqual(self.statuses(res)[(13, False, "f16", 512)], "skipped")
         best = res.best
-        self.assertEqual((best.fa, best.kv), (False, "f16"))      # FA on breaks the prompt floor in the fake
-        self.assertEqual(best.ngl, 17)                            # the fake's generation speed grows with layers up to 16; 17 is the nearest probe above
-        self.assertEqual(res.config.ngl, best.ngl)
-        with mock.patch.dict(os.environ, {"FAKE_BENCH_OOM_NGL": "17"}):
-            self.log.unlink()
+        self.assertEqual((best.fa, best.kv, best.ub, best.ngl), (False, "f16", 256, 16))     # more layers (sweep D: 9.60 vs 9.13 tok/s) and pp above the floor
+        self.assertEqual((res.config.ngl, res.config.ubatch), (16, 256))
+        self.assertIn("-ub 256", " ".join(plan.server_command("llama-server", self.m.path, res.config)))
+        self.assertEqual(res.conditions["server_ctx"], 16384)
+
+    def test_never_measures_more_layers_than_the_server_can_hold(self):
+        """llama-bench would happily load 16 layers at ubatch 512 (it runs at ~8.8K context); the server cannot at 16K, so that point is not worth a minute."""
+        self.run_tune(budget_s=3600)
+        for n, fa, kv, d, ub in self.calls():
+            limit = plan.max_layers(self.m, replace(self.plan.config, fa=fa == "on", kv=kv, ubatch=int(ub)), 3443)
+            self.assertLessEqual(int(n), limit, (n, fa, kv, ub))
+        ran = {(int(n), fa, kv, int(ub)) for n, fa, kv, _, ub in self.calls()}
+        self.assertIn((14, "off", "f16", 512), ran)
+        self.assertNotIn((15, "off", "f16", 512), ran)
+        self.assertNotIn((16, "off", "f16", 512), ran)
+
+    def test_prompt_floor_decides_between_ubatches(self):
+        # fake: ubatch 256 prefills at 148 tok/s, 512 at 190 (sweep D: 151 vs 195)
+        strict = self.run_tune(budget_s=3600, pp_floor=160)
+        loose = self.run_tune(budget_s=3600, pp_floor=100)
+        self.assertEqual((strict.config.ubatch, strict.config.ngl), (512, 14))
+        self.assertEqual((loose.config.ubatch, loose.config.ngl), (256, 16))
+
+    def test_ubatch_axis_can_be_restricted(self):
+        res = self.run_tune(budget_s=3600, ubatches=(512,))
+        self.assertEqual({u for *_, u in self.calls()}, {"512"})
+        self.assertEqual(res.config.ubatch, 512)
+
+    def test_top_count_failing_falls_back_one_layer_at_a_time(self):
+        with mock.patch.dict(os.environ, {"FAKE_BENCH_OOM_NGL": "15"}):        # the estimate was optimistic by 2 layers at ubatch 256
             res = self.run_tune(budget_s=3600)
-        statuses = {(p.ngl, p.fa, p.kv): p.status for p in res.points}
-        self.assertEqual(statuses[(17, False, "f16")], "oom")
-        # early stop: after the first failure for a setting, larger counts for that setting are skipped, not run
-        self.assertEqual(statuses[(19, False, "f16")], "skipped")
-        ran = [(int(n), fa, kv) for n, fa, kv, _ in self.calls()]
-        self.assertNotIn((19, "off", "f16"), ran)
-        self.assertNotIn((19, "on", "q8_0"), ran)
-        self.assertEqual(sum(1 for r in ran if r[0] >= 17), len(autotune.COMBOS))   # one OOM probe per setting, no more
-        self.assertEqual(res.best.ngl, 16)                        # refinement probed the count just below the failure and it won
-        self.assertIn((16, "off", "f16"), [(int(n), fa, kv) for n, fa, kv, _ in self.calls()])
-        self.assertNotIn((16, "on", "f16"), [(int(n), fa, kv) for n, fa, kv, _ in self.calls()])   # settings that are not winning are not refined
+        st = self.statuses(res)
+        self.assertEqual(st[(16, False, "f16", 256)], "oom")
+        self.assertEqual(st[(15, False, "f16", 256)], "oom")
+        self.assertEqual(st[(14, False, "f16", 256)], "ok")
+        self.assertEqual(st[(12, False, "f16", 256)], "skipped")                # the setting ran at 14: lower counts are not measured
+        self.assertEqual(st[(14, False, "f16", 512)], "ok")
+        self.assertLessEqual(res.config.ngl, 14)
+        self.assertTrue(all(n < 15 for (n, *_), s_ in st.items() if s_ == "ok"))
 
     def test_calls_use_both_depths_and_valid_flags(self):
         self.run_tune(budget_s=3600)
-        self.assertTrue(all(d == "0,8192" for *_, d in self.calls()))
-        self.assertFalse(("15", "off", "q8_0", "0,8192") in self.calls())      # q8_0 V cache is never tried without FA
+        self.assertTrue(all(d == "0,8192" for _, _, _, d, _ in self.calls()))
+        self.assertFalse([c for c in self.calls() if c[1] == "off" and c[2] == "q8_0"])      # q8_0 V cache is never tried without FA
 
     def test_objective_flips_when_the_floor_is_lifted(self):
         with mock.patch.dict(os.environ, {"FAKE_BENCH_FA_FAST": "1"}):
@@ -148,7 +192,7 @@ class WithFakeBench(unittest.TestCase):
         measured = [p for p in res.points if p.status in ("ok", "oom")]
         self.assertLessEqual(len(measured), 3)                  # 1000 s / 400 s per call
         self.assertIsNotNone(res.best)
-        self.assertEqual((res.points[0].ngl, res.points[0].fa, res.points[0].kv), (15, False, "f16"))   # the plan itself goes first
+        self.assertEqual((res.points[0].ngl, res.points[0].fa, res.points[0].kv, res.points[0].ub), (14, False, "f16", 512))   # the plan itself goes first
         self.assertTrue(any("budget" in n for n in res.notes))
 
     def test_every_point_fails_falls_back_to_the_plan(self):
@@ -161,18 +205,29 @@ class WithFakeBench(unittest.TestCase):
         cfg = replace(self.plan.config, device="Vulkan1")
         self.assertIn("-dev", autotune.bench_args(FAKE_BENCH, "m", cfg, 8192, 1, True))
         self.assertNotIn("-dev", autotune.bench_args(FAKE_BENCH, "m", self.plan.config, 8192, 1, True))
+        self.assertEqual(autotune.bench_args(FAKE_BENCH, "m", replace(cfg, ubatch=256), 8192, 1, True)[autotune.bench_args(FAKE_BENCH, "m", replace(cfg, ubatch=256), 8192, 1, True).index("-ub") + 1], "256")
 
     def test_hanging_benchmark_is_killed_not_awaited(self):
         with mock.patch.dict(os.environ, {"FAKE_BENCH_SLEEP": "30"}):
             res = self.run_tune(budget_s=3600, per_point_timeout=0.3)
         self.assertTrue(all(p.status in ("timeout", "skipped") for p in res.points))
+        self.assertEqual(len(self.calls()), 6)                  # a timeout settles the setting: no slower, lower layer count is tried after it
 
-    def test_estimate_guard_skips_points_that_cannot_fit_the_card(self):
-        res = self.run_tune(budget_s=3600)
-        # 99 layers (whole model + output) never reaches llama-bench on a 4 GB card
+    def test_estimate_guard_skips_points_the_server_cannot_hold(self):
+        # a plan with 32 layers (the whole model) never reaches llama-bench on a 4 GB card
         big = replace(self.plan, config=replace(self.plan.config, ngl=32))
         res = autotune.tune(self.prof, self.m, big, FAKE_BENCH, budget_s=3600)
-        self.assertTrue(any(p.status == "skipped" and "total VRAM" in p.note for p in res.points))
+        skipped = [p for p in res.points if p.status == "skipped" and "server cannot hold" in p.note]
+        self.assertTrue(skipped)
+        self.assertTrue(all(p.ngl >= 28 for p in skipped))
+        for n, fa, kv, d, ub in self.calls():
+            self.assertLessEqual(int(n), plan.max_layers(self.m, replace(self.plan.config, fa=fa == "on", kv=kv, ubatch=int(ub)), 3443), (n, fa, kv, ub))
+
+    def test_cpu_plan_tunes_attention_settings_only(self):
+        cpu = plan.build_plan(profile(ram_free=12000), self.m, mode="cpu")
+        res = autotune.tune(profile(ram_free=12000), self.m, cpu, FAKE_BENCH, budget_s=3600)
+        self.assertEqual({(p.ngl, p.ub) for p in res.points}, {(0, 512)})
+        self.assertEqual(len([p for p in res.points if p.status == "ok"]), 3)
 
 
 class Cache(unittest.TestCase):
@@ -278,6 +333,37 @@ class Cache(unittest.TestCase):
         res, _ = self.go()
         self.assertFalse(res.from_cache)
         self.assertIsNotNone(res.best)
+
+    def test_entry_from_the_buggy_first_host_tune_is_inert_and_documented(self):
+        """results/forge-tune-host-20261108.json: build 'b0' (version regex bug), 15 layers (not loadable by llama-server at 16K), no ubatch axis."""
+        import json
+        from .helpers import ROOT
+        raw = json.loads((ROOT / "results" / "forge-tune-host-20261108.json").read_text())
+        self.assertIn("b0", raw["_note"])
+        self.assertIn("NOT a valid cache entry", raw["_note"])
+        entries = {k: v for k, v in raw.items() if not k.startswith("_")}
+        (key, entry), = entries.items()
+        self.assertEqual(entry["llama_build"], "b0")                              # left as recorded: it is evidence
+        real_build = autotune.detect_build(["llama-bench"], run=lambda a, timeout=0: (0, fixture("llama-bench-version-b12207.txt")))
+        self.assertEqual(real_build, "b12207-998200491")
+        cache = autotune.Cache(self.dir / "stale")
+        cache.dir.mkdir(parents=True)
+        cache.path.write_text(json.dumps(entries))
+        self.assertIsNotNone(cache.load(key))
+        new_key = autotune.cache_key(entry["hardware"], entry["model"], real_build, autotune.variant_of(self.plan))
+        self.assertNotEqual(key, new_key)
+        self.assertIsNone(cache.load(new_key))
+        # an entry stored under the CURRENT build and the previous search space (same request, no ubatch axis, layers not bounded by the server) is not reused
+        old_variant = f"ctx={self.plan.requested_ctx};depth=8192;floor=100;plan=gpu"
+        self.assertNotEqual(old_variant, autotune.variant_of(self.plan))
+        fresh, _ = self.go()
+        old_cache = autotune.Cache(self.dir / "old-version")
+        old_cache.save(autotune.cache_key(self.prof["fingerprint"], self.m.fingerprint, real_build, old_variant),
+                       {"result": fresh.to_dict(), "variant": old_variant})
+        n = self.n_measurements()
+        again, _ = autotune.tune_cached(self.prof, self.m, self.plan, FAKE_BENCH, old_cache, budget_s=3600)
+        self.assertFalse(again.from_cache)
+        self.assertGreater(self.n_measurements(), n)
 
     def test_detect_build_parses_version(self):
         real = fixture("llama-bench-version-b12207.txt")      # the real b12207 output: "0.9.0-dev (build 12207, commit ...)"

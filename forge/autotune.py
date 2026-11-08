@@ -2,8 +2,12 @@
 
 Search space (each point is one separate llama-bench process, so an out-of-memory crash
 loses only that point):
-    GPU layers   plan.ngl + {-4, -2, 0, +2, +4}
     attention/KV (flash attn off, f16) | (on, f16) | (on, q8_0)   -- a quantised V cache needs FA
+    ubatch       512 | 256                                         -- 256 shrinks the compute buffer and buys layers (H-UBATCH)
+    GPU layers   for each (attention/KV, ubatch): the most the SERVER could hold at the plan's context
+                 (planner estimate, H-SERVER-RECHECK) and 1, 2 and 4 below it
+Layer counts above that are not measured: llama-bench runs at depth + 640 tokens of context, so it would load layers the
+server cannot (15 at 16K), and `forge serve` would have to throw the measurement away.
 Each point is measured at depth 0 and at the agent depth (default 8192 tokens already in the cache).
 
 Objective (default): maximise generation tok/s at agent depth, subject to prompt tok/s at agent
@@ -11,8 +15,9 @@ depth >= a floor. An agent re-reads its context every turn, so a configuration t
 fast but prefills slowly loses on wall-clock time. If nothing meets the floor, the one with the
 best prompt speed wins.
 
-Order of evaluation: nearest to the plan first (a different attention/KV setting counts as 2 steps),
-upward before downward. A failure at N layers for a setting skips every larger count for that setting.
+Order of evaluation: cheapest first (a different attention/KV setting costs 2, a different ubatch 1, each layer below the
+maximum 3). Once a setting has run at some layer count, its lower counts are skipped: more layers on the GPU is not slower
+(H-TUNE-LAYERS-MONOTONE), so they are only there as the fallback when the top count fails to load.
 The budget is wall-clock: when it runs out the best point so far is returned, flagged incomplete.
 """
 from __future__ import annotations
@@ -32,8 +37,10 @@ from .plan import Caps, Config, ModelInfo, Plan
 CACHE_FILE = "tune-cache.json"
 DEFAULT_DEPTH = 8192
 DEFAULT_PP_FLOOR = 100.0      # tok/s at agent depth: re-reading 8K tokens takes <= ~80 s
-LAYER_OFFSETS = (-4, -2, 0, 2, 4)
+LAYER_OFFSETS = (0, -1, -2, -4)   # below the server-feasible maximum of each (attention/KV, ubatch) setting
 COMBOS = ((False, "f16"), (True, "f16"), (True, "q8_0"))   # (flash attention, KV type)
+COMBO_COST, UBATCH_COST, OFFSET_COST = 2, 1, 3
+SEARCH_VERSION = "v2-ubatch-server-bound"    # part of the cache variant: results of an older search space are never reused
 BENCH_CTX_OVERHEAD = 640      # llama-bench context = depth + 512 prompt + 128 generated
 
 _OOM_PATTERNS = re.compile(
@@ -102,9 +109,10 @@ class Point:
     tgd_sd: float | None = None
     seconds: float = 0.0
     note: str = ""
+    ub: int = 512
 
-    def combo(self) -> tuple[bool, str]:
-        return (self.fa, self.kv)
+    def setting(self) -> tuple[bool, str, int]:
+        return (self.fa, self.kv, self.ub)
 
 
 def bench_args(bench: list[str], model_path: str, cfg: Config, depth: int, reps: int, fa_values: bool, n_prompt: int = 512, n_gen: int = 128) -> list[str]:
@@ -144,18 +152,26 @@ class TuneResult:
                           conditions=d.get("conditions", {}), plan_name=d.get("plan_name", ""))
 
 
-def candidate_order(center_ngl: int, center_combo: tuple[bool, str], trunk_layers: int, gpu: bool) -> list[tuple[int, bool, str]]:
-    """Points to measure, nearest to the plan first (see module docstring)."""
-    top = trunk_layers + 1
-    seen: dict[tuple[int, bool, str], tuple[int, int]] = {}
-    for fa, kv in COMBOS:
+def candidate_order(centers: dict[tuple[bool, str, int], int], plan_setting: tuple[bool, str, int], top: int, gpu: bool) -> list[tuple[int, bool, str, int]]:
+    """Points to measure as (ngl, fa, kv, ubatch), cheapest first (see module docstring).
+
+    `centers` maps every (fa, kv, ubatch) setting to the most layers the server can hold with it; the layer axis goes
+    down from there. A GPU plan skips settings that hold no layer at all.
+    """
+    seen: dict[tuple[int, bool, str, int], int] = {}
+    for (fa, kv, ub), center in centers.items():
+        if gpu and center <= 0:
+            continue
         for d in (LAYER_OFFSETS if gpu else (0,)):
-            n = min(max(center_ngl + d, 0), top)
-            cost = abs(n - center_ngl) + (2 if (fa, kv) != center_combo else 0)
-            key = (n, fa, kv)
-            if key not in seen or cost < seen[key][0]:
-                seen[key] = (cost, 0 if n >= center_ngl else 1)
-    return [k for k, _ in sorted(seen.items(), key=lambda kv_: (kv_[1][0], kv_[0][1:] != center_combo, kv_[1][1], kv_[0][0]))]
+            n = min(max(center + d, 0), top)
+            if gpu and n <= 0:
+                continue
+            cost = (OFFSET_COST * abs(n - center) + (COMBO_COST if (fa, kv) != plan_setting[:2] else 0)
+                    + (UBATCH_COST if ub != plan_setting[2] else 0))
+            key = (n, fa, kv, ub)
+            if key not in seen or cost < seen[key]:
+                seen[key] = cost
+    return [k for k, _ in sorted(seen.items(), key=lambda kv_: (kv_[1], kv_[0][1:] != plan_setting, -kv_[0][0]))]
 
 
 def pick_best(points: list[Point], pp_floor: float) -> tuple[Point | None, str]:
@@ -172,7 +188,7 @@ def pick_best(points: list[Point], pp_floor: float) -> tuple[Point | None, str]:
 
 def tune(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: list[str], *, depth: int = DEFAULT_DEPTH,
          reps: int = 1, budget_s: float = 1200.0, pp_floor: float = DEFAULT_PP_FLOOR, per_point_timeout: float = 900.0,
-         caps: Caps | None = None, clock: Callable[[], float] = time.monotonic,
+         caps: Caps | None = None, ubatches: tuple[int, ...] = planmod.UBATCH_CHOICES, clock: Callable[[], float] = time.monotonic,
          run: Callable[..., tuple[int, str] | None] = util.run_cmd,
          progress: Callable[[str], None] = lambda s: None) -> TuneResult:
     """Measure around `plan`. `bench` is the llama-bench command prefix, e.g. ['C:/.../llama-bench.exe']."""
@@ -180,69 +196,73 @@ def tune(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: list[str]
     base = plan.config
     start = clock()
     gpu_plan = base.ngl > 0
-    top = model.trunk_layers + 1
-    center = min(base.ngl, top)
+    top = model.layer_slots + 1
     depth = max(512, min(depth, base.ctx - BENCH_CTX_OVERHEAD))
     gpu, free_vram, _ = planmod.pick_gpu(profile)
-    total_vram = float(gpu["total_mib"]) if gpu and gpu.get("total_mib") else None
+    ubs = list(dict.fromkeys([base.ubatch, *(u for u in ubatches if 0 < u <= planmod.COMPUTE_MAX_UBATCH)])) if gpu_plan else [base.ubatch]
+    plan_setting = (base.fa, base.kv, base.ubatch)
+    # the most layers the SERVER (not llama-bench) can hold for each setting, by the planner's estimate at the plan's context
+    centers: dict[tuple[bool, str, int], int] = {}
+    for fa, kv in COMBOS:
+        for ub in ubs:
+            if not gpu_plan:
+                centers[(fa, kv, ub)] = 0
+            elif (fa, kv, ub) == plan_setting:
+                centers[(fa, kv, ub)] = min(base.ngl, top)
+            elif free_vram is not None:
+                centers[(fa, kv, ub)] = min(planmod.max_layers(model, replace(base, fa=fa, kv=kv, ubatch=ub), free_vram), top)
     points: list[Point] = []
     notes: list[str] = []
-    oom_floor: dict[tuple[bool, str], int] = {}
+    settled: set[tuple[bool, str, int]] = set()     # settings that ran (or timed out): lower layer counts cannot beat them (H-TUNE-LAYERS-MONOTONE)
     complete = True
-    queue = candidate_order(center, (base.fa, base.kv), model.trunk_layers, gpu_plan)
-    queued = set(queue)
+    queue = candidate_order(centers, plan_setting, top, gpu_plan)
     while queue:
-        ngl, fa, kv = queue.pop(0)
-        if (fa, kv) in oom_floor and ngl >= oom_floor[(fa, kv)]:
-            points.append(Point(ngl, fa, kv, "skipped", note=f"a smaller layer count already failed for fa={'on' if fa else 'off'} kv={kv}"))
+        ngl, fa, kv, ub = queue.pop(0)
+        if (fa, kv, ub) in settled:
+            points.append(Point(ngl, fa, kv, "skipped", note=f"a larger layer count already ran for fa={'on' if fa else 'off'} kv={kv} ub={ub}", ub=ub))
             continue
-        cfg = replace(base, ngl=planmod.all_layers(model) if ngl >= top else ngl, fa=fa, kv=kv)
-        if ngl > 0 and total_vram is not None and planmod.estimate(model, cfg).vram > total_vram:
-            points.append(Point(ngl, fa, kv, "skipped", note="estimate exceeds total VRAM at the server context"))
-            continue
+        cfg = replace(base, ngl=planmod.all_layers(model) if ngl >= top else ngl, fa=fa, kv=kv, ubatch=ub)
+        if ngl > 0 and free_vram is not None:
+            est = planmod.estimate(model, cfg).vram
+            if est > planmod.vram_budget(free_vram):
+                points.append(Point(ngl, fa, kv, "skipped", ub=ub,
+                                    note=f"the server cannot hold it: estimate {est:.0f} MiB > budget {planmod.vram_budget(free_vram):.0f} MiB at ctx {cfg.ctx}"))
+                continue
         remaining = budget_s - (clock() - start)
         if remaining < 30:
             complete = False
-            notes.append(f"time budget of {budget_s:g}s exhausted before {ngl} layers fa={'on' if fa else 'off'} kv={kv}")
+            notes.append(f"time budget of {budget_s:g}s exhausted before {ngl} layers fa={'on' if fa else 'off'} kv={kv} ub={ub}")
             break
         t0 = clock()
         args = bench_args(bench, model.path, cfg, depth, reps, caps.fa_takes_value)
         res = run(args, timeout=min(per_point_timeout, remaining))
         secs = clock() - t0
         if res is None:
-            pt = Point(ngl, fa, kv, "timeout", seconds=secs, note="llama-bench did not finish in time or could not start")
+            pt = Point(ngl, fa, kv, "timeout", seconds=secs, note="llama-bench did not finish in time or could not start", ub=ub)
         else:
             rc, text = res
             meas = parse_bench_jsonl(text)
             if rc == 0 and (depth, "tg") in meas and (depth, "pp") in meas:
                 pt = Point(ngl, fa, kv, "ok", pp0=meas.get((0, "pp"), (None, 0))[0], tg0=meas.get((0, "tg"), (None, 0))[0],
                            ppd=meas[(depth, "pp")][0], tgd=meas[(depth, "tg")][0],
-                           ppd_sd=meas[(depth, "pp")][1], tgd_sd=meas[(depth, "tg")][1], seconds=secs)
+                           ppd_sd=meas[(depth, "pp")][1], tgd_sd=meas[(depth, "tg")][1], seconds=secs, ub=ub)
             else:
                 kind = classify_failure(rc, text, ngl)
                 last = next((l.strip() for l in reversed(text.splitlines()) if l.strip()), "")
-                pt = Point(ngl, fa, kv, kind, seconds=secs, note=f"rc={rc}: {last[:160]}")
+                pt = Point(ngl, fa, kv, kind, seconds=secs, note=f"rc={rc}: {last[:160]}", ub=ub)
         points.append(pt)
-        if pt.status in ("oom", "error"):
-            oom_floor[(fa, kv)] = min(ngl, oom_floor.get((fa, kv), ngl))
-            # boundary refinement: the grid steps by 2, so the count just below a failure may never have been tried.
-            # Probe it next, but only for the setting that is currently winning (the others are not worth the time).
-            cur, _ = pick_best(points, pp_floor)
-            below = ngl - 1
-            ok_max = max((p.ngl for p in points if p.status == "ok" and p.combo() == (fa, kv)), default=-1)
-            if cur is not None and cur.combo() == (fa, kv) and below > ok_max and (below, fa, kv) not in queued:
-                queued.add((below, fa, kv))
-                queue.insert(0, (below, fa, kv))
-        progress(f"ngl={ngl:>2} fa={'on ' if fa else 'off'} kv={kv:<4} {pt.status:<7}"
+        if pt.status in ("ok", "timeout"):         # a timeout at N layers would only be slower at N-1
+            settled.add((fa, kv, ub))
+        progress(f"ngl={ngl:>2} fa={'on ' if fa else 'off'} kv={kv:<4} ub={ub:<3} {pt.status:<7}"
                  + (f" pp@d={pt.ppd:.1f} tg@d={pt.tgd:.2f} tok/s" if pt.status == "ok" else f" {pt.note}"))
     best, why = pick_best(points, pp_floor)
     if best is None:
         notes.append("falling back to the planned configuration")
         chosen = base
     else:
-        chosen = replace(base, ngl=planmod.all_layers(model) if best.ngl >= top else best.ngl, fa=best.fa, kv=best.kv)
+        chosen = replace(base, ngl=planmod.all_layers(model) if best.ngl >= top else best.ngl, fa=best.fa, kv=best.kv, ubatch=best.ub)
     cond = {"free_vram_mib": free_vram, "ram_available_mib": (profile.get("ram") or {}).get("available_mib"),
-            "bench_ctx": depth + BENCH_CTX_OVERHEAD, "budget_s": budget_s}
+            "bench_ctx": depth + BENCH_CTX_OVERHEAD, "server_ctx": base.ctx, "ubatches": ubs, "budget_s": budget_s}
     return TuneResult(chosen, points, best, why, complete, clock() - start, notes, conditions=cond, plan_name=plan.name)
 
 
@@ -299,12 +319,13 @@ class Cache:
         return self.load(cache_key(hw, model_fp, build, variant))
 
 
-def variant_of(plan: Plan, depth: int = DEFAULT_DEPTH, pp_floor: float = DEFAULT_PP_FLOOR) -> str:
+def variant_of(plan: Plan, depth: int = DEFAULT_DEPTH, pp_floor: float = DEFAULT_PP_FLOOR,
+               ubatches: tuple[int, ...] = planmod.UBATCH_CHOICES) -> str:
     """Parts of the request that change what 'best' means besides hardware/model/build.
 
     Uses the context that was *requested*, not the one the plan ended up with, so that a RAM
     squeeze at serve time still finds the entry that was tuned for the same request."""
-    return f"ctx={plan.requested_ctx};depth={depth};floor={pp_floor:g};plan={plan.name}"
+    return f"ctx={plan.requested_ctx};depth={depth};floor={pp_floor:g};plan={plan.name};ub={'/'.join(map(str, ubatches))};search={SEARCH_VERSION}"
 
 
 def tune_cached(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: list[str], cache: Cache, *, force: bool = False,
@@ -312,7 +333,9 @@ def tune_cached(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: li
                 **kw: Any) -> tuple[TuneResult, str]:
     """Return the cached result for (hardware, model, build) or measure and store it. Returns (result, key)."""
     build = detect_build(bench, run)
-    key = cache_key(profile["fingerprint"], model.fingerprint, build, variant_of(plan, depth, pp_floor))
+    ubatches = kw.get("ubatches", planmod.UBATCH_CHOICES)
+    variant = variant_of(plan, depth, pp_floor, ubatches)
+    key = cache_key(profile["fingerprint"], model.fingerprint, build, variant)
     if not force:
         hit = cache.load(key)
         if hit:
@@ -325,6 +348,6 @@ def tune_cached(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: li
     if res.best is not None:
         cache.save(key, {"created_at": time.strftime("%Y-%m-%dT%H:%M:%S%z"), "hardware": profile["fingerprint"],
                          "model": model.fingerprint, "model_path": model.path, "llama_build": build,
-                         "variant": variant_of(plan, depth, pp_floor), "result": res.to_dict(),
+                         "variant": variant, "result": res.to_dict(),
                          "command": " ".join(planmod.server_command("llama-server", model.path, res.config))})
     return res, key

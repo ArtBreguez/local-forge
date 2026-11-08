@@ -1,7 +1,7 @@
 """A stand-in for llama-bench used by the autotune tests (runs anywhere Python runs).
 
 Behaviour is driven by environment variables so tests can vary it:
-  FAKE_BENCH_LOG       append one line per measurement call: "ngl fa ctk depth"
+  FAKE_BENCH_LOG       append one line per measurement call: "ngl fa ctk depth ubatch"
   FAKE_BENCH_OOM_NGL   calls with -ngl >= this fail like a real Vulkan out-of-memory (default 18)
   FAKE_BENCH_BUILD     build number printed by --version (default 12207)
   FAKE_BENCH_FA_FAST   if "1", flash attention gives higher generation speed but a much lower prompt speed
@@ -31,9 +31,10 @@ def main(args):
     fa = arg(args, "-fa", "off") in ("on", "1")
     ctk = arg(args, "-ctk", "f16")
     depths = [int(x) for x in arg(args, "-d", "0").split(",")]
+    ub = int(arg(args, "-ub", "512"))
     if os.environ.get("FAKE_BENCH_LOG"):
         with open(os.environ["FAKE_BENCH_LOG"], "a") as f:
-            f.write("%d %s %s %s\n" % (ngl, "on" if fa else "off", ctk, arg(args, "-d")))
+            f.write("%d %s %s %s %s\n" % (ngl, "on" if fa else "off", ctk, arg(args, "-d"), arg(args, "-ub", "512")))
     if os.environ.get("FAKE_BENCH_SLEEP"):
         time.sleep(float(os.environ["FAKE_BENCH_SLEEP"]))
     sys.stderr.write("ggml_vulkan: Found 1 Vulkan devices:\n")
@@ -44,7 +45,7 @@ def main(args):
     for d in depths:
         base_tg = 5.5 + 0.25 * min(ngl, 16) - (0.0 if d == 0 else 0.8)
         tg = base_tg + ((0.6 if fa_fast else -1.2) if fa and d else 0) - (0.3 if ctk == "q8_0" else 0)
-        pp = 190.0 if not (fa and d) else (60.0 if fa_fast else 85.0)
+        pp = (190.0 if not (fa and d) else (60.0 if fa_fast else 85.0)) * (1.0 if ub >= 512 else 0.78)   # sweep D: ubatch 256 prefills at 151 tok/s, 512 at 195
         for n_prompt, n_gen, v in ((512, 0, pp), (0, 128, tg)):
             print(json.dumps({"build_number": int(os.environ.get("FAKE_BENCH_BUILD", "12207")), "n_gpu_layers": ngl,
                               "flash_attn": int(fa), "type_k": ctk, "n_prompt": n_prompt, "n_gen": n_gen, "n_depth": d,

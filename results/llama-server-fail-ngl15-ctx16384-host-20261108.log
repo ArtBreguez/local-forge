@@ -1,0 +1,14 @@
+0.00.046.612 I srv  llama_server: initializing ...
+0.00.046.627 I cmn  common_param: common_params_print_info: verbosity = 3 (adjust with the `-lv N` CLI arg)
+0.00.056.973 W srv  server_setup: security: no API key is set and CORS allows all origins (see https://github.com/ggml-org/llama.cpp/pull/25655)
+0.00.061.733 I srv    load_model: loading model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ggml_vulkan: Device memory allocation of size 705695744 failed.
+ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory
+0.07.411.200 E ggml_gallocr_reserve_n_impl: failed to allocate Vulkan0 buffer of size 705695744
+0.07.411.207 E graph_reserve: failed to allocate compute buffers
+0.07.437.772 E llama_init_from_model: failed to initialize the context: failed to allocate compute pp buffers
+0.07.437.780 E cmn  common_init_: failed to create context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+0.07.437.789 E cmn  common_init_: failed to create context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+0.07.437.791 E srv    load_model: failed to create_context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+0.07.437.796 I srv    operator(): operator(): cleaning up before exit...
+0.07.438.892 E srv  server_run_i: exiting due to model loading error

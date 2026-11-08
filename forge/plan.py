@@ -36,9 +36,8 @@ def _h(id: str, rule: str, status: str, *evidence: tuple[str | None, str]) -> He
 
 
 # Constants used by the rules (named so tests and docs can refer to them).
-VRAM_MARGIN_FRACTION = 0.05   # of free VRAM, kept unused
-VRAM_MARGIN_MIB = 128         # plus this much
-COMPUTE_BASE_MIB = 1100       # graph scratch buffers on the GPU (fitted, see H-LAYERS-VRAM-FIT)
+VRAM_MARGIN_FRACTION = 0.05   # of free VRAM, kept unused ...
+VRAM_MARGIN_MIB = 152         # ... plus this much: 324 MiB at 3443 MiB free, the middle of the (271, 378] window the load/fail facts leave
 RAM_USE_FRACTION = 0.95       # of available RAM the plan may commit (see H-CTX-RAM: a CPU-only run completed at 93%)
 EMBD_RESIDENT_FRACTION = 0.0  # share of token_embd counted as resident: it is read by row, so mmap only pages in what is used
 HOST_OVERHEAD_MIB = 512       # process, tokenizer, runtime, staging buffers
@@ -46,35 +45,71 @@ CTX_TARGET = 16384
 CTX_MIN = 4096
 Q8_KV_MIN_GAIN_LAYERS = 6     # q8_0 KV (needs flash attention) must buy at least this many GPU layers
 UBATCH = 512
+UBATCH_CHOICES = (512, 256)   # what `forge tune` searches; 256 is the one sweep D measured
 UNKNOWN_FREE_VRAM_FRACTION = 0.80
+
+# Compute-buffer model (H-COMPUTE-SCRATCH). Fitted to `llama-fit-params` b12207 on this model (results/fit-params-grid-host-20261108.txt).
+KV_PAD = 256                  # llama.cpp pads the KV length to a multiple of this
+DEFAULT_N_VOCAB = 262144      # used when the header has no vocabulary size: the upper end of current models (conservative)
+LOGITS_EXTRA_MIB_PER_TOKEN = 0.0625   # hidden-state scratch per ubatch token on top of the f32 logits row (n_vocab * 4 bytes)
+KQ_SINGLE_MAX_MIB = 512       # attention scores up to this size are live once; above it the grid shows two copies (KQ and its softmax)
+ATTN_OTHER_MIB_PER_UB_TOKEN = 0.18     # attention-phase scratch besides KQ: per ubatch token ...
+ATTN_OTHER_MIB_PER_CTX_TOKEN = 0.0056  # ... and per context token
+COMPUTE_MAX_UBATCH = 512      # the fit covers ubatch 128-512; at 1024 the buffer jumps (1.2-2.4 GiB) and is not modelled
+
+# Fallback ladder (serve.py)
+FALLBACK_FINE_STEPS = 6       # layer counts tried one at a time before the ladder takes bigger steps
 
 HEURISTICS: dict[str, Heuristic] = {h.id: h for h in [
     _h("H-LAYERS-VRAM-FIT",
-       f"GPU layers = the largest count whose estimated VRAM (weights of the offloaded layers + KV of their attention layers + "
-       f"recurrent state + {COMPUTE_BASE_MIB} MiB graph scratch) stays below free VRAM x (1-{VRAM_MARGIN_FRACTION}) - {VRAM_MARGIN_MIB} MiB. "
-       "The scratch size is a fit, not a derivation. At the default ubatch (512) on 3443 MiB free: 16 layers load and run and 17 do not "
-       "(weights+KV+state: 1978 and 2119 MiB), so scratch lies in (1324, 1465] MiB. The plan reserves scratch + margin = about 1400 MiB, inside that window.",
+       f"GPU layers = the largest -ngl whose estimated VRAM (weights llama.cpp places on the GPU, H-OUTPUT-LAYER + KV of their attention layers + "
+       f"recurrent state + the compute buffer of H-COMPUTE-SCRATCH, all at the SERVER context and ubatch) stays below free VRAM x (1-{VRAM_MARGIN_FRACTION}) - "
+       f"{VRAM_MARGIN_MIB} MiB. The reserve (324 MiB at 3443 MiB free) is the one fitted number: six load/fail facts on the same card put it in (271, 378] MiB "
+       "with the estimate above ((271, 389] with llama.cpp's own numbers), and it covers what llama-fit-params does not count (driver and per-process allocations) as well as drift: "
+       "llama-bench ctx 8704 ubatch 512 loads 16 and fails 17; ubatch 256 loads 18 and fails 19; llama-server ctx 16384 ubatch 512 loads 14 and fails 15.",
        "partially measured",
-       ("tests/fixtures/llama-bench-sweepc-snapshot.log",
-        "sweep C, llama.cpp b12207 Vulkan, llama-bench at ~8.7K context: ngl=16 loads for FA off/on and f16/q8_0 KV, ngl=20 fails to create the "
-        "context for all three, ngl>=24 fails to load"),
+       ("results/fit-params-grid-host-20261108.txt",
+        "llama-fit-params b12207, -fit off -fitp on: model / context / compute MiB per device for 166 (ngl, ctx, ubatch, FA, KV) points; "
+        "ngl=15 ctx=16384 ubatch=512 gives compute 673 MiB = the 705695744-byte allocation that failed in llama-server"),
        ("tests/fixtures/llama-bench-sweepd-snapshot.log",
-        "sweep D, ubatch 512, FA off, f16: ngl=16 runs at depth 8192; ngl=17 fails while filling the 8192 depth; ngl 18-20 fail to create the context"),
-       ("tests/fixtures/llama-bench-oom-stderr.txt", "the allocation failure text (Vulkan0 buffer, ErrorOutOfDeviceMemory)"),
-       ("docs/JOURNAL.md", "sweep A/B (Ollama): 16 layers at 16K fit; Ollama also fitted 20 with FA + q8_0, which llama.cpp did not reproduce"),
-       (None, "the scratch size depends on the ubatch (ub=256 fits 18 layers, see H-UBATCH) but the model has one constant for ub=512; "
-              "one machine, one model: not checked against another GPU or architecture, and not against llama.cpp's own allocation log")),
+        "sweep D FA off f16 at ~8.7K context: ubatch 512 loads 16 and fails 17 (at depth); ubatch 256 loads 17 and 18 and fails 19"),
+       ("tests/fixtures/llama-bench-sweepc-snapshot.log", "sweep C: ngl=16 loads for FA off/on and f16/q8_0, ngl=20 fails to create the context, ngl>=24 fails to load"),
+       ("results/phase2.log", "llama-server 16K FA off f16 ubatch 512: ngl=15 fails to load, ngl=14 loads"),
+       ("results/serve-smoke-host-20261108-before-fix.log", "forge serve planned 15 layers and failed with 'Device memory allocation of size 705695744 failed'"),
+       (None, "one machine, one GPU driver, one model and one llama.cpp build; the 118 MiB-wide window is not narrowed by more data on this card; "
+              "the reserve is a flat fraction + constant, which is a convenience, not a derivation")),
+    _h("H-COMPUTE-SCRATCH",
+       "GPU compute buffer = max(logits phase, attention phase). Logits phase: ubatch x (n_vocab x 4 B + 0.0625 MiB). Attention phase (flash attention off only): "
+       f"copies x n_kv x ubatch x n_head x 4 B + {ATTN_OTHER_MIB_PER_UB_TOKEN} MiB x ubatch + {ATTN_OTHER_MIB_PER_CTX_TOKEN} MiB x ctx, with n_kv = ctx padded to {KV_PAD}, "
+       f"ubatch = min(ctx, ubatch), copies = 1 up to {KQ_SINGLE_MAX_MIB} MiB of scores and 2 above. Flash attention: logits phase only. It does not depend on -ngl (once at least one layer is offloaded). "
+       f"Valid for ubatch <= {COMPUTE_MAX_UBATCH}.",
+       "partially measured",
+       ("results/fit-params-grid-host-20261108.txt",
+        "ground truth from llama.cpp's own estimate on the host: ubatch 512 FA off: 517 MiB at ctx 2K-8.7K, 545 at 12K, 673 at 16K, 1745 at 24K, 2305 at 32K; "
+        "ubatch 256: 258 / 293 / 377 / 593 / 777; FA on: 517 (ubatch 512) and 258 (256) at every context. The model is within -36/+36 MiB of every point with up to 20 layers on "
+        "the GPU and ubatch <= 512 (+100 at -ngl 99, where llama.cpp's own buffer shrinks)"),
+       ("tests/fixtures/llama-bench-sweepd-snapshot.log", "a failed allocation of 271058944 B (258.5 MiB) in sweep D = fit-params' 258 MiB for FA on, ubatch 256"),
+       ("results/serve-smoke-host-20261108-before-fix.log", "the failed server allocation of 705695744 B = 673 MiB = fit-params at ctx 16384, ubatch 512, FA off"),
+       (None, "the shape (logits row, KQ matrix) is read off one model (n_vocab 248320, 16 heads, f16 KV); the step from one to two score copies between 512 and 768 MiB, "
+              "the 1.0-1.1 GiB jumps at ubatch 1024 and the non-monotone values past 16K come from llama.cpp's graph allocator and are not explained; "
+              "other models and other backends (CUDA, Metal) untested")),
     _h("H-VRAM-HEADROOM",
-       f"Never plan to the last MiB: keep {VRAM_MARGIN_FRACTION:.0%} of free VRAM + {VRAM_MARGIN_MIB} MiB unused, because free VRAM "
-       "moves while the machine is used. `forge serve` tolerates the same drift before it abandons a tuned configuration.",
-       "measured",
+       f"Never plan to the last MiB: keep {VRAM_MARGIN_FRACTION:.0%} of free VRAM + {VRAM_MARGIN_MIB} MiB unused (see H-LAYERS-VRAM-FIT for how the number was fitted). "
+       "Free VRAM moves while the machine is used, and a drop larger than this is NOT covered: `forge serve` re-probes at every start, "
+       "re-checks the configuration against the free VRAM it sees, and steps down one layer at a time if the load still fails (H-FALLBACK-STEP).",
+       "partially measured",
        ("tests/fixtures/list-devices-rx6500xt-idle.txt", "3443 MiB free on the idle card"),
-       ("tests/fixtures/list-devices-rx6500xt-busy.txt", "3105 MiB free minutes later with a benchmark running: 338 MiB (10%) gone")),
+       ("tests/fixtures/list-devices-rx6500xt-busy.txt", "3105 MiB free minutes later with a benchmark running: 338 MiB (10%) gone, more than the 324 MiB reserved"),
+       (None, "the reserve is fitted to load/fail facts at one free-VRAM value (3443 MiB); how it should scale with free VRAM or card size is untested")),
     _h("H-OUTPUT-LAYER",
-       "The output projection (output.weight) goes to the GPU only when layers > the number of transformer blocks; "
-       "with fewer layers it stays in RAM and its size is not charged to VRAM.",
-       "untested",
-       (None, "llama.cpp offload semantics ('offloaded N/N layers' log line); not verified on this machine")),
+       "llama.cpp numbers n_layer block slots (the header's block_count, an absent MTP block included) plus the output layer and offloads the last N of them: "
+       "-ngl 1 puts only the output matrix (796 MiB here) on the GPU, -ngl N puts blocks >= n_layer + 1 - N. On this model -ngl N means N-2 real blocks plus the output matrix. "
+       "token_embd stays in RAM at any -ngl.",
+       "measured",
+       ("results/fit-params-grid-host-20261108.txt",
+        "Vulkan0 model MiB: ngl=1 -> 795 (output only), ngl=2 -> 795 (the empty MTP slot), ngl=4 -> 1018 (2 blocks), ngl=16 -> 2381 (14 blocks), "
+        "ngl=33 -> 4314, ngl=99 -> 4429 (everything but the 515 MiB token_embd, which is listed under Host)"),
+       (None, "one model and one llama.cpp build; models without an MTP slot follow the same rule in llama.cpp's source but were not run here")),
     _h("H-KV-ATTN-ONLY",
        "KV cache exists only in full-attention layers. Layer kinds come from the GGUF (recurrent_layers array, "
        "full_attention_interval, or per-layer head_count_kv); recurrent layers keep a fixed-size state instead.",
@@ -127,6 +162,39 @@ HEURISTICS: dict[str, Heuristic] = {h.id: h for h in [
        ("tests/fixtures/gguf-dump-dsv4-9b.txt",
         "this GGUF declares nextn_predict_layers=1 but has no blk.32.* tensors (427 tensors, blocks 0-31): the MTP head is not in the file"),
        ("docs/PROTOCOL.md", "phase 2 is where --spec-type draft-mtp gets measured")),
+    _h("H-SPEC-NONE",
+       "Speculative decoding is off by default (--spec-type none is passed explicitly). Opt-in with `--spec ngram-mod` (plan, serve). "
+       "Measured on llama-server 16K, FA off, f16, 14 layers, 4 prompts x 2 repetitions, temperature 0: ngram-mod reached up to 17.5 tok/s on a rewrite of code it had seen "
+       "(mean 10.75 vs 9.03), but 2 of 8 outputs differ from the non-speculative ones, so it is not a free speed-up; ngram-simple drafts rarely (-3%), ngram-cache is slower "
+       "and differs in half the outputs; draft-mtp aborts because the GGUF has no MTP tensors.",
+       "measured",
+       ("results/phase2.log", "per-arm loads and the draft-mtp failure"),
+       ("results/phase2-spec.jsonl", "raw rows: tok/s, drafts accepted, output hashes per spec type"),
+       ("docs/JOURNAL.md", "'phase 2: speculative decoding on llama-server' table and readings"),
+       (None, "whether ngram-mod lowers agent pass rates is untested (PROTOCOL.md phases 3-4); one model, one backend")),
+    _h("H-FALLBACK-STEP",
+       f"If llama-server fails to load, retry with ONE layer fewer, for up to {FALLBACK_FINE_STEPS} steps, then in steps of 4 layers down to 0, then with a halved context "
+       "(CPU only). The estimate is off by about one layer when it is wrong at all, so the first retries must not skip layers.",
+       "partially measured",
+       ("results/serve-smoke-host-20261108-before-fix.log",
+        "the old ladder went 15 -> 11 although 14 loads (phase 2): it gave up 3 layers, ~0.9 tok/s"),
+       (None, f"the {FALLBACK_FINE_STEPS} fine steps and the step of 4 after them are judgements; no case with an error of more than 1 layer has been seen")),
+    _h("H-TUNE-LAYERS-MONOTONE",
+       "For a given attention/KV type and ubatch, more layers on the GPU is not slower, so `forge tune` measures the most layers the server can hold and goes "
+       "lower (1, 2, 4 below) only if that count fails to load; once a setting has run, its lower counts are skipped.",
+       "partially measured",
+       ("tests/fixtures/llama-bench-sweepc-snapshot.jsonl",
+        "generation tok/s at depth 8192, FA off f16: ngl=0 5.45, 8 6.78, 12 7.65, 16 9.15; prompt tok/s at depth 137 -> 195"),
+       ("tests/fixtures/llama-bench-sweepd-snapshot.jsonl", "ubatch 256, FA off f16, generation tok/s at depth 8192: 16 layers 9.04, 17 layers 9.19, 18 layers 9.60"),
+       (None, "four layer counts on one machine; a GPU slower than the CPU for this model, or a PCIe-bound card with a tiny model, could break it")),
+    _h("H-SERVER-RECHECK",
+       "A tuned configuration is an upper bound for the server, not a promise: llama-bench runs at depth + 640 tokens of context (8832) while llama-server allocates "
+       "for the full context, so serve re-estimates the tuned layer count against the free VRAM at the server's context and ubatch, and re-plans (keeping the tuned "
+       "attention, KV type and ubatch) if it does not fit. The tuner only measures layer counts the server estimate allows.",
+       "measured",
+       ("results/forge-tune-host-20261108.json", "the first host tune chose 15 layers (measured at 8832 tokens of context) -- the count that llama-server could not load at 16K"),
+       ("results/phase2.log", "15 layers fail, 14 load, at 16K"),
+       (None, "the rule is only as good as the server estimate (H-LAYERS-VRAM-FIT); a context change at serve time is re-estimated the same way")),
     _h("H-PARALLEL-1",
        "One server slot (-np 1): one agent, and every extra slot would multiply the recurrent state and split the context.",
        "untested",
@@ -136,13 +204,15 @@ HEURISTICS: dict[str, Heuristic] = {h.id: h for h in [
        "derived",
        ("tests/fixtures/llama-server-help-b12207.txt", "--fit defaults to on in b12207 and adjusts unset arguments")),
     _h("H-UBATCH",
-       f"Physical batch (-ub) {UBATCH}, llama.cpp's default and what the phase-1 sweeps used. It is not searched by `forge tune`.",
+       f"Physical batch (-ub): the plan uses {UBATCH} (llama.cpp's default); `forge tune` also measures {UBATCH_CHOICES[1]} and the server gets whatever the "
+       "tuned configuration says. A smaller ubatch shrinks the compute buffer (H-COMPUTE-SCRATCH) and buys layers.",
        "partially measured",
        ("docs/PROTOCOL.md", "phase 1 runs llama-bench -p 512 with the default ubatch"),
        ("tests/fixtures/llama-bench-sweepd-snapshot.jsonl",
-        "ubatch 256 shrinks the scratch buffer enough for 18 layers (512: 16): tg 9.60 vs 9.13 tok/s at depth 8192, but prompt speed 151 vs 195 tok/s"),
-       (None, "a lower ubatch would win the default objective on this machine (more generation speed, prompt speed still above the floor); "
-              "it is a candidate axis for the autotuner, not yet implemented")),
+        "ubatch 256 loads 18 layers (512: 16): tg 9.60 vs 9.13 tok/s at depth 8192, prompt speed 151 vs 195 tok/s"),
+       ("results/fit-params-grid-host-20261108.txt", "compute buffer at ctx 16384, FA off: 673 MiB at ubatch 512, 377 MiB at 256, 229 MiB at 128"),
+       (None, "ubatch 128 and 1024 were never run through llama-bench or llama-server; 256 gains 2 layers at the cost of a quarter of the prompt speed, "
+              "and whether that wins depends on the objective's floor (default 100 tok/s)")),
     _h("H-CPU-ONLY",
        "No usable GPU, or the GPU plan is not possible: 0 GPU layers, FA off, f16 KV, physical-core threads.",
        "partially measured",
@@ -187,6 +257,12 @@ class ModelInfo:
     other_bytes: int
     state_bytes_per_recurrent_layer: int
     warnings: list[str] = field(default_factory=list)
+    n_vocab: int = 0                   # 0 = the header did not say
+
+    @property
+    def layer_slots(self) -> int:
+        """llama.cpp's n_layer: every block slot the header declares, an MTP slot included even when its tensors are absent."""
+        return max(self.block_count, self.trunk_layers)
 
     @property
     def recurrent_layers(self) -> list[int]:
@@ -202,6 +278,16 @@ def _per_layer(v: Any, n: int) -> list[int | None]:
     if isinstance(v, list):
         return [int(x) for x in v][:n] + [None] * max(0, n - len(v))
     return [None if v is None else int(v)] * n
+
+
+def _n_vocab(h: gguf.GGUFHeader) -> int:
+    v = h.arch_key("vocab_size")
+    if v:
+        return int(v)
+    t = h.metadata.get("tokenizer.ggml.tokens")
+    if isinstance(t, gguf.ArrayStub):
+        return t.length
+    return len(t) if isinstance(t, list) else 0
 
 
 def model_info(h: gguf.GGUFHeader) -> ModelInfo:
@@ -267,11 +353,11 @@ def model_info(h: gguf.GGUFHeader) -> ModelInfo:
     return ModelInfo(
         path=h.path, fingerprint=h.fingerprint(), arch=arch, quant=h.quant_name, file_mib=h.file_size / MIB,
         block_count=block_count, trunk_layers=trunk, n_embd=n_embd,
-        n_head=n_heads[0] if n_heads else None, ctx_max=h.arch_key("context_length"),
+        n_head=max((x for x in n_heads if x), default=None), ctx_max=h.arch_key("context_length"),
         nextn_layers=nextn, mtp_tensors_present=bool(mtp_idx) or any(".nextn." in t.name for t in h.tensors),
         attn_layers=attn, kv_elems_per_token=elems, layer_bytes=layer_bytes,
         output_bytes=output_bytes, embd_bytes=embd_bytes, other_bytes=other,
-        state_bytes_per_recurrent_layer=state, warnings=warnings)
+        state_bytes_per_recurrent_layer=state, warnings=warnings, n_vocab=_n_vocab(h))
 
 
 def load_model(path: str) -> ModelInfo:
@@ -329,19 +415,46 @@ class Estimate:
 
 
 def all_layers(m: ModelInfo) -> int:
-    """The -ngl value meaning "everything, output layer included": 99, or more for models with that many blocks."""
-    return max(99, m.trunk_layers + 1)
+    """The -ngl value meaning "everything, output layer included": 99, or more for models with that many block slots."""
+    return max(99, m.layer_slots + 1)
 
 
 def gpu_layer_ids(m: ModelInfo, ngl: int) -> list[int]:
-    """llama.cpp offloads the last `ngl` blocks (the output layer too once ngl > blocks)."""
-    n = max(0, min(ngl, m.trunk_layers))
-    return list(range(m.trunk_layers - n, m.trunk_layers))
+    """Transformer blocks llama.cpp puts on the GPU for -ngl N (H-OUTPUT-LAYER).
+
+    llama.cpp numbers n_layer block slots plus one output slot and offloads the LAST `ngl` of the n_layer + 1 slots:
+    the output layer first, then the final block slot. A declared-but-absent MTP block still owns a slot, so on this
+    model -ngl 2 puts nothing but the output matrix on the GPU. Blocks on the GPU are slots >= n_layer + 1 - ngl.
+    """
+    if ngl <= 0:
+        return []
+    start = max(0, m.layer_slots + 1 - ngl)
+    return list(range(start, m.trunk_layers))
+
+
+def compute_mib(m: ModelInfo, cfg: Config) -> float:
+    """GPU compute (graph scratch) buffer of the server's worst-case graph, in MiB (H-COMPUTE-SCRATCH).
+
+    llama.cpp reserves the buffer for a graph of n_tokens = min(n_ctx, n_ubatch). Its peak is either the logits phase
+    (one f32 row of n_vocab per token) or, with flash attention off, the attention phase: the n_kv x n_tokens x n_head
+    f32 score matrix plus scratch. Flash attention never materialises the scores, so the context length stops mattering.
+    """
+    if cfg.ubatch > COMPUTE_MAX_UBATCH:
+        raise ValueError(f"the compute-buffer model is fitted for ubatch <= {COMPUTE_MAX_UBATCH}, got {cfg.ubatch}")
+    ub = min(cfg.ubatch, cfg.ctx)
+    vocab = m.n_vocab or DEFAULT_N_VOCAB
+    logits_phase = ub * (vocab * 4 / MIB + LOGITS_EXTRA_MIB_PER_TOKEN)
+    if cfg.fa or not m.attn_layers:
+        return logits_phase
+    n_kv = -(-cfg.ctx // KV_PAD) * KV_PAD
+    scores = n_kv * ub * (m.n_head or 32) * 4 / MIB
+    copies = 1 if scores <= KQ_SINGLE_MAX_MIB else 2
+    return max(logits_phase, copies * scores + ATTN_OTHER_MIB_PER_UB_TOKEN * ub + ATTN_OTHER_MIB_PER_CTX_TOKEN * cfg.ctx)
 
 
 def estimate(m: ModelInfo, cfg: Config) -> Estimate:
     gpu = set(gpu_layer_ids(m, cfg.ngl))
-    out_on_gpu = cfg.ngl > m.trunk_layers
+    out_on_gpu = cfg.ngl > 0
     e = Estimate()
     kv_tok = {i: m.kv_elems_per_token[i] * KV_BYTES_PER_ELEM[cfg.kv] * cfg.ctx for i in range(m.trunk_layers)}
     for i in range(m.trunk_layers):
@@ -359,8 +472,8 @@ def estimate(m: ModelInfo, cfg: Config) -> Estimate:
         e.vram_weights += m.output_bytes / MIB
     else:
         e.ram_weights += m.output_bytes / MIB
-    if gpu:
-        e.vram_compute = COMPUTE_BASE_MIB
+    if cfg.ngl > 0:
+        e.vram_compute = compute_mib(m, cfg)
     e.ram_overhead = HOST_OVERHEAD_MIB
     return e
 
@@ -374,10 +487,10 @@ def ram_budget(available_mib: float) -> float:
 
 
 def max_layers(m: ModelInfo, base: Config, free_vram_mib: float) -> int:
-    """Largest ngl (0..trunk+1) whose VRAM estimate fits the budget (H-LAYERS-VRAM-FIT)."""
+    """Largest ngl (0..layer slots + 1) whose VRAM estimate fits the budget (H-LAYERS-VRAM-FIT)."""
     budget = vram_budget(free_vram_mib)
     best = 0
-    for ngl in range(m.trunk_layers + 2):
+    for ngl in range(m.layer_slots + 2):
         c = Config(**{**asdict(base), "ngl": ngl})
         if estimate(m, c).vram <= budget:
             best = ngl
@@ -411,7 +524,7 @@ class Plan:
     def summary(self) -> str:
         c = self.config
         ngl = "all" if c.ngl >= 99 else str(c.ngl)
-        return (f"[{self.name}] ngl={ngl} ctx={c.ctx} threads={c.threads} fa={'on' if c.fa else 'off'} kv={c.kv} "
+        return (f"[{self.name}] ngl={ngl} ctx={c.ctx} threads={c.threads} fa={'on' if c.fa else 'off'} kv={c.kv} ub={c.ubatch} "
                 f"| est VRAM {self.estimate['vram']:.0f} MiB, RAM {self.estimate['ram']:.0f} MiB"
                 f"{'' if self.feasible else ' | INFEASIBLE'}")
 
@@ -466,11 +579,20 @@ def _solve(m: ModelInfo, mk: Any, fa_on: bool, kv_t: str, requested_ctx: int, fr
         ctx = max(CTX_MIN, ctx // 2)
 
 
+SPEC_OPT_IN = ("ngram-mod",)   # speculative-decoding types a user may ask for with --spec (H-SPEC-NONE)
+
+
 def build_plan(profile: dict[str, Any], m: ModelInfo, mode: str = "gpu", ctx: int = CTX_TARGET, kv: str | None = None,
-               fa: bool | None = None, enable_mtp: bool = False) -> Plan:
-    """mode: 'gpu' (best use of the GPU if there is one), 'cpu', or 'low-power'."""
+               fa: bool | None = None, enable_mtp: bool = False, ubatch: int = UBATCH, spec: str | None = None) -> Plan:
+    """mode: 'gpu' (best use of the GPU if there is one), 'cpu', or 'low-power'.
+
+    `spec` is the opt-in speculative-decoding type (None = off, which is the default); `ubatch` the physical batch."""
     if mode not in ("gpu", "cpu", "low-power"):
         raise ValueError(mode)
+    if spec is not None and spec not in SPEC_OPT_IN:
+        raise ValueError(f"unsupported speculative type {spec!r} (opt-in types: {', '.join(SPEC_OPT_IN)})")
+    if not 1 <= ubatch <= COMPUTE_MAX_UBATCH:
+        raise ValueError(f"ubatch must be 1..{COMPUTE_MAX_UBATCH} (the compute-buffer model is not fitted above)")
     if kv is not None and kv not in KV_BYTES_PER_ELEM:
         raise ValueError(f"unknown KV type {kv}")
     if kv not in (None, "f16") and fa is False:
@@ -494,7 +616,7 @@ def build_plan(profile: dict[str, Any], m: ModelInfo, mode: str = "gpu", ctx: in
     device = gpu["device"] if (use_gpu and len(profile.get("gpus") or []) > 1) else None
 
     def mk(fa_on: bool, kv_t: str, c: int) -> Config:
-        return Config(ngl=0, ctx=c, threads=threads, threads_batch=threads, fa=fa_on, kv=kv_t, device=device)
+        return Config(ngl=0, ctx=c, threads=threads, threads_batch=threads, fa=fa_on, kv=kv_t, ubatch=ubatch, device=device)
 
     fv = free_vram if use_gpu else None
     fa_default = use_gpu and backend in ("CUDA", "ROCm", "Metal")   # H-FA-BACKEND
@@ -525,12 +647,16 @@ def build_plan(profile: dict[str, Any], m: ModelInfo, mode: str = "gpu", ctx: in
         dec.append(Decision("H-FA-BACKEND", f"flash attention {'on' if fa_on else 'off'}, KV {kv_t} (backend {backend})"))
         shown = cfg.ngl
         dec.append(Decision("H-VRAM-HEADROOM", f"{free_vram - vram_budget(free_vram):.0f} MiB of {free_vram:.0f} MiB free kept unused"))
-        dec.append(Decision("H-LAYERS-VRAM-FIT", f"{min(shown, m.trunk_layers)} of {m.trunk_layers} blocks"
-                            f"{' + output layer' if shown > m.trunk_layers else ''} on {gpu['name']}: "
-                            f"budget {vram_budget(free_vram):.0f} MiB of {free_vram:.0f} MiB free"))
-        if cfg.ngl > m.trunk_layers:
+        dec.append(Decision("H-LAYERS-VRAM-FIT", f"-ngl {shown}: {len(gpu_layer_ids(m, shown))} of {m.trunk_layers} blocks on {gpu['name']}: "
+                            f"budget {vram_budget(free_vram):.0f} MiB of {free_vram:.0f} MiB free, ctx {cfg.ctx}, ubatch {cfg.ubatch}"))
+        dec.append(Decision("H-COMPUTE-SCRATCH", f"compute buffer {compute_mib(m, cfg):.0f} MiB at ctx {cfg.ctx}, ubatch {cfg.ubatch}, "
+                            f"flash attention {'on' if cfg.fa else 'off'}"))
+        if cfg.ngl > m.layer_slots:
             dec.append(Decision("H-OUTPUT-LAYER", f"all {m.trunk_layers} blocks + the output layer on the GPU"))
             cfg.ngl = all_layers(m)
+        elif cfg.ngl > 0:
+            dec.append(Decision("H-OUTPUT-LAYER", f"-ngl {cfg.ngl} = {len(gpu_layer_ids(m, cfg.ngl))} blocks + the output matrix "
+                                f"({m.output_bytes / MIB:.0f} MiB, offloaded first)"))
         if cfg.ngl == 0:
             warn.append("no layer fits the free VRAM: this GPU plan is CPU-only")
     if not ram_ok:
@@ -543,8 +669,11 @@ def build_plan(profile: dict[str, Any], m: ModelInfo, mode: str = "gpu", ctx: in
     mtp = mtp_status(m)
     if mtp["available"] and enable_mtp:
         cfg.spec_type = "draft-mtp"
+    elif spec:
+        cfg.spec_type = spec
     mtp["enabled"] = cfg.spec_type == "draft-mtp"
     dec.append(Decision("H-MTP", f"MTP: {mtp['reason']}; {'enabled' if mtp['enabled'] else 'not enabled'}"))
+    dec.append(Decision("H-SPEC-NONE", f"--spec-type {cfg.spec_type or 'none'}" + (" (opt-in)" if cfg.spec_type else " (default)")))
     est = estimate(m, cfg)
     return Plan(name=mode, config=cfg, estimate={**asdict(est), "vram": est.vram, "ram": est.ram}, feasible=ram_ok,
                 decisions=dec, warnings=warn, mtp=mtp, requested_ctx=ctx)
@@ -613,6 +742,6 @@ def server_command(server_exe: str | list[str], model_path: str, cfg: Config, ho
         a += ["--device", cfg.device]
     if caps.fit:
         a += ["--fit", "off"]
-    if cfg.spec_type and caps.spec_type:
-        a += ["--spec-type", cfg.spec_type]
+    if caps.spec_type:
+        a += ["--spec-type", cfg.spec_type or "none"]       # explicit: what is served is what was measured (H-SPEC-NONE)
     return a

@@ -5,10 +5,10 @@ configuration was tuned may not hold now: another program may hold VRAM or RAM, 
 may be on battery. `select_config` picks, in this order:
   1. on battery/UPS                      -> the low-power plan
   2. no GPU, or no layer fits            -> the CPU plan
-  3. tuned config, if it still fits the free VRAM/RAM measured now
-  4. otherwise a re-plan on the current free memory, keeping the tuned attention/KV settings
+  3. tuned config, if the SERVER's memory estimate (its own context and ubatch, not llama-bench's) fits the free VRAM/RAM now
+  4. otherwise a re-plan on the current free memory, keeping the tuned attention/KV settings and ubatch
 If the server still fails to load (e.g. the estimate was optimistic), `fallback_ladder` retries with
-fewer GPU layers, then a smaller context, instead of giving up.
+one GPU layer fewer at a time, then bigger steps, then a smaller context, instead of giving up.
 """
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ from typing import Any, Callable
 from . import autotune, plan as planmod, probe as probemod, util
 from .plan import Caps, Config, ModelInfo, Plan
 
-MAX_ATTEMPTS = 12
+MAX_ATTEMPTS = 20          # the longest ladder on this model is 16 rungs (see test_fallback_ladder_reaches_the_smaller_contexts)
 
 
 @dataclass
@@ -37,15 +37,17 @@ class Selection:
     plan: Plan | None = None
 
 
-def fits_now(model: ModelInfo, cfg: Config, profile: dict[str, Any], tuned_conditions: dict[str, Any] | None = None) -> tuple[bool, str]:
-    """Is `cfg` still safe on the memory that is free right now?
+def fits_now(model: ModelInfo, cfg: Config, profile: dict[str, Any]) -> tuple[bool, str]:
+    """Will llama-server load `cfg` on the memory that is free right now? (H-SERVER-RECHECK)
 
-    RAM: the planner's estimate against the current budget. VRAM: if the tuning recorded how much was
-    free when `cfg` was measured, compare with that (it was measured to load, whereas the estimator is a
-    fitted approximation); allow the planner's own headroom (5% + 128 MiB) of drift. Without a record,
-    fall back to the estimate.
+    The planner's estimate for the SERVER (its context, its ubatch) against the current budget. A tuned result
+    does not get a pass for having been measured: llama-bench ran at a smaller context than the server allocates
+    for, so a layer count that loaded there can still fail here (15 layers did: 673 MiB compute buffer at 16K).
     """
-    est = planmod.estimate(model, cfg)
+    try:
+        est = planmod.estimate(model, cfg)
+    except ValueError as e:                       # e.g. a ubatch the compute-buffer model does not cover (hand-edited cache)
+        return False, str(e)
     ram = (profile.get("ram") or {}).get("available_mib")
     if ram is not None and est.ram > planmod.ram_budget(ram):
         return False, f"needs ~{est.ram:.0f} MiB RAM, budget now {planmod.ram_budget(ram):.0f} MiB of {ram:.0f} MiB available"
@@ -53,16 +55,9 @@ def fits_now(model: ModelInfo, cfg: Config, profile: dict[str, Any], tuned_condi
         gpu, free, _ = planmod.pick_gpu(profile)
         if gpu is None or free is None:
             return False, "no usable GPU now"
-        ref = (tuned_conditions or {}).get("free_vram_mib")
-        if ref is not None:
-            floor = ref - (planmod.VRAM_MARGIN_MIB + planmod.VRAM_MARGIN_FRACTION * ref)
-            bench_ctx = (tuned_conditions or {}).get("bench_ctx")
-            if bench_ctx and bench_ctx < cfg.ctx:      # llama-bench ran at a smaller context than the server will use
-                floor += est.vram - planmod.estimate(model, replace(cfg, ctx=bench_ctx)).vram
-            if free < floor:
-                return False, f"free VRAM is {free:.0f} MiB now against {ref:.0f} MiB when tuned (tolerance down to {floor:.0f})"
-        elif est.vram > planmod.vram_budget(free):
-            return False, f"needs ~{est.vram:.0f} MiB VRAM, budget now {planmod.vram_budget(free):.0f} MiB of {free:.0f} MiB free"
+        if est.vram > planmod.vram_budget(free):
+            return False, (f"needs ~{est.vram:.0f} MiB VRAM at ctx {cfg.ctx}, ubatch {cfg.ubatch} (weights {est.vram_weights:.0f}, KV+state "
+                           f"{est.vram_kv + est.vram_state:.0f}, compute {est.vram_compute:.0f}), budget now {planmod.vram_budget(free):.0f} MiB of {free:.0f} MiB free")
     return True, "fits"
 
 
@@ -73,30 +68,39 @@ def select_config(profile: dict[str, Any], model: ModelInfo, plans: dict[str, Pl
         reasons.append(f"tuned entry ignored: it was measured for the '{tuned.plan_name}' plan, not '{name}'")
         tuned = None
     if tuned is not None:
-        cfg = tuned.config
+        spec = plans[name].config.spec_type          # speculation is a serve-time choice; llama-bench never measures it
+        cfg = replace(tuned.config, spec_type=spec)
         if cfg.ctx < plans[name].config.ctx:      # the tuning was made under memory pressure that has passed
             cfg = replace(cfg, ctx=plans[name].config.ctx)
             reasons.append(f"context {tuned.config.ctx} -> {cfg.ctx}: more memory is free than when it was tuned")
-        ok, detail = fits_now(model, cfg, profile, tuned.conditions)
+        ok, detail = fits_now(model, cfg, profile)
         if ok:
-            return Selection(name, cfg, "tuned", reasons + ["tuned configuration still fits the free memory"], plans[name])
+            return Selection(name, cfg, "tuned", reasons + ["tuned configuration fits the server's memory estimate"], plans[name])
         reasons.append(f"tuned configuration skipped: {detail}")
-        # keep what the tuning learned about attention/KV, shrink the layers to what fits now
-        replanned = planmod.build_plan(profile, model, mode=name, ctx=plans[name].requested_ctx, fa=tuned.config.fa, kv=tuned.config.kv)
-        return Selection(name, replanned.config, "plan", reasons + [f"re-planned on current free memory with fa={'on' if tuned.config.fa else 'off'} kv={tuned.config.kv}"], replanned)
+        # keep what the tuning learned about attention/KV/ubatch, shrink the layers to what the server can hold now
+        replanned = planmod.build_plan(profile, model, mode=name, ctx=plans[name].requested_ctx, fa=tuned.config.fa, kv=tuned.config.kv,
+                                       ubatch=min(tuned.config.ubatch, planmod.COMPUTE_MAX_UBATCH), enable_mtp=spec == "draft-mtp", spec=spec if spec in planmod.SPEC_OPT_IN else None)
+        return Selection(name, replanned.config, "plan", reasons + [f"re-planned for the server with fa={'on' if tuned.config.fa else 'off'} "
+                                                                   f"kv={tuned.config.kv} ubatch={tuned.config.ubatch}: {replanned.config.ngl} layers"], replanned)
     return Selection(name, plans[name].config, "plan", reasons, plans[name])
 
 
 def fallback_ladder(cfg: Config, model: ModelInfo) -> list[Config]:
-    """The configurations to try, in order, when loading fails: fewer GPU layers, then a smaller context."""
+    """The configurations to try, in order, when loading fails (H-FALLBACK-STEP).
+
+    One GPU layer fewer at a time for FALLBACK_FINE_STEPS steps (when the estimate is wrong it is wrong by about one layer:
+    the first version of this ladder jumped 15 -> 11 although 14 loads), then steps of 4 layers down to 0, then a smaller
+    context with the CPU only. `-ngl` above the layer count (99) means "everything" and counts as the full model.
+    """
     ladder = [cfg]
-    top = model.trunk_layers
-    ngl = top if cfg.ngl > top else cfg.ngl
-    if cfg.ngl > top:
-        ladder.append(replace(cfg, ngl=top))              # all blocks on the GPU, output layer on the CPU
-    n = ngl
+    n = min(cfg.ngl, model.layer_slots + 1)
+    fine = 0
     while n > 0:
-        n = max(0, (n - 4) if n > 4 else 0)
+        if fine < planmod.FALLBACK_FINE_STEPS:
+            n -= 1
+            fine += 1
+        else:
+            n = max(0, n - 4)
         ladder.append(replace(cfg, ngl=n))
     ctx = cfg.ctx
     while ctx > planmod.CTX_MIN:
@@ -183,7 +187,7 @@ def start_server(server: list[str], model: ModelInfo, cfg: Config, *, host: str,
     for i, c in enumerate(fallback_ladder(cfg, model)[:max_attempts]):
         cmd = planmod.server_command(server, model.path, c, host, port, caps)
         log = log_dir / f"llama-server-{time.strftime('%Y%m%d-%H%M%S')}-{i}.log"
-        progress(f"attempt {i + 1}: ngl={c.ngl} ctx={c.ctx} fa={'on' if c.fa else 'off'} kv={c.kv}")
+        progress(f"attempt {i + 1}: ngl={c.ngl} ctx={c.ctx} fa={'on' if c.fa else 'off'} kv={c.kv} ub={c.ubatch} spec={c.spec_type or 'none'}")
         with open(log, "wb") as lf:
             proc = subprocess.Popen(cmd, stdout=lf, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
         ok, detail = wait_healthy(proc, host, port, health_timeout)
@@ -199,7 +203,8 @@ def start_server(server: list[str], model: ModelInfo, cfg: Config, *, host: str,
 
 def serve(model_path: str, *, llama_dir: str | None = None, host: str = "127.0.0.1", port: int = 8080, ctx: int = planmod.CTX_TARGET,
           cache_dir: str | None = None, health_timeout: float = 300.0, server_prefix: list[str] | None = None,
-          profile: dict[str, Any] | None = None, depth: int = autotune.DEFAULT_DEPTH, pp_floor: float = autotune.DEFAULT_PP_FLOOR, progress: Callable[[str], None] = print) -> tuple[Server, Selection]:
+          profile: dict[str, Any] | None = None, depth: int = autotune.DEFAULT_DEPTH, pp_floor: float = autotune.DEFAULT_PP_FLOOR,
+          spec: str | None = None, progress: Callable[[str], None] = print) -> tuple[Server, Selection]:
     """Probe, select, launch. `server_prefix` replaces the executable lookup (tests use it for a fake server)."""
     model = planmod.load_model(model_path)
     cache = autotune.Cache(cache_dir)
@@ -207,7 +212,7 @@ def serve(model_path: str, *, llama_dir: str | None = None, host: str = "127.0.0
     if not server_exe[0]:
         raise RuntimeError("llama-server not found (use --llama-dir or $FORGE_LLAMA_DIR)")
     profile = profile or probemod.probe(llama_dir, str(Path(model_path).parent))
-    plans = planmod.build_all(profile, model, ctx=ctx)
+    plans = planmod.build_all(profile, model, ctx=ctx, spec=spec)
     name, _ = planmod.choose_plan(profile, plans)
     tuned = None
     bench = util.find_tool("llama-bench", llama_dir)

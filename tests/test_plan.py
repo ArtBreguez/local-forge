@@ -7,7 +7,7 @@ from pathlib import Path
 from forge import gguf, plan
 from forge.plan import Caps, Config
 
-from .helpers import FIX, ROOT, profile, real_model, tiny_gguf
+from .helpers import FIX, ROOT, fit_params_grid, profile, real_model, tiny_gguf
 
 
 class ModelArithmetic(unittest.TestCase):
@@ -76,65 +76,167 @@ class ModelArithmetic(unittest.TestCase):
 
 
 class IndependentOracle(unittest.TestCase):
-    """Expected VRAM computed here from the raw fixture numbers, not with the planner's own helpers,
-    so a bug in estimate()/max_layers() cannot cancel itself out."""
+    """Expected VRAM computed here from the raw fixture numbers and llama.cpp's own estimate (results/fit-params-grid-*.txt),
+    with the placement rule written out again, so a bug in estimate()/max_layers() cannot cancel itself out."""
 
-    def expected_vram_mib(self, ngl, ctx, kv_bytes_per_elem, scratch=plan.COMPUTE_BASE_MIB):
+    def placed_mib(self, ngl, ctx, kv_bytes_per_elem):
+        """Weights + KV + recurrent state of what llama.cpp puts on the GPU for -ngl N: block slots >= n_layer + 1 - N, output matrix first."""
         d = json.loads((FIX / "modelinfo-dsv4-9b.json").read_text())
-        n = d["trunk_layers"]
-        on_gpu = range(n - min(ngl, n), n)
-        weights = sum(d["layer_bytes"][i] for i in on_gpu) + (d["output_bytes"] if ngl > n else 0)
+        if ngl <= 0:
+            return 0.0
+        n_layer, trunk = d["block_count"], d["trunk_layers"]
+        on_gpu = range(max(0, n_layer + 1 - ngl), trunk)
+        weights = sum(d["layer_bytes"][i] for i in on_gpu) + d["output_bytes"]
         kv = sum(d["kv_elems_per_token"][i] for i in on_gpu) * kv_bytes_per_elem * ctx
         state = sum(d["state_bytes_per_recurrent_layer"] for i in on_gpu if d["kv_elems_per_token"][i] == 0)
-        return (weights + kv + state) / 2**20 + (scratch if ngl else 0)
+        return (weights + kv + state) / 2**20
 
     def test_estimate_matches_hand_arithmetic(self):
         m = real_model()
         for ngl, ctx, kv, bpe in ((16, 16384, "f16", 2.0), (16, 32768, "f16", 2.0), (16, 16384, "q8_0", 34 / 32),
-                                  (8, 8192, "f16", 2.0), (32, 16384, "f16", 2.0), (33, 16384, "f16", 2.0), (0, 16384, "f16", 2.0),
-                                  (15, 16384, "f16", 2.0), (13, 8192, "q8_0", 34 / 32), (18, 16384, "f16", 2.0), (21, 32768, "f16", 2.0)):
+                                  (8, 8192, "f16", 2.0), (32, 16384, "f16", 2.0), (33, 16384, "f16", 2.0), (99, 16384, "f16", 2.0),
+                                  (15, 16384, "f16", 2.0), (13, 8192, "q8_0", 34 / 32), (18, 16384, "f16", 2.0), (21, 32768, "f16", 2.0),
+                                  (1, 16384, "f16", 2.0), (2, 16384, "f16", 2.0), (3, 16384, "f16", 2.0)):
             # (the non-multiples of 4 matter: this model repeats every 4 layers, so the first n and the last n
             #  blocks weigh the same when n is a multiple of 4 and a wrong end would go unnoticed)
-            got = plan.estimate(m, Config(ngl, ctx, 6, 6, kv != "f16", kv)).vram
-            self.assertAlmostEqual(got, self.expected_vram_mib(ngl, ctx, bpe), places=3, msg=(ngl, ctx, kv))
+            cfg = Config(ngl, ctx, 6, 6, kv != "f16", kv)
+            e = plan.estimate(m, cfg)
+            self.assertAlmostEqual(e.vram_weights + e.vram_kv + e.vram_state, self.placed_mib(ngl, ctx, bpe), places=3, msg=(ngl, ctx, kv))
+            self.assertAlmostEqual(e.vram, self.placed_mib(ngl, ctx, bpe) + plan.compute_mib(m, cfg), places=3, msg=(ngl, ctx, kv))
+        self.assertEqual(plan.estimate(m, Config(0, 16384, 6, 6, False)).vram, 0)
+
+    def test_offload_order_matches_llama_cpp(self):
+        """H-OUTPUT-LAYER, from llama.cpp's own numbers: -ngl 1 is the output matrix alone, -ngl 2 adds only the empty MTP slot, -ngl N is N-2 blocks."""
+        m = real_model()
+        grid = fit_params_grid()
+        out_mib = m.output_bytes / 2**20
+        self.assertEqual(grid[(1, 16384, 512, "off", "f16")][0], int(out_mib))      # fit-params prints whole MiB, truncated
+        self.assertEqual(grid[(2, 16384, 512, "off", "f16")][0], grid[(1, 16384, 512, "off", "f16")][0])
+        self.assertEqual(plan.gpu_layer_ids(m, 1), [])
+        self.assertEqual(plan.gpu_layer_ids(m, 2), [])
+        self.assertEqual(plan.gpu_layer_ids(m, 3), [31])
+        self.assertEqual(plan.gpu_layer_ids(m, 16), list(range(18, 32)))
+        self.assertEqual(plan.gpu_layer_ids(m, 34), list(range(32)))
+        self.assertEqual(plan.gpu_layer_ids(m, 99), list(range(32)))
+        self.assertEqual(plan.gpu_layer_ids(m, 0), [])
+        e1 = plan.estimate(m, Config(1, 16384, 6, 6, False))
+        self.assertAlmostEqual(e1.vram_weights, out_mib, places=3)       # the output matrix is charged from the first layer on
+        self.assertEqual(plan.all_layers(m), 99)
+        self.assertEqual(plan.all_layers(replace(m, block_count=126, trunk_layers=126)), 127)
+
+    def test_weights_and_kv_agree_with_llama_cpps_own_estimate_everywhere(self):
+        """135 (ngl, ctx, ubatch <= 512, FA, KV) points of llama-fit-params: model and context buffers within 2-3 MiB, by the hand rule and by estimate()."""
+        m = real_model()
+        checked = 0
+        for (ngl, ctx, ub, fa, kv), (model_mib, ctx_mib, _compute) in fit_params_grid().items():
+            if ub > plan.COMPUTE_MAX_UBATCH:
+                continue
+            bpe = plan.KV_BYTES_PER_ELEM[kv]
+            self.assertAlmostEqual(self.placed_mib(ngl, ctx, bpe), model_mib + ctx_mib, delta=3, msg=(ngl, ctx, ub, fa, kv))
+            e = plan.estimate(m, Config(ngl, ctx, 6, 6, fa == "on", kv, ub))
+            self.assertAlmostEqual(e.vram_weights, model_mib, delta=2, msg=(ngl, ctx, ub, fa, kv))
+            self.assertAlmostEqual(e.vram_kv + e.vram_state, ctx_mib, delta=2, msg=(ngl, ctx, ub, fa, kv))
+            checked += 1
+        self.assertGreaterEqual(checked, 135)
+
+    def test_compute_model_tracks_llama_cpps_estimate(self):
+        """H-COMPUTE-SCRATCH: never below llama.cpp's number by more than 36 MiB, at most 36 above for every layer count a 4 GB card can hold, 100 above at -ngl 99."""
+        m = real_model()
+        worst_under = worst_over_small = worst_over = 0.0
+        for (ngl, ctx, ub, fa, kv), (_m, _c, compute) in fit_params_grid().items():
+            if ngl == 0 or ub > plan.COMPUTE_MAX_UBATCH:
+                continue
+            err = plan.compute_mib(m, Config(ngl, ctx, 6, 6, fa == "on", kv, ub)) - compute
+            worst_under = min(worst_under, err)
+            worst_over = max(worst_over, err)
+            if ngl <= 20:
+                worst_over_small = max(worst_over_small, err)
+        self.assertGreaterEqual(worst_under, -36)
+        self.assertLessEqual(worst_over_small, 36)
+        self.assertLessEqual(worst_over, 100)
+
+    def test_compute_model_is_exact_where_the_facts_are(self):
+        m = real_model()
+        grid = fit_params_grid()
+        for (ctx, ub, fa), want in (((8704, 512, False), 517), ((8704, 256, False), 258), ((16384, 512, False), 673), ((16384, 256, False), 377),
+                                    ((8704, 512, True), 517), ((8704, 256, True), 258), ((16384, 512, True), 517)):
+            kv = "f16"
+            self.assertEqual(grid[(16, ctx, ub, "on" if fa else "off", kv)][2], want)          # the ground truth itself
+            self.assertAlmostEqual(plan.compute_mib(m, Config(16, ctx, 6, 6, fa, kv, ub)), want, delta=25, msg=(ctx, ub, fa))
+
+    def test_the_failed_server_allocation_is_the_compute_buffer(self):
+        """705695744 bytes (llama-server, ngl 15, 16K, ubatch 512) = 673 MiB = what llama-fit-params says that buffer is."""
+        log = (ROOT / "results" / "llama-server-fail-ngl15-ctx16384-host-20261108.log").read_text()
+        self.assertIn("Device memory allocation of size 705695744 failed", log)
+        self.assertIn("failed to allocate compute pp buffers", log)
+        self.assertEqual(int(705695744 / 2**20), 673)
+        self.assertEqual(fit_params_grid()[(15, 16384, 512, "off", "f16")][2], 673)
+        bench_oom = (FIX / "llama-bench-sweepd-snapshot.log").read_text()          # sweep D's last failure: FA on, q8_0, ubatch 256, ngl 20
+        self.assertEqual(int(271058944 / 2**20), 258)
+        self.assertEqual(fit_params_grid()[(16, 8704, 256, "on", "q8_0")][2], 258)
+        self.assertIn("ngl=20 fa=on kv=q8_0 ub=256 rc=1", bench_oom)
 
     def test_kv_doubles_with_context_and_shrinks_with_q8(self):
         m = real_model()
-        k16 = plan.estimate(m, Config(32, 16384, 6, 6, False)).vram_kv
-        k32 = plan.estimate(m, Config(32, 32768, 6, 6, False)).vram_kv
-        kq8 = plan.estimate(m, Config(32, 16384, 6, 6, True, "q8_0")).vram_kv
+        k16 = plan.estimate(m, Config(34, 16384, 6, 6, False)).vram_kv
+        k32 = plan.estimate(m, Config(34, 32768, 6, 6, False)).vram_kv
+        kq8 = plan.estimate(m, Config(34, 16384, 6, 6, True, "q8_0")).vram_kv
         self.assertAlmostEqual(k16, 512.0)                  # 8 layers x 4096 B/token x 16384 / 2^20
         self.assertAlmostEqual(k32, 2 * k16)
         self.assertAlmostEqual(kq8, k16 * 34 / 32 / 2)
 
-    def test_scratch_reserve_sits_inside_the_window_the_sweeps_leave_open(self):
-        """16 layers load -> scratch <= free - need16; 17 fail -> scratch > free - need17 (non-scratch need by hand arithmetic)."""
-        need = lambda n: self.expected_vram_mib(n, 8704, 2.0, scratch=0)
-        lo, hi = 3443 - need(17), 3443 - need(16)
-        reserve = plan.COMPUTE_BASE_MIB + plan.VRAM_MARGIN_MIB + plan.VRAM_MARGIN_FRACTION * 3443
-        self.assertLess(lo, reserve)
-        self.assertLessEqual(reserve, hi)
+    def test_compute_buffer_grows_with_context_and_ubatch_and_ignores_context_with_flash_attention(self):
+        m = real_model()
+        c = lambda ctx, ub, fa: plan.compute_mib(m, Config(16, ctx, 6, 6, fa, "f16", ub))
+        self.assertLess(c(8704, 512, False), c(16384, 512, False))
+        self.assertLess(c(16384, 512, False), c(32768, 512, False))
+        self.assertLess(c(16384, 256, False), c(16384, 512, False))
+        self.assertEqual(c(4096, 512, True), c(32768, 512, True))
+        self.assertLess(c(16384, 512, True), c(16384, 512, False))
+        self.assertEqual(c(8704, 512, False), c(8192, 512, False))             # below ~12K the logits phase dominates: context is free
+        with self.assertRaises(ValueError):
+            c(16384, 1024, False)
+        with_no_vocab = replace(m, n_vocab=0)                                 # a header without a vocabulary size: assume the large end
+        self.assertGreater(plan.compute_mib(with_no_vocab, Config(16, 16384, 6, 6, True, "f16", 512)), c(16384, 512, True))
+
+    def test_reserve_sits_inside_the_window_the_facts_leave_open(self):
+        """Six load/fail facts on 3443 MiB free, with llama.cpp's own model+context+compute numbers (the grid, not the planner):
+        a loading run needs reserve <= free - total, a failing run needs reserve > free - total."""
+        g = fit_params_grid()
+        total = lambda ngl, ctx, ub: sum(g[(ngl, ctx, ub, "off", "f16")])
+        loads = [(16, 8704, 512), (18, 8704, 256), (14, 16384, 512)]           # llama-bench, llama-bench, llama-server
+        fails = [(17, 8704, 512), (19, 8704, 256), (15, 16384, 512)]
+        hi = min(3443 - total(*c) for c in loads)
+        lo = max(3443 - total(*c) for c in fails)
+        self.assertEqual((lo, hi), (271, 389))                                  # llama.cpp-side window: (271, 389] MiB
+        reserve = 3443 - plan.vram_budget(3443)
+        self.assertLess(lo + 40, reserve)                                      # at least 40 MiB inside the window on either side
+        self.assertLessEqual(reserve + 40, hi)
 
     def test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin(self):
         """Physical bound, independent of the margin constants: the true need must be below what is free."""
         m = real_model()
         for free in range(1000, 8000, 250):
             p = plan.build_plan(profile(free_vram=free, vram_total=free + 600), m)
-            need = self.expected_vram_mib(min(p.config.ngl, 33), p.config.ctx, plan.KV_BYTES_PER_ELEM[p.config.kv], plan.COMPUTE_BASE_MIB)
+            need = self.placed_mib(p.config.ngl, p.config.ctx, plan.KV_BYTES_PER_ELEM[p.config.kv]) + (plan.compute_mib(m, p.config) if p.config.ngl else 0)
             self.assertLess(need, free, f"free={free}: plan {p.summary()} needs {need:.0f} MiB by hand arithmetic")
 
-    def test_plan_for_the_idle_card_survives_the_drift_seen_in_the_fixtures(self):
-        """H-VRAM-HEADROOM: free VRAM was 3443 MiB idle and 3105 MiB with a benchmark running. A plan made on the idle
-        card must still fit the busy one (by hand arithmetic, not by the planner's own budget function)."""
+    def test_plan_follows_free_vram_down_to_the_busy_card(self):
+        """3443 MiB free idle, 3105 with a benchmark running (fixtures). The reserve does not cover a drop that large (H-VRAM-HEADROOM says so):
+        what keeps the server loading is the re-probe at every start (and the one-layer fallback), so the busy plan must be smaller and fit its own budget."""
         from forge import probe
         idle = probe.parse_list_devices((FIX / "list-devices-rx6500xt-idle.txt").read_text())[1][0]["free_mib"]
         busy = probe.parse_list_devices((FIX / "list-devices-rx6500xt-busy.txt").read_text())[1][0]["free_mib"]
         self.assertEqual((idle, busy), (3443, 3105))
         for kv in (None, "q8_0"):
-            p = plan.build_plan(profile(free_vram=idle), real_model(), kv=kv)
-            bpe = plan.KV_BYTES_PER_ELEM[p.config.kv]
-            need = self.expected_vram_mib(min(p.config.ngl, 33), p.config.ctx, bpe)
-            self.assertLessEqual(need, busy, f"{p.summary()} needs {need:.0f} MiB but the card had {busy} free when busy")
+            a = plan.build_plan(profile(free_vram=idle), real_model(), kv=kv)
+            b = plan.build_plan(profile(free_vram=busy), real_model(), kv=kv)
+            self.assertLess(b.config.ngl, a.config.ngl, (kv, a.summary(), b.summary()))
+            need = self.placed_mib(b.config.ngl, b.config.ctx, plan.KV_BYTES_PER_ELEM[b.config.kv]) + plan.compute_mib(real_model(), b.config)
+            self.assertLessEqual(need, busy)
+            need_idle = self.placed_mib(a.config.ngl, a.config.ctx, plan.KV_BYTES_PER_ELEM[a.config.kv]) + plan.compute_mib(real_model(), a.config)
+            self.assertGreater(need_idle + 271, busy,          # 271 MiB = the least unexplained overhead the load/fail facts allow
+                               "if this fails the busy card now holds the idle plan: H-VRAM-HEADROOM's 'not covered' sentence is out of date")
 
     def test_this_machine_never_gets_layers_that_failed_to_load_in_llama_cpp(self):
         """Measured: ngl=20 failed at ~8.7K context on 3443 MiB free (all settings). The plan must stay below it at any context >= that."""
@@ -175,29 +277,56 @@ class VramFit(unittest.TestCase):
         self.assertEqual(p.config.ngl, 0)
         self.assertTrue(any("CPU-only" in w for w in p.warnings))
 
-    def test_this_machine_lands_near_the_measured_best(self):
-        """JOURNAL.md: best measured is ~16 layers at 16K (sweep A: 16; sweep B with q8_0 KV: 16)."""
+    def test_this_machine_lands_on_the_measured_server_limit(self):
+        """llama-server at 16K, FA off, f16, ubatch 512: 15 layers fail to load, 14 load (results/phase2.log). The plan must say 14, not 15."""
         m = real_model()
         default = plan.build_plan(profile(), m)
-        self.assertEqual(default.config.ctx, 16384)
-        self.assertEqual(default.config.threads, 6)
-        self.assertLessEqual(abs(default.config.ngl - 16), 2, default.summary())
+        self.assertEqual((default.config.ctx, default.config.threads, default.config.ubatch), (16384, 6, 512))
+        self.assertEqual(default.config.ngl, 14, default.summary())
+        log = (ROOT / "results" / "phase2.log").read_text()
+        self.assertIn("load ngl=15 ctx=16384 ok=False", log)
+        self.assertIn("load ngl=14 ctx=16384 ok=True", log)
         q8 = plan.build_plan(profile(), m, kv="q8_0")
         self.assertEqual((q8.config.fa, q8.config.kv), (True, "q8_0"))
         self.assertLessEqual(abs(q8.config.ngl - 16), 2, q8.summary())
 
-    def test_matches_the_llama_cpp_load_boundary_measured_in_sweeps_c_and_d(self):
-        """llama-bench at ~8.7K context, 3443 MiB free. Sweep C: ngl=16 loaded and ngl=20 failed for FA off/on and f16/q8_0.
-        Sweep D (ubatch 512, FA off, f16): 16 ran, 17 failed at depth, 18-20 failed. The plan must put the line between 16 and 17."""
+    def test_matches_the_load_boundary_measured_in_llama_bench_and_llama_server(self):
+        """Six facts on 3443 MiB free, FA off, f16: llama-bench (context 8704) loads 16 / fails 17 at ubatch 512 and loads 18 / fails 19 at 256;
+        llama-server (context 16384, ubatch 512) loads 14 / fails 15. One reserve, one compute model, all six."""
         m = real_model()
         budget = plan.vram_budget(3443)
+        fits = lambda n, ctx, ub: plan.estimate(m, Config(n, ctx, 6, 6, False, "f16", ub)).vram <= budget
+        for n, ctx, ub, loads in ((16, 8704, 512, True), (17, 8704, 512, False), (18, 8704, 256, True), (19, 8704, 256, False),
+                                  (14, 16384, 512, True), (15, 16384, 512, False)):
+            self.assertEqual(fits(n, ctx, ub), loads, (n, ctx, ub))
+        # and the plan is exactly at those lines
+        for ctx, ub, want in ((8704, 512, 16), (8704, 256, 18), (16384, 512, 14), (16384, 256, 16)):
+            self.assertEqual(plan.max_layers(m, Config(0, ctx, 6, 6, False, "f16", ub), 3443), want, (ctx, ub))
+        log = (FIX / "llama-bench-sweepd-snapshot.log").read_text()      # and the sweeps' logs really say that
+        for line in ("ngl=16 fa=off kv=f16 ub=512 rc=0", "ngl=17 fa=off kv=f16 ub=512 rc=1", "ngl=18 fa=off kv=f16 ub=256 rc=0", "ngl=19 fa=off kv=f16 ub=256 rc=1"):
+            self.assertIn(line, log)
+        # sweep C (ubatch 512, ~8.7K): 16 loads for FA off/on and f16/q8_0, 20 fails for all three
         for fa, kv in ((False, "f16"), (True, "f16"), (True, "q8_0")):
             self.assertLessEqual(plan.estimate(m, Config(16, 8704, 6, 6, fa, kv)).vram, budget, (fa, kv))
             self.assertGreater(plan.estimate(m, Config(20, 8704, 6, 6, fa, kv)).vram, budget, (fa, kv))
-        self.assertGreater(plan.estimate(m, Config(17, 8704, 6, 6, False, "f16")).vram, budget)
-        log = (FIX / "llama-bench-sweepd-snapshot.log").read_text()      # and the sweeps' logs really say that
-        self.assertIn("ngl=16 fa=off kv=f16 ub=512 rc=0", log)
-        self.assertIn("ngl=17 fa=off kv=f16 ub=512 rc=1", log)
+        # sweep D, FA on + q8_0 at ubatch 256: 18 loads, 20 fails
+        self.assertLessEqual(plan.estimate(m, Config(18, 8704, 6, 6, True, "q8_0", 256)).vram, budget)
+        self.assertGreater(plan.estimate(m, Config(20, 8704, 6, 6, True, "q8_0", 256)).vram, budget)
+
+    def test_a_smaller_ubatch_buys_layers_and_the_server_plan_carries_it(self):
+        m = real_model()
+        a = plan.build_plan(profile(), m)
+        b = plan.build_plan(profile(), m, ubatch=256)
+        self.assertEqual((a.config.ubatch, b.config.ubatch), (512, 256))
+        self.assertGreaterEqual(b.config.ngl - a.config.ngl, 2)                       # sweep D: 18 vs 16 at 8.7K; here 16 vs 14 at 16K
+        self.assertIn("-ub 256", " ".join(plan.server_command("llama-server", "m.gguf", b.config)))
+        self.assertIn("-ub 512", " ".join(plan.server_command("llama-server", "m.gguf", a.config)))
+        with self.assertRaises(ValueError):
+            plan.build_plan(profile(), m, ubatch=1024)
+        # at 32K the compute buffer alone (2.3 GiB at ubatch 512) leaves no layer; a smaller ubatch does
+        roomy = profile(ram_free=20000)
+        self.assertEqual(plan.build_plan(roomy, m, ctx=32768, kv="f16", fa=False).config.ngl, 0)
+        self.assertGreater(plan.build_plan(roomy, m, ctx=32768, kv="f16", fa=False, ubatch=256).config.ngl, 8)
 
     def test_longer_context_costs_layers(self):
         m = real_model()
@@ -291,7 +420,30 @@ class CommandLine(unittest.TestCase):
         s = " ".join(cmd)
         for frag in ("-m m.gguf", "--port 8080", f"-ngl {cfg.ngl}", f"-c {cfg.ctx}", "-t 6", "-fa off", "-ctk f16", "-ctv f16", "-np 1", "--fit off"):
             self.assertIn(frag, s)
-        self.assertNotIn("--spec-type", s)
+        self.assertIn("--spec-type none", s)                       # explicit: speculation is off unless asked for (H-SPEC-NONE)
+
+    def test_speculative_decoding_is_opt_in(self):
+        m, prof = real_model(), profile()
+        default = plan.build_plan(prof, m)
+        self.assertIsNone(default.config.spec_type)
+        self.assertTrue(any(d.rule == "H-SPEC-NONE" and "none" in d.text for d in default.decisions))
+        dcmd = plan.server_command("llama-server", "m.gguf", default.config)
+        self.assertEqual(dcmd[dcmd.index("--spec-type") + 1], "none")
+        self.assertTrue(all(p.config.spec_type is None for p in plan.build_all(prof, m).values()))
+        on = plan.build_plan(prof, m, spec="ngram-mod")
+        self.assertEqual(on.config.spec_type, "ngram-mod")
+        self.assertEqual(on.config.ngl, default.config.ngl)               # host-side drafting: the GPU plan does not change
+        cmd = plan.server_command("llama-server", "m.gguf", on.config)
+        self.assertEqual(cmd[cmd.index("--spec-type") + 1], "ngram-mod")
+        for rejected in ("ngram-cache", "ngram-simple", "draft-mtp", "bogus"):          # measured worse, or not available: not offered
+            with self.assertRaises(ValueError):
+                plan.build_plan(prof, m, spec=rejected)
+        self.assertEqual(plan.build_plan(prof, m, enable_mtp=True).config.spec_type, None)    # MTP tensors absent in this GGUF: still off
+        old = plan.server_command("s", "m", plan.build_plan(prof, m).config, caps=Caps(spec_type=False))
+        self.assertNotIn("--spec-type", old)                                # builds without the flag are left alone
+        help_text = (FIX / "llama-server-help-b12207.txt").read_text(encoding="utf-8")
+        self.assertIn("ngram-mod", help_text.split("--spec-type")[1].split("\n")[0])
+        self.assertIn("default:\n                                        none", help_text.split("--spec-type")[1].split("(env")[0])
 
     def test_old_builds_get_a_bare_fa_switch_and_no_unknown_flags(self):
         cfg = Config(10, 8192, 4, 4, True, "q8_0")
@@ -339,7 +491,7 @@ class HeuristicRegistry(unittest.TestCase):
     def test_registry_has_every_rule_the_docs_promise(self):
         expected = {"H-LAYERS-VRAM-FIT", "H-VRAM-HEADROOM", "H-OUTPUT-LAYER", "H-KV-ATTN-ONLY", "H-FA-BACKEND", "H-KV-Q8-GAIN",
                     "H-THREADS-PHYSICAL", "H-CTX-TARGET", "H-CTX-RAM", "H-MTP", "H-PARALLEL-1", "H-FIT-OFF", "H-UBATCH", "H-CPU-ONLY",
-                    "H-LOW-POWER", "H-UNKNOWN-FREE-VRAM"}
+                    "H-LOW-POWER", "H-UNKNOWN-FREE-VRAM", "H-COMPUTE-SCRATCH", "H-SPEC-NONE", "H-FALLBACK-STEP", "H-SERVER-RECHECK", "H-TUNE-LAYERS-MONOTONE"}
         self.assertEqual(set(plan.HEURISTICS), expected)
 
     def test_evidence_files_exist_and_untested_is_admitted(self):
@@ -367,6 +519,19 @@ class HeuristicRegistry(unittest.TestCase):
         journal = (ROOT / "docs" / "JOURNAL.md").read_text(encoding="utf-8")
         for needle in ("9.19", "8.32", "8.00", "7.81"):
             self.assertIn(needle, journal)
+
+    def test_phase2_numbers_cited_by_h_spec_none_are_in_the_raw_rows(self):
+        import json
+        rows = [json.loads(l) for l in (ROOT / "results" / "phase2-spec.jsonl").read_text().splitlines() if l.strip()]
+        by = lambda spec: {(r["prompt"], r["rep"]): r for r in rows if r["spec"] == spec}
+        none, mod = by("none"), by("ngram-mod")
+        mean = lambda d: sum(r["gen_tps"] for r in d.values()) / len(d)
+        self.assertAlmostEqual(mean(none), 9.03, places=2)
+        self.assertAlmostEqual(mean(mod), 10.75, places=2)
+        self.assertAlmostEqual(max(r["gen_tps"] for r in mod.values()), 17.49, places=2)
+        self.assertEqual(sum(1 for k in none if none[k]["text_sha"] == mod[k]["text_sha"]), 6)        # 2 of 8 outputs differ at temperature 0
+        self.assertEqual(sum(1 for k in none if none[k]["text_sha"] == by("ngram-cache")[k]["text_sha"]), 4)
+        self.assertTrue(all(r["ngl"] == 14 for r in rows if r["spec"] != "draft-mtp"))
 
 
 if __name__ == "__main__":

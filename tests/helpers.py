@@ -18,6 +18,20 @@ def fixture(name: str) -> str:
     return (FIX / name).read_text(encoding="utf-8")
 
 
+def fit_params_grid() -> dict[tuple[int, int, int, str, str], tuple[int, int, int]]:
+    """llama-fit-params b12207 on the host (results/fit-params-grid-host-20261108.txt): (ngl, ctx, ubatch, fa, kv) -> Vulkan0 (model, context, compute) MiB.
+
+    llama.cpp's own estimate of what it allocates; `-fit off -fitp on`, so nothing was loaded and the numbers do not depend on free memory."""
+    out = {}
+    for line in (ROOT / "results" / "fit-params-grid-host-20261108.txt").read_text(encoding="utf-8-sig").splitlines():
+        if line.startswith("#") or "|" not in line:
+            continue
+        head, vulkan, _host = line.split("|")
+        ngl, ctx, ub, fa, kv = head.split()
+        out[(int(ngl), int(ctx), int(ub), fa, kv)] = tuple(int(x) for x in vulkan.split()[1:4])
+    return out
+
+
 def real_model() -> plan.ModelInfo:
     """The DeepSeek-V4-Pro-Qwen3.5-9B heretic IQ4_XS, parsed from the real file by forge/gguf.py on the host."""
     return plan.ModelInfo(**json.loads(fixture("modelinfo-dsv4-9b.json")))

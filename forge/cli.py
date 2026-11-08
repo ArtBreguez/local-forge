@@ -22,6 +22,11 @@ def _common(p: argparse.ArgumentParser, model: bool = True) -> None:
         p.add_argument("--profile", help="use this saved profile JSON instead of probing (for planning another machine or testing)")
 
 
+def _add_spec(p: argparse.ArgumentParser) -> None:
+    p.add_argument("--spec", choices=["none", *planmod.SPEC_OPT_IN], default="none",
+                   help="speculative decoding: off by default (H-SPEC-NONE); ngram-mod is opt-in, it was faster on repeated code but not output-identical at temperature 0")
+
+
 def _need_model(a: argparse.Namespace) -> str:
     if not a.model:
         sys.exit("error: --model (or $FORGE_MODEL) is required")
@@ -48,14 +53,16 @@ def cmd_plan(a: argparse.Namespace) -> int:
         print(json.dumps(asdict(model)))
         return 0
     prof = _profile(a)
-    kw: dict[str, Any] = {"ctx": a.ctx, "kv": a.kv, "fa": {"on": True, "off": False, None: None}[a.fa], "enable_mtp": a.mtp}
+    kw: dict[str, Any] = {"ctx": a.ctx, "kv": a.kv, "fa": {"on": True, "off": False, None: None}[a.fa], "enable_mtp": a.mtp,
+                          "ubatch": a.ubatch, "spec": None if a.spec == "none" else a.spec}
     plans = planmod.build_all(prof, model, **kw)
     name, why = planmod.choose_plan(prof, plans)
     if a.json:
         print(json.dumps({"applies": name, "reason": why, "plans": {k: v.to_dict() for k, v in plans.items()}}, indent=2))
         return 0
     print(f"model: {model.arch} {model.quant} {model.file_mib:.0f} MiB, {model.trunk_layers} blocks "
-          f"({len(model.attn_layers)} with KV cache), KV {model.kv_bytes_per_token('f16') / 1024:.1f} KiB/token f16")
+          f"({len(model.attn_layers)} with KV cache), KV {model.kv_bytes_per_token('f16') / 1024:.1f} KiB/token f16; "
+          f"-ngl N = N-{model.layer_slots + 1 - model.trunk_layers} blocks + the output matrix on the GPU")
     for k, v in plans.items():
         print(("* " if k == name else "  ") + (planmod.explain(v) if a.explain else v.summary()))
     print(f"applies now: {name} ({why})")
@@ -76,17 +83,19 @@ def cmd_tune(a: argparse.Namespace) -> int:
     print(f"tuning plan '{name}': {p.summary()}\nbudget {a.budget:g}s, depth {a.depth}, reps {a.reps}, prompt floor {a.pp_floor:g} tok/s", flush=True)
     cache = autotune.Cache(a.cache_dir)
     res, key = autotune.tune_cached(prof, model, p, [bench], cache, force=a.force, depth=a.depth, pp_floor=a.pp_floor,
-                                    reps=a.reps, budget_s=a.budget, caps=caps, progress=lambda s: print("  " + s, flush=True))
+                                    reps=a.reps, budget_s=a.budget, caps=caps, ubatches=tuple(int(x) for x in a.ubatches.split(",")),
+                                    progress=lambda s: print("  " + s, flush=True))
     print(("cached result" if res.from_cache else f"measured in {res.elapsed_s:.0f}s") + f" (key {key}, cache {cache.path})")
     if res.best is None:
         print("no configuration could be measured; using the plan:", p.summary())
     else:
         b = res.best
-        print(f"best: ngl={b.ngl} fa={'on' if b.fa else 'off'} kv={b.kv}: {b.tgd:.2f} tok/s generation, {b.ppd:.1f} tok/s prompt at depth ({res.objective})")
+        print(f"best: ngl={b.ngl} fa={'on' if b.fa else 'off'} kv={b.kv} ub={b.ub}: {b.tgd:.2f} tok/s generation, {b.ppd:.1f} tok/s prompt at depth ({res.objective})")
     if not res.complete:
         print("note: time budget ran out; result is the best of a partial search")
     server = util.find_tool("llama-server", a.llama_dir) or "llama-server"
-    print("llama-server command line:\n  " + " ".join(planmod.server_command(server, model.path, res.config, caps=Caps())))
+    print("llama-server command line (`forge serve` re-checks it against the server's own memory estimate before using it):\n  "
+          + " ".join(planmod.server_command(server, model.path, res.config, caps=Caps())))
     return 0
 
 
@@ -96,12 +105,13 @@ def cmd_serve(a: argparse.Namespace) -> int:
     try:
         srv, sel = servemod.serve(model_path, llama_dir=a.llama_dir, host=a.host, port=a.port, ctx=a.ctx, cache_dir=a.cache_dir,
                                   health_timeout=a.health_timeout, profile=json.loads(Path(a.profile).read_text()) if a.profile else None,
-                                  depth=a.depth, pp_floor=a.pp_floor,
+                                  depth=a.depth, pp_floor=a.pp_floor, spec=None if a.spec == "none" else a.spec,
                                   progress=lambda s: print(s, flush=True))
     except RuntimeError as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
     print(json.dumps({"endpoint": srv.endpoint, "plan": sel.name, "source": sel.source, "config": asdict(srv.config),
+                      "attempts": [{k: v for k, v in at.items() if k != "log"} for at in srv.attempts],
                       "command": srv.command, "log": str(srv.log_path)}, indent=2), flush=True)
     if a.once:
         srv.stop()
@@ -135,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--kv", choices=["f16", "q8_0"], default=None, help="force the KV cache type")
     p.add_argument("--fa", choices=["on", "off"], default=None, help="force flash attention")
     p.add_argument("--mtp", action="store_true", help="enable MTP speculative decoding if the model has it")
+    p.add_argument("--ubatch", type=int, default=planmod.UBATCH, help="physical batch size (-ub) to plan for (default %(default)s; `tune` also tries 256)")
+    _add_spec(p)
     p.add_argument("--explain", action="store_true", help="show the heuristic behind every decision")
     p.add_argument("--json", action="store_true")
     p.add_argument("--dump-model", action="store_true", help="print the parsed model info as JSON and exit")
@@ -147,6 +159,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--depth", type=int, default=autotune.DEFAULT_DEPTH, help="agent depth: tokens already in the cache (default %(default)s)")
     p.add_argument("--reps", type=int, default=1, help="llama-bench repetitions per point (default %(default)s; the protocol uses 3 for reported numbers)")
     p.add_argument("--pp-floor", type=float, default=autotune.DEFAULT_PP_FLOOR, help="minimum prompt tok/s at depth (default %(default)s)")
+    p.add_argument("--ubatches", default=",".join(map(str, planmod.UBATCH_CHOICES)), help="physical batch sizes to try, comma-separated (default %(default)s; `serve` only finds a tuning made with the default list)")
     p.add_argument("--force", action="store_true", help="ignore the cache")
     p.set_defaults(fn=cmd_tune)
 
@@ -158,6 +171,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--depth", type=int, default=autotune.DEFAULT_DEPTH, help="use the tuning made with this agent depth (default %(default)s)")
     p.add_argument("--pp-floor", type=float, default=autotune.DEFAULT_PP_FLOOR, help="use the tuning made with this prompt floor (default %(default)s)")
     p.add_argument("--once", action="store_true", help="start, check health, print the endpoint, stop (smoke test)")
+    _add_spec(p)
     p.set_defaults(fn=cmd_serve)
 
     p = sub.add_parser("heuristics", help="list every planning rule with its evidence")
