@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "provider": {
+    "ollama": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Ollama (local)",
+      "options": { "baseURL": "http://127.0.0.1:11434/v1" },
+      "models": {
+        "dsv4-9b-heretic": { "name": "DeepSeek-V4-Pro-Qwen3.5-9B heretic (local)" }
+      }
+    }
+  },
+  "model": "ollama/dsv4-9b-heretic",
+  "permission": { "edit": "allow", "bash": "allow", "webfetch": "deny" },
+  "autoupdate": false,
+  "share": "disabled"
+}

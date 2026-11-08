@@ -1,0 +1,9 @@
+start 2026-11-08T10:44:55
+--- capabilities
+    context length      262144                
+  Capabilities
+    tools         
+    thinking      
+    completion    
+--- tests before
+# pass 0 # fail 5
