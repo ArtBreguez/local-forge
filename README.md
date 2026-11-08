@@ -2,7 +2,7 @@
 
 A coding-agent setup that runs entirely on a home PC: pick a model, fit it to the machine, measure it, and drive it with an agent (OpenCode) the way Hermes drives Claude Code. Every number in this repo comes from a script in this repo, run on the machine below.
 
-Status: work in progress. The journal (`docs/JOURNAL.md`) is the source for the article.
+Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps working with no internet at all. The journal (`docs/JOURNAL.md`) is the source for the article.
 
 ## The machine
 

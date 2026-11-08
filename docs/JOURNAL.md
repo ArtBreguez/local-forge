@@ -29,7 +29,7 @@ Takeaway: tool use works; speed and debugging quality are the bottlenecks.
 
 ## 2026-11-08 — sweep A: GPU layers × context × threads (Ollama defaults otherwise)
 
-`02-bench/bench.py a`, prompt of 2,624 tokens (an agent-sized turn), 192 generated tokens, temperature 0, thinking off. Model unloaded between configs so the options apply. Partial results (`results/bench-a.partial.jsonl`):
+`02-bench/bench.py a`, prompt of 2,624 tokens (an agent-sized turn), 192 generated tokens, temperature 0, thinking off. Model unloaded between configs so the options apply. Partial results (`results/bench-a.jsonl`):
 
 | ctx | GPU layers | threads | split | prompt tok/s | gen tok/s |
 |---|---|---|---|---|---|
@@ -42,10 +42,31 @@ Takeaway: tool use works; speed and debugging quality are the bottlenecks.
 | 32K | 12 | 6 | 59/41 | 150.4 | 8.07 |
 | 32K | 16+ | 6 | — | out of VRAM | |
 | 16K | 16 | 12 | 51/49 | 163.9 | 7.81 |
+| 16K | 16 | 5 | 51/49 | 160.9 | 8.00 |
 
 Readings so far:
 - More layers on the GPU help until VRAM runs out: 16 layers at 16K, 12 at 32K. Past that Ollama fails to load instead of falling back.
-- 12 threads (SMT) is slower than 6 (the physical cores): 7.81 vs 8.32 tok/s.
+- 6 threads (one per physical core) is the peak: 5 gives 8.00, 12 (SMT) gives 7.81, 6 gives 8.32 tok/s.
+- Best so far: **16K context, 16 GPU layers, 6 threads: 8.32 tok/s generation, 165 tok/s prompt**, ~9% over Ollama's own pick (10 layers).
 - The gain from 8 to 16 layers is only ~14% on generation: with PCIe x4 and half the model on the CPU, DDR4 bandwidth dominates.
 
 Next: flash attention + q8_0 KV cache at the server level (frees VRAM for more layers or more context), then llama.cpp's `llama-server` directly to use the model's MTP layer for speculative decoding, which Ollama does not.
+
+## 2026-11-08 — sweep B: flash attention + q8_0 KV cache (Ollama, server env vars)
+
+`02-bench/sweep-b.ps1` sets `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`, restarts Ollama, re-runs the layer grid. Server log confirms `flash_attn = enabled`. Raw: `results/bench-b.jsonl`.
+
+| ctx | GPU layers | split | prompt tok/s | gen tok/s |
+|---|---|---|---|---|
+| 16K | 12 | 60/40 | 33.2 | 7.13 |
+| 16K | 16 | 51/49 | 125.6 | **9.19** |
+| 16K | 20 | 42/58 | 76.8 | 8.96 |
+| 16K | 24+ | — | out of VRAM | |
+| 32K | 12 | 60/40 | 150.4 | 7.53 |
+| 32K | 16 | 50/50 | 37.5 | 7.57 |
+| 32K | 20+ | — | out of VRAM | |
+
+Readings:
+- Memory drops (6.0 → 5.7 GB at 16K) and one more layer group fits (20 at 16K, 16 at 32K).
+- Best generation so far: 9.19 tok/s (16K, 16 layers), +10% over sweep A's best.
+- Prompt speed is erratic within the same sweep: 33, 126, 77, 150, 37 tok/s with no monotone pattern. One sample per point cannot separate the configuration from noise (first-load effects, the host's other load). This is why phase 1 moves to `llama-bench` with 3 repetitions and a standard deviation.

@@ -9,3 +9,5 @@
 {"opts": {"num_ctx": 32768, "num_gpu": 20, "num_thread": 6}, "error": "HTTP Error 500: Internal Server Error", "wall": 14.6}
 {"opts": {"num_ctx": 32768, "num_gpu": 24, "num_thread": 6}, "error": "HTTP Error 500: Internal Server Error", "wall": 1.9}
 {"opts": {"num_ctx": 16384, "num_gpu": 16, "num_thread": 12}, "split": "6.0 GB 51%/49% CPU/GPU", "prompt_tokens": 2624, "pp_tps": 163.9, "gen_tokens": 192, "tg_tps": 7.81, "load_s": 20.2, "wall": 60.9}
+{"opts": {"num_ctx": 16384, "num_gpu": 16, "num_thread": 5}, "split": "6.0 GB 51%/49% CPU/GPU", "prompt_tokens": 2624, "pp_tps": 160.9, "gen_tokens": 192, "tg_tps": 8.0, "load_s": 22.5, "wall": 62.9}
+{"done": true}
