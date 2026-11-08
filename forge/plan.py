@@ -217,7 +217,11 @@ HEURISTICS: dict[str, Heuristic] = {h.id: h for h in [
        "No usable GPU, or the GPU plan is not possible: 0 GPU layers, FA off, f16 KV, physical-core threads.",
        "partially measured",
        ("tests/fixtures/llama-bench-sweepc-snapshot.jsonl", "ngl=0: 5.45 tok/s generation and 137 tok/s prompt at depth 8192 on the Ryzen 5 3600"),
-       (None, "measured with llama-bench (Vulkan build, GPU idle), not as a served config on a machine without a GPU; only this CPU was measured")),
+       ("results/fit-params-ngl0-devnone-host-20261108.txt",
+        "-ngl 0 on a Vulkan build still reserves a 1312 MiB compute buffer on the GPU (ubatch 512); only `-dev none` moves it to the host (604 MiB). "
+        "The planner charges 0 MiB of VRAM to a CPU plan and `forge serve` does not pass -dev none, so a CPU rung of the fallback ladder needs ~1.3 GiB of free VRAM too"),
+       (None, "measured with llama-bench (Vulkan build, GPU idle), not as a served config on a machine without a GPU; only this CPU was measured; "
+              "`-dev none` for CPU configurations was checked with llama-fit-params only, never started as a server")),
     _h("H-LOW-POWER",
        "On battery/UPS: half the physical cores, context capped at 8192, GPU layers as the normal plan. Rationale: generation is "
        "memory-bandwidth bound, so fewer threads cost little speed; a smaller context means less re-read work per agent turn.",
@@ -258,6 +262,7 @@ class ModelInfo:
     state_bytes_per_recurrent_layer: int
     warnings: list[str] = field(default_factory=list)
     n_vocab: int = 0                   # 0 = the header did not say
+    mtp_bytes: int = 0                 # weights of the MTP block(s) when the file has them (they sit in the slots after the last transformer block)
 
     @property
     def layer_slots(self) -> int:
@@ -342,6 +347,7 @@ def model_info(h: gguf.GGUFHeader) -> ModelInfo:
 
     lb = h.layer_bytes()
     layer_bytes = [lb.get(i, 0) for i in range(trunk)]
+    mtp_bytes = sum(lb.get(i, 0) for i in range(trunk, block_count))
     nl = h.non_layer_bytes()
     output_bytes = sum(v for k, v in nl.items() if k.startswith("output"))
     embd_bytes = sum(v for k, v in nl.items() if k.startswith("token_embd"))
@@ -357,7 +363,7 @@ def model_info(h: gguf.GGUFHeader) -> ModelInfo:
         nextn_layers=nextn, mtp_tensors_present=bool(mtp_idx) or any(".nextn." in t.name for t in h.tensors),
         attn_layers=attn, kv_elems_per_token=elems, layer_bytes=layer_bytes,
         output_bytes=output_bytes, embd_bytes=embd_bytes, other_bytes=other,
-        state_bytes_per_recurrent_layer=state, warnings=warnings, n_vocab=_n_vocab(h))
+        state_bytes_per_recurrent_layer=state, warnings=warnings, n_vocab=_n_vocab(h), mtp_bytes=mtp_bytes)
 
 
 def load_model(path: str) -> ModelInfo:
@@ -468,6 +474,11 @@ def estimate(m: ModelInfo, cfg: Config) -> Estimate:
             e.ram_kv += kv_tok[i] / MIB
             e.ram_state += rec / MIB
     e.ram_weights += (m.embd_bytes * EMBD_RESIDENT_FRACTION + m.other_bytes) / MIB
+    if m.mtp_bytes:     # the MTP slot is offloaded right after the output layer (first slot after the last block)
+        if cfg.ngl > 0 and max(0, m.layer_slots + 1 - cfg.ngl) <= m.trunk_layers:
+            e.vram_weights += m.mtp_bytes / MIB
+        else:
+            e.ram_weights += m.mtp_bytes / MIB
     if out_on_gpu:
         e.vram_weights += m.output_bytes / MIB
     else:

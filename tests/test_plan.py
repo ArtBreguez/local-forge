@@ -105,6 +105,22 @@ class IndependentOracle(unittest.TestCase):
             self.assertAlmostEqual(e.vram, self.placed_mib(ngl, ctx, bpe) + plan.compute_mib(m, cfg), places=3, msg=(ngl, ctx, kv))
         self.assertEqual(plan.estimate(m, Config(0, 16384, 6, 6, False)).vram, 0)
 
+    def test_mtp_block_weights_are_charged_when_the_file_has_them(self):
+        """tiny_gguf(nextn=1, mtp_tensors=True): the MTP block owns the slot offloaded right after the output matrix."""
+        with tempfile.TemporaryDirectory() as d:
+            with_t = plan.load_model(str(tiny_gguf(Path(d) / "a.gguf", nextn=1, mtp_tensors=True)))
+            without = plan.load_model(str(tiny_gguf(Path(d) / "b.gguf", nextn=1, mtp_tensors=False)))
+        self.assertEqual((with_t.mtp_bytes, without.mtp_bytes), (8192, 0))
+        total = sum(with_t.layer_bytes) + with_t.output_bytes + with_t.embd_bytes + with_t.other_bytes + with_t.mtp_bytes
+        self.assertEqual(total, sum(without.layer_bytes) + without.output_bytes + without.embd_bytes + without.other_bytes + 8192)
+        g = lambda m, ngl: plan.estimate(m, Config(ngl, 4096, 2, 2, False))
+        self.assertAlmostEqual(g(with_t, 1).vram_weights, g(without, 1).vram_weights)               # -ngl 1: the output matrix only
+        self.assertAlmostEqual(g(with_t, 2).vram_weights - g(without, 2).vram_weights, 8192 / 2**20)   # -ngl 2: the MTP slot comes next
+        self.assertAlmostEqual(g(with_t, 99).vram_weights - g(without, 99).vram_weights, 8192 / 2**20)
+        self.assertAlmostEqual(g(with_t, 1).ram_weights - g(without, 1).ram_weights, 8192 / 2**20)   # off the GPU it sits in RAM instead
+        self.assertAlmostEqual(g(with_t, 2).ram_weights, g(without, 2).ram_weights)
+        self.assertEqual(real_model().mtp_bytes, 0)                                                   # the host's GGUF has no MTP tensors
+
     def test_offload_order_matches_llama_cpp(self):
         """H-OUTPUT-LAYER, from llama.cpp's own numbers: -ngl 1 is the output matrix alone, -ngl 2 adds only the empty MTP slot, -ngl N is N-2 blocks."""
         m = real_model()
@@ -414,6 +430,18 @@ class OtherPlans(unittest.TestCase):
 
 
 class CommandLine(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        import json
+        cls._tmp = tempfile.TemporaryDirectory()
+        cls.model = tiny_gguf(Path(cls._tmp.name) / "tiny.gguf")
+        cls.prof = Path(cls._tmp.name) / "profile.json"
+        cls.prof.write_text(json.dumps(profile()))
+
+    @classmethod
+    def tearDownClass(cls):
+        cls._tmp.cleanup()
+
     def test_modern_flags(self):
         cfg = plan.build_plan(profile(), real_model()).config
         cmd = plan.server_command("llama-server", "m.gguf", cfg, "127.0.0.1", 8080)
@@ -421,6 +449,15 @@ class CommandLine(unittest.TestCase):
         for frag in ("-m m.gguf", "--port 8080", f"-ngl {cfg.ngl}", f"-c {cfg.ctx}", "-t 6", "-fa off", "-ctk f16", "-ctv f16", "-np 1", "--fit off"):
             self.assertIn(frag, s)
         self.assertIn("--spec-type none", s)                       # explicit: speculation is off unless asked for (H-SPEC-NONE)
+
+    def test_bad_ubatch_is_a_clean_error_on_the_command_line(self):
+        import subprocess, sys
+        for bad in ("1024", "0"):
+            r = subprocess.run([sys.executable, "-m", "forge", "plan", "--model", str(self.model), "--profile", str(self.prof), "--ubatch", bad],
+                               cwd=ROOT, capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertNotIn("Traceback", r.stderr)
+            self.assertIn("ubatch", r.stderr)
 
     def test_speculative_decoding_is_opt_in(self):
         m, prof = real_model(), profile()

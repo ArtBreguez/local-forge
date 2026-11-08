@@ -365,6 +365,16 @@ class Cache(unittest.TestCase):
         self.assertFalse(again.from_cache)
         self.assertGreater(self.n_measurements(), n)
 
+    def test_cache_variant_does_not_depend_on_the_order_of_ubatches(self):
+        v = lambda ubs: autotune.variant_of(self.plan, ubatches=ubs)
+        self.assertEqual(v((512, 256)), v((256, 512)))
+        self.assertEqual(v((512, 256)), v((256, 512, 256, 4096)))             # duplicates and values the search ignores do not count
+        self.assertNotEqual(v((512, 256)), v((512,)))
+        self.assertEqual(v(plan.UBATCH_CHOICES), autotune.variant_of(self.plan))
+        res, _ = autotune.tune_cached(self.prof, self.m, self.plan, FAKE_BENCH, self.cache, budget_s=3600, ubatches=(256, 512))
+        again, _ = autotune.tune_cached(self.prof, self.m, self.plan, FAKE_BENCH, self.cache, budget_s=3600)
+        self.assertTrue(again.from_cache)                                      # `tune --ubatches 256,512` is what `serve` finds
+
     def test_detect_build_parses_version(self):
         real = fixture("llama-bench-version-b12207.txt")      # the real b12207 output: "0.9.0-dev (build 12207, commit ...)"
         self.assertEqual(autotune.detect_build(["llama-bench"], run=lambda a, timeout=0: (0, real)), "b12207-998200491")

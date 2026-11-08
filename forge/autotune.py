@@ -111,9 +111,6 @@ class Point:
     note: str = ""
     ub: int = 512
 
-    def setting(self) -> tuple[bool, str, int]:
-        return (self.fa, self.kv, self.ub)
-
 
 def bench_args(bench: list[str], model_path: str, cfg: Config, depth: int, reps: int, fa_values: bool, n_prompt: int = 512, n_gen: int = 128) -> list[str]:
     a = list(bench) + ["-m", model_path, "-ngl", str(cfg.ngl), "-t", str(cfg.threads), "-ub", str(cfg.ubatch),
@@ -325,7 +322,8 @@ def variant_of(plan: Plan, depth: int = DEFAULT_DEPTH, pp_floor: float = DEFAULT
 
     Uses the context that was *requested*, not the one the plan ended up with, so that a RAM
     squeeze at serve time still finds the entry that was tuned for the same request."""
-    return f"ctx={plan.requested_ctx};depth={depth};floor={pp_floor:g};plan={plan.name};ub={'/'.join(map(str, ubatches))};search={SEARCH_VERSION}"
+    ubs = sorted({u for u in ubatches if 0 < u <= planmod.COMPUTE_MAX_UBATCH}, reverse=True)     # the set the search uses, not the order it was typed in
+    return f"ctx={plan.requested_ctx};depth={depth};floor={pp_floor:g};plan={plan.name};ub={'/'.join(map(str, ubs))};search={SEARCH_VERSION}"
 
 
 def tune_cached(profile: dict[str, Any], model: ModelInfo, plan: Plan, bench: list[str], cache: Cache, *, force: bool = False,

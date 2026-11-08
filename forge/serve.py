@@ -52,7 +52,15 @@ def fits_now(model: ModelInfo, cfg: Config, profile: dict[str, Any]) -> tuple[bo
     if ram is not None and est.ram > planmod.ram_budget(ram):
         return False, f"needs ~{est.ram:.0f} MiB RAM, budget now {planmod.ram_budget(ram):.0f} MiB of {ram:.0f} MiB available"
     if cfg.ngl > 0:
-        gpu, free, _ = planmod.pick_gpu(profile)
+        if cfg.device:       # a config pinned to one card is checked against that card, not the roomiest one
+            gpu = next((g for g in profile.get("gpus") or [] if g.get("device") == cfg.device and g.get("backend")), None)
+            if gpu is None:
+                return False, f"pinned device {cfg.device} is not present now"
+            free = gpu.get("free_mib")
+            if free is None and gpu.get("total_mib") is not None:
+                free = float(gpu["total_mib"]) * planmod.UNKNOWN_FREE_VRAM_FRACTION
+        else:
+            gpu, free, _ = planmod.pick_gpu(profile)
         if gpu is None or free is None:
             return False, "no usable GPU now"
         if est.vram > planmod.vram_budget(free):
@@ -85,6 +93,11 @@ def select_config(profile: dict[str, Any], model: ModelInfo, plans: dict[str, Pl
     return Selection(name, plans[name].config, "plan", reasons, plans[name])
 
 
+def _placement(model: ModelInfo, ngl: int) -> tuple[bool, tuple[int, ...]]:
+    """What a given -ngl puts on the GPU: (output matrix there?, blocks there). Equal placements are the same server start."""
+    return ngl > 0, tuple(planmod.gpu_layer_ids(model, ngl))
+
+
 def fallback_ladder(cfg: Config, model: ModelInfo) -> list[Config]:
     """The configurations to try, in order, when loading fails (H-FALLBACK-STEP).
 
@@ -95,12 +108,18 @@ def fallback_ladder(cfg: Config, model: ModelInfo) -> list[Config]:
     ladder = [cfg]
     n = min(cfg.ngl, model.layer_slots + 1)
     fine = 0
+    step = 0
+    seen = {_placement(model, cfg.ngl)}
     while n > 0:
         if fine < planmod.FALLBACK_FINE_STEPS:
             n -= 1
             fine += 1
         else:
-            n = max(0, n - 4)
+            step = step or max(4, -(-n // 7))     # at most ~7 coarse rungs however deep the model is, so the context rungs stay reachable
+            n = max(0, n - step)
+        if _placement(model, n) in seen:          # e.g. -ngl 2 and 1 both hold only the output matrix on a model with an MTP slot
+            continue
+        seen.add(_placement(model, n))
         ladder.append(replace(cfg, ngl=n))
     ctx = cfg.ctx
     while ctx > planmod.CTX_MIN:

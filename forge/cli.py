@@ -55,7 +55,10 @@ def cmd_plan(a: argparse.Namespace) -> int:
     prof = _profile(a)
     kw: dict[str, Any] = {"ctx": a.ctx, "kv": a.kv, "fa": {"on": True, "off": False, None: None}[a.fa], "enable_mtp": a.mtp,
                           "ubatch": a.ubatch, "spec": None if a.spec == "none" else a.spec}
-    plans = planmod.build_all(prof, model, **kw)
+    try:
+        plans = planmod.build_all(prof, model, **kw)
+    except ValueError as e:
+        sys.exit(f"error: {e}")
     name, why = planmod.choose_plan(prof, plans)
     if a.json:
         print(json.dumps({"applies": name, "reason": why, "plans": {k: v.to_dict() for k, v in plans.items()}}, indent=2))

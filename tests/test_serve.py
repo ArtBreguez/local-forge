@@ -111,6 +111,21 @@ class Selection(unittest.TestCase):
         # the same 15 layers are fine at the context llama-bench used: the check is about the SERVER's context
         self.assertTrue(serve.fits_now(self.m, replace(tuned.config, ctx=8832), prof)[0])
 
+    def test_a_config_pinned_to_one_card_is_checked_against_that_card(self):
+        """Two GPUs: the tuning pinned Vulkan1 when it had 3443 MiB; now Vulkan0 is the roomy one and Vulkan1 has 1000 MiB."""
+        def two(free0, free1):
+            p = profile(free_vram=free0)
+            p["gpus"].append({"index": 1, "device": "Vulkan1", "backend": "Vulkan", "name": "second", "total_mib": 4080, "free_mib": free1})
+            return p
+        cfg = replace(tuned_for(profile(), self.m).config, device="Vulkan1")
+        self.assertTrue(serve.fits_now(self.m, cfg, two(1000, 3443))[0])
+        ok, why = serve.fits_now(self.m, cfg, two(3443, 1000))
+        self.assertFalse(ok)
+        self.assertIn("1000", why)
+        gone = serve.fits_now(self.m, cfg, profile())                       # the pinned card is not there any more
+        self.assertFalse(gone[0])
+        self.assertIn("Vulkan1", gone[1])
+
     def test_a_ubatch_outside_the_modelled_range_is_rejected_not_a_crash(self):
         prof = profile()
         odd = tuned_for(prof, self.m, ubatch=2048)                      # nothing in forge writes this; a hand-edited cache could
@@ -153,6 +168,23 @@ class Selection(unittest.TestCase):
         self.assertEqual(serve.fallback_ladder(Config(1, 16384, 6, 6, False), self.m)[1].ngl, 0)
         self.assertEqual([c.ngl for c in serve.fallback_ladder(Config(0, 8192, 6, 6, False), self.m)], [0, 0])   # CPU-only: context only
         self.assertEqual(ladder[0], Config(99, 16384, 6, 6, False))
+
+    def test_ladder_has_no_duplicate_server_starts(self):
+        """On a model with an MTP slot -ngl 1 and -ngl 2 both hold only the output matrix: one start, not two."""
+        self.assertEqual([c.ngl for c in serve.fallback_ladder(Config(3, 16384, 6, 6, False), self.m) if c.ctx == 16384], [3, 2, 0])
+        for start in (99, 20, 3):
+            ladder = serve.fallback_ladder(Config(start, 16384, 6, 6, False), self.m)
+            places = [(c.ctx, serve._placement(self.m, c.ngl)) for c in ladder]
+            self.assertEqual(len(places), len(set(places)), start)
+
+    def test_ladder_stays_inside_the_attempt_limit_for_deep_models(self):
+        for blocks in (32, 60, 80, 126):
+            deep = replace(self.m, block_count=blocks, trunk_layers=blocks, nextn_layers=0)
+            ladder = serve.fallback_ladder(Config(plan.all_layers(deep), 16384, 6, 6, False), deep)
+            self.assertLessEqual(len(ladder), serve.MAX_ATTEMPTS, blocks)
+            self.assertEqual(ladder[-1].ctx, plan.CTX_MIN, blocks)
+            self.assertEqual(ladder[-2].ngl, 0)
+            self.assertEqual([c.ngl for c in ladder[1:plan.FALLBACK_FINE_STEPS + 1]], [blocks - i for i in range(plan.FALLBACK_FINE_STEPS)], blocks)   # still single layers first
 
     def test_fallback_ladder_reaches_the_smaller_contexts_within_the_attempt_limit(self):
         for start in (99, 34, 33, 20, 15, 14, 3, 1, 0):

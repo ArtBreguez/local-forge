@@ -12,7 +12,7 @@ Recorded on this project's machines (Ryzen 5 3600 / RX 6500 XT Windows host, Lin
 | `llama-bench-help-b12207.txt`, `llama-server-help-b12207.txt` | `--help` of the b12207 binaries |
 | `windows-cim-processor.json`, `windows-cim-videocontroller.json` | PowerShell `Get-CimInstance ... \| ConvertTo-Json -Compress` on the Windows host |
 | `linux-vm-meminfo.txt`, `linux-vm-cpuinfo.txt` | `/proc/meminfo`, `/proc/cpuinfo` of the Linux VM |
-| `gguf-dump-dsv4-9b.txt`, `modelinfo-dsv4-9b.json` | the real GGUF header parsed on the host by `forge/gguf.py` (metadata dump / `forge plan --dump-model`) |
+| `gguf-dump-dsv4-9b.txt`, `modelinfo-dsv4-9b.json` | the real GGUF header parsed on the host by `forge/gguf.py` (metadata dump / `forge plan --dump-model`; the JSON was regenerated on the host with the fixed code and has the vocabulary size, `n_vocab` 248320) |
 
 **Hand-written, not recorded** (no such hardware here): `nvidia-smi-sample.csv` follows the documented
 `--query-gpu=name,memory.total,memory.free --format=csv,noheader,nounits` format; the CUDA/ROCm/Metal
