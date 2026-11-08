@@ -28,6 +28,7 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 | `02-bench/` | `bench.py` sweeps GPU layers, context and threads through the Ollama API and writes JSON lines; `model-info.ps1` reads what Ollama actually did (layers offloaded, threads, flash attention) |
 | `03-agent/` | a fixed coding task (`agent-test/`: implement `parseDuration` so 5 tests pass), the OpenCode config, and the runner that times the agent and counts passing tests itself |
 | `tools/` | small status probes used while runs are in flight |
+| `skills/` | vendored agent skills for the offline agent, each with `PROVENANCE.md` (source, commit, licence) |
 | `results/` | raw outputs of every run (JSONL, logs, the code the agent wrote) |
 | `docs/JOURNAL.md` | what was tried, in order, with the numbers and the dead ends |
 
