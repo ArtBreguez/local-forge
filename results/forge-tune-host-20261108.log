@@ -1,0 +1,19 @@
+tuning plan 'gpu': [gpu] ngl=15 ctx=16384 threads=6 fa=off kv=f16 | est VRAM 3080 MiB, RAM 4039 MiB
+budget 1200s, depth 8192, reps 1, prompt floor 100 tok/s
+  ngl=15 fa=off kv=f16  ok      pp@d=190.7 tg@d=8.77 tok/s
+  ngl=17 fa=off kv=f16  oom     rc=1: llama_bench: error: failed to create context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489875
+  ngl=13 fa=off kv=f16  ok      pp@d=168.7 tg@d=8.15 tok/s
+  ngl=15 fa=on  kv=f16  ok      pp@d=82.9 tg@d=7.66 tok/s
+  ngl=15 fa=on  kv=q8_0 ok      pp@d=85.6 tg@d=7.23 tok/s
+  ngl=11 fa=off kv=f16  ok      pp@d=169.4 tg@d=7.46 tok/s
+  ngl=17 fa=on  kv=f16  oom     rc=1: llama_bench: error: failed to create context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489875
+  ngl=17 fa=on  kv=q8_0 oom     rc=1: llama_bench: error: failed to create context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489875
+  ngl=13 fa=on  kv=f16  ok      pp@d=81.6 tg@d=6.96 tok/s
+  ngl=13 fa=on  kv=q8_0 ok      pp@d=84.4 tg@d=6.60 tok/s
+  ngl=11 fa=on  kv=f16  ok      pp@d=81.2 tg@d=6.67 tok/s
+  ngl=11 fa=on  kv=q8_0 ok      pp@d=82.6 tg@d=6.25 tok/s
+measured in 1195s (key 2a4ab86a871114e404977037, cache C:\Users\arthu\llm\forge\cache\tune-cache.json)
+best: ngl=15 fa=off kv=f16: 8.77 tok/s generation, 190.7 tok/s prompt at depth (max generation tok/s at agent depth subject to prompt tok/s >= 100)
+llama-server command line:
+  C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8080 -ngl 15 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 512 -np 1 --fit off
+exit=0 

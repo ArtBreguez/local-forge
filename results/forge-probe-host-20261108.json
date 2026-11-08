@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "taken_at": "2026-11-08T13:32:21-0300",
+  "os": {
+    "system": "Windows",
+    "release": "10",
+    "version": "10.0.19045",
+    "machine": "AMD64"
+  },
+  "cpu": {
+    "model": "AMD Ryzen 5 3600 6-Core Processor",
+    "physical_cores": 6,
+    "logical_threads": 12
+  },
+  "ram": {
+    "total_mib": 16291,
+    "available_mib": 5784
+  },
+  "gpus": [
+    {
+      "index": 0,
+      "device": "Vulkan0",
+      "backend": "Vulkan",
+      "name": "AMD Radeon RX 6500 XT",
+      "total_mib": 4080,
+      "free_mib": 3443,
+      "source": "llama.cpp --list-devices"
+    }
+  ],
+  "gpu_source": "llama.cpp",
+  "llama": {
+    "dir": "C:\\Users\\arthu\\llm\\llama-b12207",
+    "bench": "C:\\Users\\arthu\\llm\\llama-b12207\\llama-bench.exe",
+    "server": "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe"
+  },
+  "disk": {
+    "path": "C:\\Users\\arthu\\.ollama\\models\\blobs",
+    "free_mib": 11309,
+    "total_mib": 228350
+  },
+  "power": {
+    "on_battery": false,
+    "battery_percent": null,
+    "source": "GetSystemPowerStatus"
+  },
+  "notes": [],
+  "fingerprint": "8c6a02e376c06c59"
+}

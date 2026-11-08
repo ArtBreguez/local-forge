@@ -1,0 +1,12 @@
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon RX 6500 XT (AMD proprietary driver) | uma: 0 | rebar: 0 | fp16: 1 | bf16: 0 | fp4: 0 | 
+warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Users\arthu\llm\llama-b12207\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+ggml_vulkan: Device memory allocation of size 1047364864 failed.
+ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory
+ggml_backend_buft_alloc_buffer_n_default: failed to allocate Vulkan0 buffer of size 1047364864
+llama_model_load: error loading model: unable to allocate Vulkan0 buffer
+llama_model_load_from_file_impl: failed to load model
+llama_bench: error: failed to load model 
+'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'

@@ -31,7 +31,7 @@ On the best phase-1 point: `--spec-type none | draft-mtp | ngram-mod | draft-mtp
 
 ## Phase 3: quality (does the configuration or the model change correctness?)
 
-A fixed set of small coding problems with hidden tests (function-level, Python and JavaScript), pass@1 at temperature 0, thinking off and on. Arms: the best speed configuration against the default one (checks that KV quantisation does not cost correctness), and the candidate models below.
+A fixed set of small coding problems with hidden tests (function-level, Python and JavaScript), pass@1 at temperature 0. Arms: configurations of the one candidate model below, thinking off / on x KV cache f16 / q8_0 x context 16K / 32K, with the speed-optimal GPU layers for each from `forge tune`. It checks that neither KV quantisation nor the longer context costs correctness, and what thinking buys.
 
 ## Phase 4: the agent, end to end
 
@@ -39,10 +39,8 @@ Task suite in `03-agent/tasks/` of graded difficulty (single function, bug fix w
 
 Arms: model × server configuration × thinking on/off × harness (OpenCode alone; OpenCode with a thin orchestrator that feeds back only the failing test output). 3 runs per task per arm.
 
-## Candidate models
+## Candidate model
 
-- `DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic` i1-IQ4_XS (the user's pick; does not fit fully in 4 GB VRAM)
-- a coder model of similar size: `huihui_ai/qwen2.5-coder-abliterate:7b` (already on disk)
-- a model small enough to fit fully in VRAM (Qwen3.5-4B class at ~4-bit, ~2.5 GB): tests the hypothesis that on a 4 GB card a smaller model on the GPU beats a larger one split with the CPU, for an agent loop
+One model: `DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic` i1-IQ4_XS (the user's pick; does not fit fully in 4 GB VRAM). It is the only model kept on the host. The other candidates this protocol once listed (a Qwen2.5 coder 7B, a ~4B model that fits in VRAM) are out of scope unless added later; adding one means a new entry here before any run, plus the hardware-adaptive layer (`forge/`) already handles any GGUF.
 
-Disk is the constraint on the host (2.1 GB free on C:), so candidates are downloaded one at a time and removed after their phase unless they win.
+What phase 3 varies is therefore the configuration, not the model: thinking on/off, KV f16/q8_0, 16K/32K context. The GPU layer count for each arm is not a free choice but whatever `forge tune` measures as best for it (`docs/JOURNAL.md` records the plan and the tuned values per arm). The tuned values are layers *and* ubatch: on this card the 32K arm needs ubatch 256 (the compute buffer alone is 2.3 GiB at 512, 0.8 GiB at 256, `results/fit-params-grid-host-20261108.txt`), so ubatch is recorded per arm too.

@@ -1,0 +1,14 @@
+start 2026-11-08T13:11:53
+ngl=16 fa=off kv=f16 ub=512 rc=0 secs=159 lines=4 
+ngl=16 fa=off kv=f16 ub=256 rc=0 secs=183 lines=4 
+ngl=17 fa=off kv=f16 ub=512 rc=1 secs=63 lines=2 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=17 fa=off kv=f16 ub=256 rc=0 secs=178 lines=4 
+ngl=18 fa=off kv=f16 ub=512 rc=1 secs=10 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=18 fa=off kv=f16 ub=256 rc=0 secs=173 lines=4 
+ngl=19 fa=off kv=f16 ub=512 rc=1 secs=9 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=19 fa=off kv=f16 ub=256 rc=1 secs=63 lines=2 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=20 fa=off kv=f16 ub=512 rc=1 secs=10 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=20 fa=off kv=f16 ub=256 rc=1 secs=11 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+ngl=18 fa=on kv=q8_0 ub=256 rc=0 secs=220 lines=4 
+ngl=20 fa=on kv=q8_0 ub=256 rc=1 secs=10 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce489
+exit=0 2026-11-08T13:30:07

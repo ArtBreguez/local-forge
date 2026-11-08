@@ -1,0 +1,64 @@
+parse_s 0.23 version 3 tensors 427 data_offset 10970400 size 5196442912
+general.architecture qwen35
+general.type model
+general.name DeepSeek V4 Pro Qwen3.5 9B UNCENSORED Heretic
+general.finetune UNCENSORED-heretic
+general.basename DeepSeek-V4-Pro-Qwen3.5
+general.size_label 9B
+general.license apache-2.0
+general.base_model.count 1
+general.base_model.0.name DeepSeek V4 Pro Qwen3.5 9B
+general.base_model.0.organization Jackrong
+general.base_model.0.repo_url https://huggingface.co/Jackrong/DeepSeek-V4-Pro-Qwen3.5-9B
+general.tags ['text-generation-inference', 'transformers', 'unsloth', 'qwen3_5', 'reasoning', 'distillation', 'deepseek', 'sft', 'rl', 'gspo', 'math', 'stem', 'tool-use', 'function-calling', 'mtp', 'heretic', 'uncensored', 'decensored', 'abliterated', 'text-generation']
+general.languages ['en', 'zh', 'ko', 'ja', 'es', 'ru']
+qwen35.block_count 33
+qwen35.context_length 262144
+qwen35.embedding_length 4096
+qwen35.feed_forward_length 12288
+qwen35.attention.head_count 16
+qwen35.attention.head_count_kv 4
+qwen35.rope.dimension_sections [11, 11, 10, 0]
+qwen35.rope.freq_base 10000000.0
+qwen35.attention.layer_norm_rms_epsilon 9.999999974752427e-07
+qwen35.attention.key_length 256
+qwen35.attention.value_length 256
+qwen35.nextn_predict_layers 1
+qwen35.ssm.conv_kernel 4
+qwen35.ssm.state_size 128
+qwen35.ssm.group_count 16
+qwen35.ssm.time_step_rank 32
+qwen35.ssm.inner_size 4096
+qwen35.attention.recurrent_layers [True, True, True, False, True, True, True, False, True, True, True, False, True, True, True, False, True, True, True, False, True, True, True, False, True, True, True, False, True, True, True, False, False]
+qwen35.full_attention_interval 4
+qwen35.rope.dimension_count 64
+tokenizer.ggml.model gpt2
+tokenizer.ggml.pre qwen35
+tokenizer.ggml.tokens <array 248320 >
+tokenizer.ggml.token_type <array 248320 >
+tokenizer.ggml.merges <array 247587 >
+tokenizer.ggml.eos_token_id 248046
+tokenizer.ggml.padding_token_id 248055
+tokenizer.ggml.add_bos_token False
+tokenizer.ggml.add_eos_token False
+tokenizer.chat_template '{%- set image_count = namespace(value=0) %}\n{%- set video_count = namespace(valu' ...
+tokenizer.ggml.normalizer.nfc True
+tokenizer.ggml.clean_spaces False
+general.quantization_version 2
+general.file_type 30
+general.url https://huggingface.co/mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-i1-GGUF
+mradermacher.quantize_version 2
+mradermacher.quantized_by mradermacher
+mradermacher.quantized_at 2026-10-31T14:04:04+01:00
+mradermacher.quantized_on marco
+general.source.url https://huggingface.co/xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic
+mradermacher.convert_type hf
+quantize.imatrix.file 'DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-i1-GGUF/DeepSeek-V4-Pro-Qwen3.5-9B' ...
+quantize.imatrix.dataset imatrix-training-full-3
+quantize.imatrix.entries_count 248
+quantize.imatrix.chunks_count 319
+layers 32 {0: 115.8, 1: 115.8, 2: 115.8, 3: 106.9, 4: 115.8, 5: 115.8, 6: 115.8, 7: 106.9, 8: 115.8, 9: 115.8, 10: 115.8, 11: 106.9, 12: 115.8, 13: 115.8, 14: 115.8, 15: 106.9, 16: 115.8, 17: 115.8, 18: 115.8, 19: 106.9, 20: 115.8, 21: 115.8, 22: 115.8, 23: 106.9, 24: 115.8, 25: 115.8, 26: 115.8, 27: 106.9, 28: 115.8, 29: 115.8, 30: 115.8, 31: 106.9}
+non-layer {'output.weight': 795.7, 'output_norm.weight': 0.0, 'token_embd.weight': 515.3}
+quant IQ4_XS fp 49d0f5b5859fb202061d5bca8025293a
+blk 3 [('attn_k.weight', (4096, 1024), 23), ('attn_k_norm.weight', (256,), 0), ('attn_norm.weight', (4096,), 0), ('attn_output.weight', (4096, 4096), 23), ('attn_q.weight', (4096, 8192), 23), ('attn_q_norm.weight', (256,), 0), ('attn_v.weight', (4096, 1024), 13), ('ffn_down.weight', (12288, 4096), 23), ('ffn_gate.weight', (4096, 12288), 23), ('ffn_up.weight', (4096, 12288), 23), ('post_attention_norm.weight', (4096,), 0)]
+blk 32 []

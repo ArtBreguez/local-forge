@@ -1,0 +1,10 @@
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon RX 6500 XT (AMD proprietary driver) | uma: 0 | rebar: 0 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Users\arthu\llm\llama-b12207\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+load_backend: loaded Vulkan backend from C:\Users\arthu\llm\llama-b12207\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+Available devices:
+  Vulkan0: AMD Radeon RX 6500 XT (4080 MiB, 3105 MiB free)

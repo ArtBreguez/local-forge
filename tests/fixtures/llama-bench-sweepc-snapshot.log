@@ -1,0 +1,27 @@
+start 2026-11-08T12:23:41
+free RAM GB before: 5.5
+ngl=0 fa=off kv=f16 rc=0 secs=231 lines=4 
+ngl=0 fa=on kv=f16 rc=0 secs=291 lines=4 
+ngl=0 fa=on kv=q8_0 rc=0 secs=288 lines=4 
+ngl=8 fa=off kv=f16 rc=0 secs=197 lines=4 
+ngl=8 fa=on kv=f16 rc=0 secs=251 lines=4 
+ngl=8 fa=on kv=q8_0 rc=0 secs=244 lines=4 
+ngl=12 fa=off kv=f16 rc=0 secs=181 lines=4 
+ngl=12 fa=on kv=f16 rc=0 secs=224 lines=4 
+ngl=12 fa=on kv=q8_0 rc=0 secs=222 lines=4 
+ngl=16 fa=off kv=f16 rc=0 secs=162 lines=4 
+ngl=16 fa=on kv=f16 rc=0 secs=202 lines=4 
+ngl=16 fa=on kv=q8_0 rc=0 secs=204 lines=4 
+ngl=20 fa=off kv=f16 rc=1 secs=11 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users
+ngl=20 fa=on kv=f16 rc=1 secs=10 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\
+ngl=20 fa=on kv=q8_0 rc=1 secs=9 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\
+ngl=24 fa=off kv=f16 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+ngl=24 fa=on kv=f16 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\mo
+ngl=24 fa=on kv=q8_0 rc=1 secs=5 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+ngl=28 fa=off kv=f16 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+ngl=28 fa=on kv=f16 rc=1 secs=3 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\mo
+ngl=28 fa=on kv=q8_0 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+ngl=99 fa=off kv=f16 rc=1 secs=5 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+ngl=99 fa=on kv=f16 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\mo
+ngl=99 fa=on kv=q8_0 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\m
+exit=0 2026-11-08T13:10:36

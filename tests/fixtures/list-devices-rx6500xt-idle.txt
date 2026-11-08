@@ -1,0 +1,2 @@
+Available devices:
+  Vulkan0: AMD Radeon RX 6500 XT (4080 MiB, 3443 MiB free)

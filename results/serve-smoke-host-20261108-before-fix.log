@@ -1,0 +1,87 @@
+start 2026-11-08T14:03:57
+--- serve --once
+select: plan 'gpu': GPU available on mains power
+attempt 1: ngl=15 ctx=16384 fa=off kv=f16
+  failed: server exited with code 1 before becoming healthy
+  0.07.437.791 E srv    load_model: failed to create_context with model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+0.07.437.796 I srv    operator(): operator(): cleaning up before exit...
+0.07.438.892 E srv  server_run_i: exiting due to model loading error
+attempt 2: ngl=11 ctx=16384 fa=off kv=f16
+{
+  "endpoint": "http://127.0.0.1:8088/v1",
+  "plan": "gpu",
+  "source": "plan",
+  "config": {
+    "ngl": 11,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 512,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8088",
+    "-ngl",
+    "11",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "512",
+    "-np",
+    "1",
+    "--fit",
+    "off"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-140411-1.log"
+}
+once rc=0
+--- long-running serve + one completion
+healthy=True after 52s
+completion secs=21 tokens=148 timings={"cache_n":0,"prompt_n":26,"prompt_ms":2691.336,"prompt_per_token_ms":103.51292307692307,"prompt_per_second":9.660629516344299,"predicted_n":148,"predicted_ms":18340.746,"predicted_per_token_ms":124.76697959183673,"predicted_per_second":8.014941158881978}
+--- content
+```javascript
+function isLeapYear(y) {
+ return (y % 4 === 0 && y % 100 !== 0) || (y % 400 === 0);
+}
+```
+--- props
+{"params":{"seed":4294967295,"temperature":0.800000011920929,"dynatemp_range":0.0,"dynatemp_exponent":1.0,"top_k":40,"top_p":0.949999988079071,"min_p":0.05000000074505806,"top_n_sigma":-1.0,"xtc_probability":0.0,"xtc_threshold":0.10000000149011612,"typical_p":1.0,"repeat_last_n":64,"repeat_penalty":1.0,"presence_penalty":0.0,"frequency_penalty":0.0,"dry_multiplier":0.0,"dry_base":1.75,"dry_allowed
+--- server cmdline
+C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8088 -ngl 11 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 512 -np 1 --fit off
+--- serve stdout tail
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "512",
+    "-np",
+    "1",
+    "--fit",
+    "off"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-140504-1.log"
+}
+exit=0 2026-11-08T14:06:04

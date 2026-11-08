@@ -1,0 +1,5 @@
+# llama-fit-params b12207 on the host, GPU idle (sweep-c.log ends in exit=, no llama process), 2026-11-08, -c 16384 -ub 512 -fa off -np 1 -fit off -fitp on
+# columns after the arrow: Vulkan0 model context compute | Host model context compute   (MiB, truncated)
+-ngl 0 -> Vulkan0 0 0 1312  | Host 4945 562 68
+-ngl 0 -dev none -> Host 4945 562 604
+-ngl 99 -dev none -> Host 4945 562 604

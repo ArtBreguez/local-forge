@@ -1,0 +1,8 @@
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+ggml_vulkan: Invalid device index 99 in GGML_VK_VISIBLE_DEVICES.
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+ggml_vulkan: Invalid device index 99 in GGML_VK_VISIBLE_DEVICES.
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+Available devices:
+  (none)
