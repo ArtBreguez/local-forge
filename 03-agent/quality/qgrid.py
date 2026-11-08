@@ -23,6 +23,8 @@ import urllib.request
 from pathlib import Path
 from typing import Any
 
+import qbench
+
 HERE = Path(__file__).resolve().parent
 IS_WINDOWS = sys.platform.startswith("win")
 
@@ -84,7 +86,7 @@ def runner_command(arm: dict[str, Any], port: int, python: str, out_dir: Path, n
            "--out", str(out_dir / f"{arm['id']}.jsonl"), "--thinking", arm["thinking"],
            "--think-budget", str(arm["reasoning_budget"] + REASONING_MARGIN if arm.get("reasoning_budget") else arm["think_budget"]),
            "--temperature", str(arm["temperature"]), "--samples", str(arm["samples"]), "--serve-json", str(out_dir / f"{arm['id']}.serve.json"),
-           "--note", arm["title"], "--prompt-variant", arm.get("prompt_variant", "v1")]
+           "--note", arm["title"], "--prompt-variant", arm.get("prompt_variant", qbench.DEFAULT_VARIANT)]
     if arm.get("reasoning_budget_message"):
         cmd += ["--budget-message", arm["reasoning_budget_message"]]
     if node:

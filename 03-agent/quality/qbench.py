@@ -32,9 +32,39 @@ LANG_NOTE = {
     "js": "Language: JavaScript for Node.js (CommonJS, no dependencies). Define the requested function(s) or class and "
           "export them with `module.exports = { ... };`.",
 }
-# Prompt variants. v1 is the first wording. v2 adds one sentence for Python: in the first smoke run this model sometimes wrote a
-# whole function with one-space (or no) indentation, which is an IndentationError and says nothing about the logic.
-PROMPT_VARIANTS = {"v1": LANG_NOTE, "v2": {**LANG_NOTE, "py": LANG_NOTE["py"] + " Indent with 4 spaces per level."}}
+# Prompt variants: the system message and the language notes. v1 is the first wording. In the first smoke run this model often wrote
+# Python with one-space (or no) indentation, which is an IndentationError and says nothing about the logic; v2 adds one sentence
+# about it, v3 adds a short example answer (a different task) so that the model has the layout in front of it.
+STYLE_EXAMPLE = '''
+
+Example of the layout (a different task, shown only for the style of the code):
+
+```python
+def clamp(value, low, high):
+    if low > high:
+        raise ValueError("low must not exceed high")
+    if value < low:
+        return low
+    return min(value, high)
+```
+
+```javascript
+function clamp(value, low, high) {
+  if (low > high) {
+    throw new RangeError('low must not exceed high');
+  }
+  return Math.min(Math.max(value, low), high);
+}
+
+module.exports = { clamp };
+```
+'''
+DEFAULT_VARIANT = "v3"      # chosen on the probe in docs/JOURNAL.md: 1 of 8 Python answers with a syntax error against 4 of 8 for v1
+PROMPT_VARIANTS = {
+    "v1": {"system": SYSTEM_PROMPT, **LANG_NOTE},
+    "v2": {"system": SYSTEM_PROMPT, **LANG_NOTE, "py": LANG_NOTE["py"] + " Indent with 4 spaces per level."},
+    "v3": {"system": SYSTEM_PROMPT + STYLE_EXAMPLE, **LANG_NOTE},
+}
 FENCE_LANGS = {"py": {"python", "py", "python3", ""}, "js": {"javascript", "js", "node", "nodejs", "cjs", ""}}
 CODE_HINTS = {"py": ("def ", "class "), "js": ("function", "=>", "class ")}
 OUTPUT_LIMIT = 2000
@@ -74,9 +104,10 @@ def load_problems(root: Path = HERE) -> list[Problem]:
     return [Problem(d["id"], d["lang"], tuple(d["entries"]), d["difficulty"], int(d["max_tokens"]), tuple(d["tags"]), bool(d["subtle"]), root) for d in data]
 
 
-def build_messages(p: Problem, variant: str = "v1") -> list[dict[str, str]]:
+def build_messages(p: Problem, variant: str = DEFAULT_VARIANT) -> list[dict[str, str]]:
     """The same two messages for every arm. Thinking is switched by the template kwargs of the request, not by the text."""
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": f"{PROMPT_VARIANTS[variant][p.lang]}\n\n{p.prompt}"}]
+    v = PROMPT_VARIANTS[variant]
+    return [{"role": "system", "content": v["system"]}, {"role": "user", "content": f"{v[p.lang]}\n\n{p.prompt}"}]
 
 
 # ------------------------------------------------------------------------------------------------ extraction
@@ -151,9 +182,18 @@ class TestOutcome:
     kind: str | None                # None when passed | syntax | test_fail | timeout
     detail: str = ""
     tests_total: int | None = None
-    tests_failed: int | None = None
+    tests_failed: int | None = None     # test methods that failed
     seconds: float = 0.0
     normalized: bool = False
+
+    @property
+    def fraction(self) -> float:
+        """Share of the hidden tests that passed: 1 for a pass, 0 when nothing could run (syntax error, timeout), else (total-failed)/total."""
+        if self.passed:
+            return 1.0
+        if self.kind != "test_fail" or not self.tests_total or self.tests_failed is None:
+            return 0.0
+        return max(0.0, (self.tests_total - self.tests_failed) / self.tests_total)
 
 
 def _kill_tree(proc: subprocess.Popen) -> None:
@@ -218,9 +258,8 @@ def _parse_python(rc: int | None, err: str) -> tuple[int | None, int | None, str
     m = re.search(r"^Ran (\d+) tests?", err, re.M)
     total = int(m.group(1)) if m else None
     failed = None
-    fm = re.search(r"^FAILED \((.*)\)", err, re.M)
-    if fm:
-        failed = sum(int(n) for n in re.findall(r"=(\d+)", fm.group(1)))
+    if re.search(r"^FAILED \(", err, re.M):        # test METHODS that failed or errored (a subTest failure counts its method once)
+        failed = len({m.group(1) for m in re.finditer(r"^(?:FAIL|ERROR): (\S+) \(", err, re.M)}) or 1
     elif re.search(r"^OK", err, re.M):
         failed = 0
     detail = _first_python_failure(err)

@@ -37,6 +37,16 @@ def pass_map(rows: list[dict]) -> dict[str, bool]:
     return {r["problem"]: bool(r["pass"]) for r in rows if r.get("sample", 0) == 0}
 
 
+def fraction_map(rows: list[dict]) -> dict[str, float]:
+    return {r["problem"]: float(r.get("test_fraction", 1.0 if r["pass"] else 0.0)) for r in rows if r.get("sample", 0) == 0}
+
+
+def sign_counts(base: dict[str, float], other: dict[str, float]) -> tuple[int, int]:
+    """(problems where the baseline passed a larger share of the hidden tests, problems where the other arm did); ties are dropped."""
+    common = set(base) & set(other)
+    return sum(1 for p in common if base[p] > other[p] + 1e-9), sum(1 for p in common if other[p] > base[p] + 1e-9)
+
+
 def paired(base: dict[str, bool], other: dict[str, bool]) -> tuple[int, int, int]:
     """(only baseline passes, only the other arm passes, problems compared)."""
     common = sorted(set(base) & set(other))
@@ -75,6 +85,24 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         toks = f"{s.median_tokens:.0f}" if s.median_tokens is not None else "n/a"
         out.append(f"| {arm} | {'on' if meta.get('thinking') else 'off'} | {s.n} | {s.passed} | {pct(s.passed / s.n)} | {pct(lo)}–{pct(hi)} | "
                    f"{cmp_cols[0]} | {cmp_cols[1]} | {cmp_cols[2]} | {same} | {tok} | {toks} | {s.cap_hits} | {sum(1 for r in rows0 if r.get('budget_exhausted'))} | {kinds} |")
+    out.append("")
+
+    out.append("Graded view: the share of each problem's hidden tests that passed (a syntax error, a timeout or no code counts as 0), averaged over the problems.")
+    out.append("The sign test looks only at problems where the share differs from arm A.")
+    out.append("")
+    out.append("| Arm | mean share of tests passed | problems where A scored higher / arm scored higher | sign test p | vs A |")
+    out.append("|---|---|---|---|---|")
+    base_frac = fraction_map(t0[baseline][1]) if baseline in t0 else None
+    for arm, (_, rows) in t0.items():
+        fr = fraction_map(rows)
+        mean = sum(fr.values()) / len(fr)
+        if base_frac is not None and arm != baseline:
+            hi_a, hi_arm = sign_counts(base_frac, fr)
+            p = qbench.mcnemar_exact(hi_a, hi_arm)
+            verdict = "within noise" if p >= 0.05 else ("better" if hi_arm > hi_a else "worse") + " (p<0.05)"
+            out.append(f"| {arm} | {100 * mean:.1f}% | {hi_a} / {hi_arm} | {p:.3f} | {verdict} |")
+        else:
+            out.append(f"| {arm} | {100 * mean:.1f}% | — | — | {'baseline' if arm == baseline else '—'} |")
     out.append("")
 
     out.append("Pass rate by language and by difficulty (k/n):")

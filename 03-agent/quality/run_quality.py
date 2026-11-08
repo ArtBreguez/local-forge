@@ -91,7 +91,7 @@ def run_problem(p: qbench.Problem, a: argparse.Namespace, sample: int) -> dict[s
     try:
         resp = chat(a.endpoint, payload, a.request_timeout)
     except RuntimeError as e:
-        rec.update({"pass": False, "kind": "api_error", "detail": str(e)[:300], "wall_s": round(time.monotonic() - t0, 2)})
+        rec.update({"pass": False, "kind": "api_error", "detail": str(e)[:300], "wall_s": round(time.monotonic() - t0, 2), "test_fraction": 0.0})
         return rec
     wall = time.monotonic() - t0
     choice = (resp.get("choices") or [{}])[0]
@@ -113,12 +113,13 @@ def run_problem(p: qbench.Problem, a: argparse.Namespace, sample: int) -> dict[s
     code, how = qbench.extract_code(content, p.lang, thinking=thinking, reasoning_split=bool(reasoning))
     rec["extract"] = how
     if code is None:
-        rec.update({"pass": False, "kind": "no_code", "detail": how})
+        rec.update({"pass": False, "kind": "no_code", "detail": how, "test_fraction": 0.0})
         return rec
     rec["code"] = code
     out = qbench.run_tests(p, code, timeout=a.test_timeout, python=a.python, node=a.node)
     rec.update({"pass": out.passed, "kind": out.kind, "detail": out.detail, "tests_total": out.tests_total, "tests_failed": out.tests_failed,
                 "test_s": round(out.seconds, 2), "normalized_exports": out.normalized})
+    rec["test_fraction"] = round(out.fraction, 4)
     return rec
 
 
@@ -152,7 +153,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
                     "finding it in the answer or the reasoning is recorded as budget_exhausted")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1234)
-    ap.add_argument("--prompt-variant", choices=sorted(qbench.PROMPT_VARIANTS), default="v1", help="wording of the language note (see qbench.PROMPT_VARIANTS)")
+    ap.add_argument("--prompt-variant", choices=sorted(qbench.PROMPT_VARIANTS), default=qbench.DEFAULT_VARIANT, help="wording of the language note (see qbench.PROMPT_VARIANTS)")
     ap.add_argument("--samples", type=int, default=1, help="samples per problem (sample i uses seed+i)")
     ap.add_argument("--lang", choices=["py", "js"])
     ap.add_argument("--problems", help="comma-separated ids or id prefixes")

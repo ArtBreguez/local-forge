@@ -10,6 +10,7 @@
     {"id": "A2", "title": "repeat of A, nothing changed: the run-to-run noise floor of this server", "serve": [], "thinking": "off"},
     {"id": "P-v1", "title": "prompt probe: A with prompt variant v1 (run on a few Python problems only)", "serve": [], "thinking": "off", "prompt_variant": "v1"},
     {"id": "P-v2", "title": "prompt probe: A with prompt variant v2 (adds: Indent with 4 spaces per level)", "serve": [], "thinking": "off", "prompt_variant": "v2"},
+    {"id": "P-v3", "title": "prompt probe: A with prompt variant v3 (adds an example answer with 4-space layout to the system message); v3 became the default for all arms", "serve": [], "thinking": "off", "prompt_variant": "v3"},
     {"id": "A-t0.6", "title": "A, 3 samples per problem at temperature 0.6 (pass@3 estimate)", "serve": [], "thinking": "off", "temperature": 0.6, "samples": 3}
   ]
 }

@@ -62,6 +62,10 @@ class Manifest(unittest.TestCase):
         self.assertEqual(v1[0], v2[0])
         self.assertEqual(v2[1]["content"].replace(" Indent with 4 spaces per level.", ""), v1[1]["content"])
         self.assertEqual(qbench.build_messages(js, "v1"), qbench.build_messages(js, "v2"))
+        v3 = qbench.build_messages(py, "v3")
+        self.assertEqual(v3[1], v1[1])
+        self.assertTrue(v3[0]["content"].startswith(v1[0]["content"]))
+        self.assertIn("    if low > high:", v3[0]["content"])           # the example uses 4-space indentation
 
     def test_messages_are_identical_for_every_arm(self):
         p = PROBLEMS[0]
@@ -159,6 +163,23 @@ class Extraction(unittest.TestCase):
 
 
 class Execution(unittest.TestCase):
+    def test_python_counts_failed_test_methods_not_subtests(self):
+        # py_01 has 5 test methods; wrong answers fail many subtests inside them but each method counts once
+        out = qbench.run_tests(BY_ID["py_01_parse_duration"], "def parse_duration(t):\n    return 0\n")
+        self.assertEqual(out.kind, "test_fail")
+        self.assertEqual(out.tests_total, 5)
+        self.assertLessEqual(out.tests_failed, out.tests_total)
+        self.assertGreaterEqual(out.tests_failed, 1)
+        self.assertEqual(out.fraction, (out.tests_total - out.tests_failed) / out.tests_total)
+        ok = qbench.run_tests(BY_ID["py_01_parse_duration"], BY_ID["py_01_parse_duration"].ref_path("good").read_text())
+        self.assertEqual((ok.tests_failed, ok.fraction), (0, 1.0))
+
+    def test_fraction_is_zero_when_nothing_ran(self):
+        self.assertEqual(qbench.TestOutcome(False, "syntax", "x").fraction, 0.0)
+        self.assertEqual(qbench.TestOutcome(False, "timeout", "x", 5, 0).fraction, 0.0)
+        self.assertEqual(qbench.TestOutcome(False, "test_fail", "x", 4, 1).fraction, 0.75)
+        self.assertEqual(qbench.TestOutcome(True, None, "", 4, 0).fraction, 1.0)
+
     def test_python_syntax_error_is_syntax(self):
         out = qbench.run_tests(BY_ID["py_01_parse_duration"], "def parse_duration(t:\n    return 1\n")
         self.assertEqual((out.passed, out.kind), (False, "syntax"))
@@ -167,7 +188,11 @@ class Execution(unittest.TestCase):
         t0 = time.monotonic()
         out = qbench.run_tests(BY_ID["py_01_parse_duration"], "def parse_duration(t):\n    while True:\n        pass\n", timeout=3)
         self.assertEqual((out.passed, out.kind), (False, "timeout"))
-        self.assertLess(time.monotonic() - t0, 30)
+        self.assertLess(time.monotonic() - t0, 180)        # not a speed test: on the shared VM a spinning child can delay the parent by tens of seconds
+        if not qbench.IS_WINDOWS:
+            time.sleep(1)
+            import subprocess
+            self.assertEqual(subprocess.run(["pgrep", "-f", "qbench-.*test_hidde[n]"], capture_output=True, text=True).stdout.split(), [])
 
     def test_python_missing_function_is_a_test_failure_with_a_detail(self):
         out = qbench.run_tests(BY_ID["py_01_parse_duration"], "def something_else():\n    pass\n")
@@ -188,7 +213,12 @@ class Execution(unittest.TestCase):
         t0 = time.monotonic()
         out = qbench.run_tests(BY_ID["js_03_chunk"], "function chunk(a, s) { while (true) {} }\nmodule.exports = { chunk };\n", timeout=4)
         self.assertEqual((out.passed, out.kind), (False, "timeout"))
-        self.assertLess(time.monotonic() - t0, 30)
+        self.assertLess(time.monotonic() - t0, 120)        # generous: a loaded machine took 44 s here
+        if not qbench.IS_WINDOWS:                         # no spinning node left behind (`node --test` runs the file in a child process)
+            import subprocess
+            time.sleep(1)
+            left = subprocess.run(["pgrep", "-f", "qbench-.*test_hidde[n]"], capture_output=True, text=True).stdout.split()
+            self.assertEqual(left, [])
 
     @unittest.skipUnless(HAVE_NODE, "node is needed")
     def test_javascript_esm_exports_are_normalised_and_flagged(self):
@@ -348,7 +378,8 @@ class Runner(unittest.TestCase):
             p = BY_ID[rows[0]["problem"]]                     # requests are sent in manifest order
             self.assertEqual(req["max_tokens"], p.max_tokens)
             self.assertEqual(req["messages"], qbench.build_messages(p))
-            self.assertEqual(rows[0]["prompt_variant"], "v1")
+            self.assertEqual(rows[0]["prompt_variant"], qbench.DEFAULT_VARIANT)
+            self.assertEqual(qbench.DEFAULT_VARIANT, "v3")
 
     @unittest.skipUnless(HAVE_NODE, "node is needed")
     def test_the_same_requests_go_to_every_arm(self):
@@ -441,7 +472,7 @@ class Report(unittest.TestCase):
         for p in PROBLEMS:
             for s in range(samples):
                 ok = passes(p.id, s)
-                lines.append(json.dumps({"type": "result", "problem": p.id, "response": f"{arm if (arm == 'C' and ids_flip(p.id)) else 'same'}", "lang": p.lang, "difficulty": p.difficulty, "subtle": p.subtle, "arm": arm,
+                lines.append(json.dumps({"type": "result", "problem": p.id, "test_fraction": 1.0 if ok else 0.0, "response": f"{arm if (arm == 'C' and ids_flip(p.id)) else 'same'}", "lang": p.lang, "difficulty": p.difficulty, "subtle": p.subtle, "arm": arm,
                                          "sample": s, "pass": ok, "kind": None if ok else "test_fail", "cap_hit": p.id in cap, "tok_s": tok,
                                          "completion_tokens": 100, "wall_s": 10.0}))
         (d / f"{arm}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -458,6 +489,8 @@ class Report(unittest.TestCase):
             self.assertIn("| B | on | 40 | 30 | 75% |", text)
             self.assertRegex(text, r"\| C \| off \| 40 \| 20 \| 50% \|.*\| 10 / 0 \| 0\.002 \| worse \(p<0\.05\) \| 31/40 \| 7\.00 \|")
             self.assertIn("within noise", text)
+            self.assertIn("| Arm | mean share of tests passed |", text)
+            self.assertRegex(text, r"\| C \| 50\.0% \| 10 / 0 \| 0\.002 \| worse \(p<0\.05\) \|")
             self.assertRegex(text, r"\| B \| on \|.*\| 40/40 \|")           # identical text to A on every problem
             self.assertRegex(text, r"\| C \| off \|.*\| 31/40 \|")           # arm C differs on the 9 js_0x problems
             self.assertIn("| 5 |", text)                                                   # B's cap hits
@@ -475,7 +508,7 @@ class Grid(unittest.TestCase):
     def test_arms_cover_the_issue_and_are_fully_specified(self):
         arms = qgrid.load_arms()
         self.assertEqual([k for k in arms if "-" not in k], ["A", "B", "C", "D", "E", "A2"])
-        self.assertEqual([k for k in arms if k.startswith("P-")], ["P-v1", "P-v2"])
+        self.assertEqual([k for k in arms if k.startswith("P-")], ["P-v1", "P-v2", "P-v3"])
         a, b, c, d, e = (arms[x] for x in "ABCDE")
         for key in ("serve", "thinking", "temperature", "samples", "think_budget"):
             self.assertEqual(arms["A2"][key], a[key], "A2 must be an exact repeat of A")
