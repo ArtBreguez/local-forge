@@ -1,0 +1,18 @@
+baseline: PASS
+KILLED  vram-budget-1.5x-free                [plan tests] layers are chosen against 150% of the free VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
+KILLED  vram-comparison-inverted             [plan tests] the fit comparison is inverted (picks layers that do NOT fit)   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
+KILLED  vram-margin-removed                  [plan tests] no safety margin: plans to the last MiB of free VRAM   <- first failing test: IndependentOracle.test_plan_for_the_idle_card_survives_the_drift_seen_in_the_fixtures
+KILLED  estimate-ignores-kv-cache            [plan tests] KV cache not charged to VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
+KILLED  estimate-ignores-scratch             [plan tests] graph scratch not charged to VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
+KILLED  offload-first-layers-not-last        [plan tests] offloads blocks 0..n instead of the last n   <- first failing test: IndependentOracle.test_estimate_matches_hand_arithmetic
+KILLED  serve-ignores-vram-drop              [full suite] serve keeps the tuned config even when free VRAM dropped   <- first failing test: Selection.test_fits_now
+KILLED  cache-key-drops-model                [full suite] cache key ignores the model file   <- first failing test: Cache.test_changed_model_retunes
+KILLED  cache-key-drops-hardware             [full suite] cache key ignores the hardware   <- first failing test: Cache.test_changed_hardware_retunes
+KILLED  cache-key-drops-llama-build          [full suite] cache key ignores the llama.cpp build   <- first failing test: Cache.test_changed_llama_build_retunes
+KILLED  hardware-fingerprint-ignores-gpu     [full suite] hardware fingerprint does not include the GPU   <- first failing test: Cache.test_changed_hardware_retunes
+KILLED  cache-never-hits                     [full suite] cache is written but never read (every start re-tunes)   <- first failing test: Cache.test_load_changes_do_not_invalidate
+KILLED  oom-does-not-stop-the-search         [full suite] keeps probing larger layer counts after an out-of-memory failure   <- first failing test: WithFakeBench.test_finds_best_and_stops_at_oom
+KILLED  floor-ignored                        [full suite] prompt-speed floor not applied   <- first failing test: Objective.test_floor_excludes_faster_generation
+KILLED  list-devices-swaps-total-and-free    [full suite] free and total VRAM swapped   <- first failing test: IndependentOracle.test_plan_for_the_idle_card_survives_the_drift_seen_in_the_fixtures
+
+15/15 mutants killed

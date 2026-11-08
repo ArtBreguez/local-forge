@@ -1,0 +1,32 @@
+model: qwen35 IQ4_XS 4956 MiB, 32 blocks (8 with KV cache), KV 32.0 KiB/token f16
+* [gpu] ngl=15 ctx=16384 threads=6 fa=off kv=f16 | est VRAM 3080 MiB, RAM 4039 MiB
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 16 layers vs 15 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-LAYERS-VRAM-FIT [partially measured]: 15 of 32 blocks on AMD Radeon RX 6500 XT: budget 3143 MiB of 3443 MiB free
+  - H-UBATCH [measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  [cpu] ngl=0 ctx=4096 threads=6 fa=off kv=f16 | est VRAM 0 MiB, RAM 5636 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-CPU-ONLY [partially measured]: 0 GPU layers
+  - H-CTX-RAM [untested]: context reduced 16384 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  ! RAM: needs ~5636 MiB at ctx 4096 but only 4627 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [low-power] ngl=16 ctx=8192 threads=3 fa=off kv=f16 | est VRAM 3070 MiB, RAM 3793 MiB
+  - H-LOW-POWER [untested]: battery/UPS profile: 3 threads, context capped at 8192
+  - H-CTX-TARGET [partially measured]: target context 8192
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 17 layers vs 16 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-LAYERS-VRAM-FIT [partially measured]: 16 of 32 blocks on AMD Radeon RX 6500 XT: budget 3143 MiB of 3443 MiB free
+  - H-UBATCH [measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+applies now: gpu (GPU available on mains power)
