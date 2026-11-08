@@ -51,3 +51,22 @@ Readings so far:
 - The gain from 8 to 16 layers is only ~14% on generation: with PCIe x4 and half the model on the CPU, DDR4 bandwidth dominates.
 
 Next: flash attention + q8_0 KV cache at the server level (frees VRAM for more layers or more context), then llama.cpp's `llama-server` directly to use the model's MTP layer for speculative decoding, which Ollama does not.
+
+## 2026-11-08 — sweep B: flash attention + q8_0 KV cache (Ollama, server env vars)
+
+`02-bench/sweep-b.ps1` sets `OLLAMA_FLASH_ATTENTION=1` and `OLLAMA_KV_CACHE_TYPE=q8_0`, restarts Ollama, re-runs the layer grid. Server log confirms `flash_attn = enabled`. Raw: `results/bench-b.jsonl`.
+
+| ctx | GPU layers | split | prompt tok/s | gen tok/s |
+|---|---|---|---|---|
+| 16K | 12 | 60/40 | 33.2 | 7.13 |
+| 16K | 16 | 51/49 | 125.6 | **9.19** |
+| 16K | 20 | 42/58 | 76.8 | 8.96 |
+| 16K | 24+ | — | out of VRAM | |
+| 32K | 12 | 60/40 | 150.4 | 7.53 |
+| 32K | 16 | 50/50 | 37.5 | 7.57 |
+| 32K | 20+ | — | out of VRAM | |
+
+Readings:
+- Memory drops (6.0 → 5.7 GB at 16K) and one more layer group fits (20 at 16K, 16 at 32K).
+- Best generation so far: 9.19 tok/s (16K, 16 layers), +10% over sweep A's best.
+- Prompt speed is erratic within the same sweep: 33, 126, 77, 150, 37 tok/s with no monotone pattern. One sample per point cannot separate the configuration from noise (first-load effects, the host's other load). This is why phase 1 moves to `llama-bench` with 3 repetitions and a standard deviation.
