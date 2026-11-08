@@ -116,3 +116,26 @@ Tests and checks: 112 tests (standard-library `unittest`, about 30 to 50 s) pass
 `tests/mutation_check.py` breaks one rule at a time in a temporary copy: 15 mutants (VRAM budget, comparison, margin, KV, scratch, which end of the model is offloaded, serve ignoring a VRAM drop, three cache-key parts, the hardware fingerprint, a cache that never hits, no stop at OOM, no prompt floor, free/total swapped), 15 killed (`results/forge-mutation-check.txt`). The first version let two survive and the tests were wrong, not the code: every layer count I tried was a multiple of 4, the model's repeat period, so offloading the first n blocks instead of the last n weighed the same; and nothing tied the safety margin to the 338 MiB drift in the fixtures. Both are tests now. An independent read of the code then found 12 more defects, all fixed with regression tests: a CPU-tuned result that `serve` ignored, a time-truncated tune cached as final, a fallback ladder cut off before the smaller contexts, an already-answering port counted as a healthy start, a context reduced under old memory pressure served forever, layer counts measured at 8.8K context served at 16K, tied embeddings under-counted, the `-ngl 99` sentinel for 99+-block models, `-dev` not passed to llama-bench, an ARM `/proc/cpuinfo` trailer counted as a CPU, `--host 0.0.0.0` health checks, and a missing `wait()` after `kill()`.
 
 Not verified: a real `llama-server` was never started by `forge serve` (the one-run allowance on the host was for `tune`; flags were only checked against the recorded b12207 `--help`); CUDA, ROCm and Metal paths, macOS, multi-GPU, battery behaviour and the low-power plan on real hardware; MTP (the header has no tensors for it); the planner on any machine or model but this one.
+
+## 2026-11-08 — phase 2: speculative decoding on llama-server
+
+`02-bench/phase2-spec.ps1`. Raw: `results/phase2-spec.jsonl`, `results/phase2.log`. Server: 16K context, FA off, f16 KV, ubatch 512, 6 threads. 4 prompts (three code, one prose), 320 tokens max, temperature 0, seed 1, prompt cache off, 2 repetitions per prompt.
+
+**Layer limit in the server is lower than in llama-bench.** 15 layers fail at load with `ErrorOutOfDeviceMemory` on a 705 MB compute buffer (the server sizes it for the full 16K context; llama-bench does not), 14 load. The `forge` planner (PR #2) picked 15, so its server plan is one layer too optimistic; its fallback dropped to 11.
+
+| spec type | mean gen tok/s | range | drafts accepted | output identical to `none` |
+|---|---|---|---|---|
+| none (14 layers) | 9.03 | 8.92–9.20 | — | 8/8 (rep 1 = rep 2 for all prompts) |
+| ngram-simple | 8.75 | 8.36–9.08 | 28/186 | 8/8 |
+| ngram-mod | 10.75 | 8.89–**17.49** | 520/726 | 6/8 |
+| ngram-cache | 7.30 | 5.32–11.02 | 990/3007 | 4/8 |
+| draft-mtp | — | — | — | server aborts |
+
+Readings:
+- `draft-mtp` aborts with `GGML_ASSERT(layer.nextn.eh_proj && "MTP block missing nextn.eh_proj")`. The GGUF header declares one MTP layer but the conversion dropped its tensors (427 tensors, blocks 0–31). MTP needs a GGUF converted with the MTP block kept; not available for this model, and converting from the 19 GB BF16 original does not fit on the host disk today.
+- `ngram-mod` learns from earlier requests: on the first pass of each prompt it drafted nothing (8.9 tok/s); on the second pass it drafted from what it had seen and reached 17.5 tok/s on the "rewrite this function" prompt (prompt 1), 9.6–11.7 on the others. An agent re-reads and rewrites the same code across turns, which is the case this helps.
+- **It is not output-identical.** Two of the eight `ngram-mod` outputs differ from `none` at temperature 0 (prompts 2 and 3, second pass; prompt 3 even changes length, 225 vs 198 tokens). `none` itself is deterministic across repetitions, so the difference comes from verifying drafts in a batch: the GPU computes a batch of tokens with slightly different rounding than one token at a time, and a near-tie in the logits flips. The protocol called any difference a bug; the honest reading is that speculative decoding on this backend changes outputs, so it is a trade-off whose effect on correctness must be measured (phase 3), not assumed.
+- `ngram-cache` is slower than no speculation and differs in half the outputs: rejected.
+- `ngram-simple` drafts rarely and costs ~3%: rejected.
+
+Decision for now: default `--spec-type none`; `ngram-mod` is an arm in phase 3 and 4 (quality and agent success), adopted only if it does not lower pass rates.
