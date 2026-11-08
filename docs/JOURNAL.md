@@ -93,3 +93,25 @@ Readings:
 - `ngram-simple` drafts rarely and costs ~3%: rejected.
 
 Decision for now: default `--spec-type none`; `ngram-mod` is an arm in phase 3 and 4 (quality and agent success), adopted only if it does not lower pass rates.
+
+## 2026-11-08 — REA (Reverse Engineer Anything) on the host
+
+Requested by the user as an essential "apocalypse" skill: understand software and files with no source and no internet.
+
+Audit before installing (repo `morluto/rea`, MIT, npm `rea-agents` 6.8.0; full method in the Hermes skill `vetting-third-party-agent-tooling`):
+- No `preinstall`/`postinstall`/`install` scripts in `package.json`; 42 runtime dependencies, Frida optional (skipped).
+- URLs in runtime code are test fixtures (`example.test`, `127.0.0.1`); real npm/GitHub calls live only in release, update and CI scripts. The "telemetry" matches are local Hopper/Ghidra lifecycle logs, nothing sent out.
+- `rea setup` edits every agent's configuration (it reports `config_drift` for Hermes, OpenCode, Gemini CLI, Copilot CLI): not run.
+- Noted, not blocking: ~443k stars on a repo created 2026-04-14. The account (2020) and the code are coherent with the stated purpose.
+
+Install (`tools/rea-install.ps1`): REA needs Node 22.23+/24.22+, the host has 20.9. A portable Node v24.22.2 (official zip, SHA-256 `ca1bff5d…99e2` matched) in `C:\Users\arthu\llm\rea\`, then `npm install --ignore-scripts --omit=optional rea-agents@6.8.0` into a local folder: 149 packages, 60 s, 136 MB, lockfile integrity equal to the registry's. Nothing global.
+
+Tests on real local files, offline (`tools/rea-tests.ps1`, raw JSON in `results/rea/`):
+
+| test | command | result |
+|---|---|---|
+| model file | `rea inspect-model-artifact <the DeepSeek heretic GGUF>` | 2 s. `qwen35`, `block_count = 33`, `nextn_predict_layers = 1`, tensors in blocks 0–31 only, **no `blk.32` / `nextn` tensors**. Independently confirms the MTP finding from `forge/gguf.py` and phase 2. It also lists its own limits (header only, weights not read). |
+| native binary | `rea inspect-pe-imports llama-server.exe` | 1 s. Imports KERNEL32, the MSVC runtime and `llama-server-impl.dll`: the server is a thin launcher, the real code is in the DLL. |
+| readiness | `rea doctor --json` | static analyzers ready; no native decompiler installed (Hopper, Ghidra, IDA, JADX, Kuna all missing), so `decompile` is not available yet. |
+
+Next: Ghidra (offline, open source, needs a JDK) so REA can decompile native code; then register REA as an MCP server for the local agent (OpenCode + the 9B model) by hand, not through `rea setup`, and measure in phase 4 whether the small model can use REA's tools to answer a real question about a binary.
