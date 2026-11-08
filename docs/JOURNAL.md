@@ -70,3 +70,49 @@ Readings:
 - Memory drops (6.0 → 5.7 GB at 16K) and one more layer group fits (20 at 16K, 16 at 32K).
 - Best generation so far: 9.19 tok/s (16K, 16 layers), +10% over sweep A's best.
 - Prompt speed is erratic within the same sweep: 33, 126, 77, 150, 37 tok/s with no monotone pattern. One sample per point cannot separate the configuration from noise (first-load effects, the host's other load). This is why phase 1 moves to `llama-bench` with 3 repetitions and a standard deviation.
+
+## 2026-11-08 — the hardware-adaptive layer (`forge/`)
+
+Goal (VISION.md): the agent must keep working on whatever hardware is there, offline. `forge/` is four stages in Python's standard library, run on both Windows and Linux: `probe` (OS, CPU, RAM, GPUs with backend and free VRAM, disk, battery), `plan` (a starting configuration from the GGUF header, nothing run), `tune` (llama-bench around the plan, cached by hardware + model file + llama.cpp build) and `serve` (llama-server, health check, fall back on failure). Every planning rule is a named heuristic with the measurement behind it or the word "untested" (`python -m forge heuristics`).
+
+What the real model's header says (`tests/fixtures/gguf-dump-dsv4-9b.txt`, parsed on the host by `forge/gguf.py`):
+- Qwen3.5 is a hybrid: only every 4th block (8 of 32) has a KV cache, so f16 KV costs 32 KiB per token (512 MiB at 16K, 272 MiB with q8_0), not the 128 KiB a dense 32-layer model would. The other 24 blocks keep a fixed state of 2.1 MiB each.
+- Weights per block are 107 to 116 MiB; `output.weight` is 796 MiB and `token_embd.weight` 515 MiB.
+- **The MTP head is not in this file.** The header says `nextn_predict_layers = 1`, but the tensor table has 427 tensors in blocks 0 to 31 and nothing for block 32. `forge plan` therefore reports MTP as declared but unavailable, and phase 2's `draft-mtp` arm should not be expected to work with this GGUF (not tried with llama-server).
+
+llama.cpp b12207 Vulkan, sweeps C and D (the user's `sweep-c.ps1` / `sweep-d.ps1`: `llama-bench -p 512 -n 128 -d 0,8192 -r 3`; snapshots in `tests/fixtures/llama-bench-sweepc-snapshot.*` and `...sweepd-snapshot.*`, the raw files are on the host):
+
+| GPU layers | FA off, f16 KV: gen tok/s at depth 8192 | FA on, f16 KV | FA on, q8_0 KV |
+|---|---|---|---|
+| 0 | 5.45 | 4.44 | 4.32 |
+| 8 | 6.78 | 5.76 | 5.50 |
+| 12 | 7.65 | 6.59 | 6.44 |
+| 16 | **9.15** (prompt 195 tok/s) | 7.83 (prompt 84) | 7.45 (prompt 86) |
+
+- Flash attention costs 13 to 19% of generation speed and halves prompt speed at depth on this build, with or without a GPU, and q8_0 KV (which needs it) is the slowest setting everywhere. So the plan defaults to FA off and f16 KV on Vulkan and CPU; q8_0 is only chosen when it buys 6 or more layers or f16 does not fit in RAM.
+- The load boundary on 3443 MiB free: 16 layers load in all three settings; 20 fail to create the context in all three (24 and up fail to load). Sweep D, FA off, f16: with the default ubatch 512, 17 fails while filling the 8192 depth; with ubatch 256, 18 layers run (9.60 tok/s, prompt 151) and 19 fail. Ollama's "20 layers fit with FA + q8_0" (sweep B) did not reproduce in llama.cpp.
+- A smaller ubatch buys layers: 18 layers at ubatch 256 beats 16 at 512 on generation (9.60 vs 9.13) and stays above the 100 tok/s prompt floor. `forge tune` does not search ubatch yet; this is the first thing to add.
+
+Planner results on the host (profile from `forge probe`, GPU idle: 3443 MiB free, 5784 MiB RAM available, `plan --explain`):
+- gpu: **15 layers, 16K context, FA off, f16 KV, 6 threads** (estimated 3080 MiB VRAM); with `--kv q8_0` it picks 16, which is the "~16 layers at 16K" of sweeps A and B. cpu: 8K context, feasible. low-power: 3 threads, 8K context, 16 layers.
+- Checking the first version against the sweeps found two wrong rules, both fixed: the VRAM scratch constant was an assumed 256 MiB and the estimator chose 22 layers with q8_0 (the sweeps say 20 fail); the RAM rule called the CPU-only run infeasible although sweep C had just run it to completion at the same context (the whole token embedding was counted as resident and only 80% of available RAM was allowed). The constants now sit inside the windows the measurements leave open; both facts are tests.
+
+`forge tune` on the host, run once (b12207, GPU idle: sweep C had written `exit=0` and sweep D had finished; budget 1200 s, depth 8192, `--reps 1`, prompt floor 100 tok/s; raw: `results/forge-tune-host-20261108.log` and `.json`). It measured 12 points in 1195 s (95 to 138 s each) and skipped 3 after out-of-memory:
+
+| GPU layers | FA off, f16: gen / prompt tok/s at depth | FA on, f16 | FA on, q8_0 |
+|---|---|---|---|
+| 11 | 7.46 / 169 | 6.67 / 81 | 6.25 / 83 |
+| 13 | 8.15 / 169 | 6.96 / 82 | 6.60 / 84 |
+| 15 | **8.77 / 191** | 7.66 / 83 | 7.23 / 86 |
+| 17 | out of memory | out of memory | out of memory |
+
+- The plan's own point won: 15 layers, FA off, f16 KV, 6 threads, 16K context, 8.77 tok/s generation. The command line it printed is in the log. FA on and q8_0 are slower at every layer count and fall under the prompt floor, as in sweep C.
+- The tuned result is about 4% short of what is known to be available: the grid (plan +/- 2, +/- 4) steps over 16 layers, which sweeps C and D measured at 9.13 to 9.15 tok/s (3 repetitions) and which sits just below the out-of-memory at 17. After the run, the search got a boundary refinement (after a failure at N, probe N-1 for the winning setting). It is tested against the fake llama-bench only; the host run was not repeated.
+- The run also exposed a cache-key bug the fake could not: the build id came out as `b0` because b12207 prints `version: 0.9.0-dev (build 12207, commit 998200491)`. Fixed (the real output is a fixture, `tests/fixtures/llama-bench-version-b12207.txt`); the cache entry saved in `results/` still carries the wrong `b0`.
+- One repetition per point means no standard deviation, so 8.77 (15 layers, this run) against 9.15 (16 layers, sweep C, 3 reps) is not a like-for-like comparison.
+
+Tests and checks: 112 tests (standard-library `unittest`, about 30 to 50 s) pass on Linux with Python 3.11 and on the Windows 10 host with Python 3.12 (`results/forge-unittest-windows-host.txt`). They cover the GGUF parser on synthetic files, the probe parsers on recorded outputs, the plan arithmetic against hand computation that does not use the planner's own helpers, autotune against a fake llama-bench (canned JSONL, a real OOM stderr, a timeout, a time budget), cache invalidation, and serve against a fake llama-server (slow health, OOM at load, port in use).
+
+`tests/mutation_check.py` breaks one rule at a time in a temporary copy: 15 mutants (VRAM budget, comparison, margin, KV, scratch, which end of the model is offloaded, serve ignoring a VRAM drop, three cache-key parts, the hardware fingerprint, a cache that never hits, no stop at OOM, no prompt floor, free/total swapped), 15 killed (`results/forge-mutation-check.txt`). The first version let two survive and the tests were wrong, not the code: every layer count I tried was a multiple of 4, the model's repeat period, so offloading the first n blocks instead of the last n weighed the same; and nothing tied the safety margin to the 338 MiB drift in the fixtures. Both are tests now. An independent read of the code then found 12 more defects, all fixed with regression tests: a CPU-tuned result that `serve` ignored, a time-truncated tune cached as final, a fallback ladder cut off before the smaller contexts, an already-answering port counted as a healthy start, a context reduced under old memory pressure served forever, layer counts measured at 8.8K context served at 16K, tied embeddings under-counted, the `-ngl 99` sentinel for 99+-block models, `-dev` not passed to llama-bench, an ARM `/proc/cpuinfo` trailer counted as a CPU, `--host 0.0.0.0` health checks, and a missing `wait()` after `kill()`.
+
+Not verified: a real `llama-server` was never started by `forge serve` (the one-run allowance on the host was for `tune`; flags were only checked against the recorded b12207 `--help`); CUDA, ROCm and Metal paths, macOS, multi-GPU, battery behaviour and the low-power plan on real hardware; MTP (the header has no tensors for it); the planner on any machine or model but this one.

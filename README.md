@@ -29,6 +29,8 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 | `03-agent/` | a fixed coding task (`agent-test/`: implement `parseDuration` so 5 tests pass), the OpenCode config, and the runner that times the agent and counts passing tests itself |
 | `tools/` | small status probes used while runs are in flight |
 | `results/` | raw outputs of every run (JSONL, logs, the code the agent wrote) |
+| `forge/` | the hardware-adaptive layer (Python 3.11+, standard library only, Windows and Linux): `probe` the machine, `plan` a configuration from a GGUF header without running anything, `tune` it with llama-bench, `serve` llama-server with the result |
+| `tests/` | unit tests for all of it, with fake llama-bench/llama-server programs and recorded outputs of the real ones in `tests/fixtures/` (`README.md` there says which are real and which are hand-written), plus `mutation_check.py` |
 | `docs/JOURNAL.md` | what was tried, in order, with the numbers and the dead ends |
 
 ## Rules the setup follows
@@ -36,3 +38,21 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 - The agent's own summary is not evidence. The runner re-runs the tests and hashes the test file after the agent stops.
 - One model loaded at a time: two do not fit in 16 GB next to the VM.
 - Every config claim is a measurement in `results/`, not a recommendation copied from elsewhere.
+
+## Run it
+
+Needs Python 3.11+ and a llama.cpp build (`llama-bench`, `llama-server`) in a folder; nothing to install. On the Windows host:
+
+```
+set LL=C:\Users\arthu\llm\llama-b12207
+set MODEL=C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312
+
+python -m forge probe --llama-dir %LL%                              # the machine as JSON (GPU list comes from llama-bench --list-devices)
+python -m forge plan  --llama-dir %LL% --model %MODEL% --explain    # gpu / cpu / low-power plans, each rule with its evidence
+python -m forge tune  --llama-dir %LL% --model %MODEL% --budget 1200   # measure around the plan, cache the answer, print the command line
+python -m forge serve --llama-dir %LL% --model %MODEL% --port 8080  # start llama-server, wait for /health, print the endpoint
+```
+
+The endpoint is `http://127.0.0.1:8080/v1` (OpenAI-compatible). `serve` probes again on every start: on battery it takes the low-power plan, with no GPU or no layer fitting it takes the CPU plan, and if free VRAM or RAM fell since the tuning it re-plans on what is free now instead of failing to load; if llama-server still cannot load, it retries with fewer GPU layers and then a smaller context. `tune` stores its result under `%LOCALAPPDATA%\forge` (or `$FORGE_HOME`, or `--cache-dir`), keyed by hardware, model file and llama.cpp build, so the next start is instant; `--force` re-measures. `python -m forge heuristics` lists every planning rule and the measurement behind it (or "untested").
+
+Do not run `tune` while another benchmark holds the GPU: it loads the model. Tests: `python -m unittest discover -s tests -t .`; `python tests/mutation_check.py` breaks one rule at a time in a temporary copy and requires the tests to fail.
