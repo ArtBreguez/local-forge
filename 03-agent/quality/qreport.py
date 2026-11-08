@@ -51,8 +51,9 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         return "no results found\n"
     out: list[str] = []
     base_pass = pass_map(t0[baseline][1]) if baseline in t0 else None
-    out.append("| Arm | thinking | n | pass | rate | Wilson 95% CI | only A / only arm | McNemar p | vs A | median tok/s | median tokens | cap hits | failures (kind: count) |")
-    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    base_text = {r["problem"]: r.get("response") for r in t0[baseline][1] if r.get("sample", 0) == 0} if baseline in t0 else {}
+    out.append("| Arm | thinking | n | pass | rate | Wilson 95% CI | only A / only arm | McNemar p | vs A | same text as A | median tok/s | median tokens | cap hits | thinking budget used up | failures (kind: count) |")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm, (meta, rows) in t0.items():
         rows0 = [r for r in rows if r.get("sample", 0) == 0]
         s = qbench.summarize(arm, rows0)
@@ -65,11 +66,15 @@ def build_report(directory: Path, baseline: str = "A") -> str:
             if n != len(base_pass):
                 verdict += f"; only {n} common problems"
             cmp_cols = [f"{b} / {c}", f"{p:.3f}", verdict]
+        same = "—"
+        if arm != baseline and base_text:
+            pairs = [(base_text[r["problem"]], r.get("response")) for r in rows0 if r["problem"] in base_text]
+            same = f"{sum(1 for x, y in pairs if x == y)}/{len(pairs)}"
         kinds = ", ".join(f"{k}: {v}" for k, v in sorted(s.kinds.items())) or "none"
         tok = f"{s.median_tok_s:.2f}" if s.median_tok_s else "n/a"
         toks = f"{s.median_tokens:.0f}" if s.median_tokens is not None else "n/a"
         out.append(f"| {arm} | {'on' if meta.get('thinking') else 'off'} | {s.n} | {s.passed} | {pct(s.passed / s.n)} | {pct(lo)}–{pct(hi)} | "
-                   f"{cmp_cols[0]} | {cmp_cols[1]} | {cmp_cols[2]} | {tok} | {toks} | {s.cap_hits} | {kinds} |")
+                   f"{cmp_cols[0]} | {cmp_cols[1]} | {cmp_cols[2]} | {same} | {tok} | {toks} | {s.cap_hits} | {sum(1 for r in rows0 if r.get('budget_exhausted'))} | {kinds} |")
     out.append("")
 
     out.append("Pass rate by language and by difficulty (k/n):")

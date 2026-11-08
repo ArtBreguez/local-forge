@@ -167,7 +167,7 @@ SCOPES = {"forge/plan.py": ["tests.test_plan"]}
 
 def run_tests(cwd: Path, scope: list[str] | None = None) -> tuple[int, str]:
     cmd = ([sys.executable, "-m", "unittest", "-f", *scope] if scope
-           else [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-f"])
+           else [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-t", ".", "-p", "test_[!q]*.py", "-f"])   # not test_quality.py: it tests the phase 3 benchmark, not a forge rule, and takes ~30 s
     r = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=900)
     return r.returncode, r.stdout + r.stderr
 

@@ -48,15 +48,31 @@ def load_arms(path: Path = HERE / "arms.json") -> dict[str, dict[str, Any]]:
 
 
 def parse_serve_json(text: str) -> dict[str, Any] | None:
-    """The JSON object `forge serve` prints once the server is healthy: it starts at the last line that is exactly `{`."""
+    """The JSON object `forge serve` prints once the server is healthy: it starts at the last line that is exactly `{` with no
+    indentation (the nested objects inside it, e.g. the `attempts` entries, are indented `{` lines of their own)."""
     lines = text.splitlines()
     for i in range(len(lines) - 1, -1, -1):
-        if lines[i].strip() == "{":
+        if lines[i].rstrip() == "{":
             try:
                 return json.loads("\n".join(lines[i:]))
             except ValueError:
                 return None
     return None
+
+
+REASONING_MARGIN = 128      # tokens on top of the reasoning budget for the injected message and the end-of-thinking tag
+
+
+def arm_server_env(arm: dict[str, Any]) -> dict[str, str]:
+    """Environment variables for the llama-server of this arm. llama-server reads its flags from LLAMA_ARG_* variables as well, and
+    `forge serve` has no pass-through for flags it does not plan: `--reasoning-budget N` is LLAMA_ARG_THINK_BUDGET, and its message
+    LLAMA_ARG_THINK_BUDGET_MESSAGE (injected before the end-of-thinking tag when the budget runs out)."""
+    env: dict[str, str] = {}
+    if arm.get("reasoning_budget"):
+        env["LLAMA_ARG_THINK_BUDGET"] = str(arm["reasoning_budget"])
+        if arm.get("reasoning_budget_message"):
+            env["LLAMA_ARG_THINK_BUDGET_MESSAGE"] = arm["reasoning_budget_message"]
+    return env
 
 
 def forge_command(arm: dict[str, Any], port: int, python: str, health_timeout: float = 600.0) -> list[str]:
@@ -65,9 +81,12 @@ def forge_command(arm: dict[str, Any], port: int, python: str, health_timeout: f
 
 def runner_command(arm: dict[str, Any], port: int, python: str, out_dir: Path, node: str | None, max_problems: int = 0, problems: str = "") -> list[str]:
     cmd = [python, str(HERE / "run_quality.py"), "--endpoint", f"http://127.0.0.1:{port}/v1", "--arm", arm["id"],
-           "--out", str(out_dir / f"{arm['id']}.jsonl"), "--thinking", arm["thinking"], "--think-budget", str(arm["think_budget"]),
+           "--out", str(out_dir / f"{arm['id']}.jsonl"), "--thinking", arm["thinking"],
+           "--think-budget", str(arm["reasoning_budget"] + REASONING_MARGIN if arm.get("reasoning_budget") else arm["think_budget"]),
            "--temperature", str(arm["temperature"]), "--samples", str(arm["samples"]), "--serve-json", str(out_dir / f"{arm['id']}.serve.json"),
-           "--note", arm["title"]]
+           "--note", arm["title"], "--prompt-variant", arm.get("prompt_variant", "v1")]
+    if arm.get("reasoning_budget_message"):
+        cmd += ["--budget-message", arm["reasoning_budget_message"]]
     if node:
         cmd += ["--node", node]
     if max_problems:
@@ -151,7 +170,10 @@ def run_arm(arm: dict[str, Any], a: argparse.Namespace, env: dict[str, str]) -> 
         return 3
     cmd = forge_command(arm, a.port, a.python, a.health_timeout)
     log(f"ARM {arm['id']} forge: {' '.join(cmd)}")
-    kw: dict[str, Any] = {"cwd": str(a.repo), "env": env, "stdin": subprocess.DEVNULL}
+    server_env = {**env, **arm_server_env(arm)}
+    if arm_server_env(arm):
+        log(f"ARM {arm['id']} server environment: {arm_server_env(arm)}")
+    kw: dict[str, Any] = {"cwd": str(a.repo), "env": server_env, "stdin": subprocess.DEVNULL}
     if IS_WINDOWS:
         kw["creationflags"] = subprocess.CREATE_NEW_PROCESS_GROUP
     else:
@@ -175,6 +197,7 @@ def run_arm(arm: dict[str, Any], a: argparse.Namespace, env: dict[str, str]) -> 
             if not info:
                 log(f"ARM {arm['id']} FAILED to start; see {serve_out}")
                 return 4
+            info["server_env"] = arm_server_env(arm)
             (out_dir / f"{arm['id']}.serve.json").write_text(json.dumps(info, indent=2), encoding="utf-8")
             log(f"ARM {arm['id']} server up: ngl={info['config']['ngl']} ctx={info['config']['ctx']} fa={info['config']['fa']} "
                 f"kv={info['config']['kv']} ub={info['config']['ubatch']} spec={info['config'].get('spec_type')} source={info['source']}")

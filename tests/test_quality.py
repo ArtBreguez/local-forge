@@ -55,6 +55,14 @@ class Manifest(unittest.TestCase):
             self.assertNotIn("unittest", p.prompt)
             self.assertNotIn("node:test", p.prompt)
 
+    def test_prompt_variants_differ_only_by_the_python_indentation_sentence(self):
+        py = next(p for p in PROBLEMS if p.lang == "py")
+        js = next(p for p in PROBLEMS if p.lang == "js")
+        v1, v2 = qbench.build_messages(py, "v1"), qbench.build_messages(py, "v2")
+        self.assertEqual(v1[0], v2[0])
+        self.assertEqual(v2[1]["content"].replace(" Indent with 4 spaces per level.", ""), v1[1]["content"])
+        self.assertEqual(qbench.build_messages(js, "v1"), qbench.build_messages(js, "v2"))
+
     def test_messages_are_identical_for_every_arm(self):
         p = PROBLEMS[0]
         self.assertEqual(qbench.build_messages(p), qbench.build_messages(p))
@@ -340,6 +348,7 @@ class Runner(unittest.TestCase):
             p = BY_ID[rows[0]["problem"]]                     # requests are sent in manifest order
             self.assertEqual(req["max_tokens"], p.max_tokens)
             self.assertEqual(req["messages"], qbench.build_messages(p))
+            self.assertEqual(rows[0]["prompt_variant"], "v1")
 
     @unittest.skipUnless(HAVE_NODE, "node is needed")
     def test_the_same_requests_go_to_every_arm(self):
@@ -390,6 +399,13 @@ class Runner(unittest.TestCase):
                 self.assertEqual(req["chat_template_kwargs"], {"enable_thinking": True})
                 self.assertEqual(req["max_tokens"], BY_ID[row["problem"]].max_tokens + 1000)
 
+    def test_budget_exhaustion_is_detected_from_the_injected_message(self):
+        with FakeOpenAI("bad") as srv:
+            self.run_runner(srv, "--problems", "py_01", "--thinking", "on", "--budget-message", "Let me think", arm="B")
+            self.run_runner(srv, "--problems", "py_02", "--thinking", "off", "--budget-message", "Let me think", arm="B")
+            _, rows = self.rows()
+            self.assertEqual([r["budget_exhausted"] for r in rows], [True, False])     # the fake only returns reasoning when thinking is on
+
     def test_a_rerun_resumes_instead_of_repeating(self):
         with FakeOpenAI("bad") as srv:
             self.run_runner(srv, "--problems", "py_01")
@@ -415,13 +431,17 @@ class Runner(unittest.TestCase):
             self.assertEqual([r["problem"] for r in rows], [p.id for p in PROBLEMS if p.lang == "js"][:3])
 
 
+def ids_flip(pid):
+    return pid < "js_1"        # a handful of problems differ in text between arm C and the rest
+
+
 class Report(unittest.TestCase):
     def make(self, d, arm, passes, thinking=False, cap=(), tok=9.0, temperature=0.0, samples=1):
         lines = [json.dumps({"type": "meta", "arm": arm, "thinking": thinking, "temperature": temperature})]
         for p in PROBLEMS:
             for s in range(samples):
                 ok = passes(p.id, s)
-                lines.append(json.dumps({"type": "result", "problem": p.id, "lang": p.lang, "difficulty": p.difficulty, "subtle": p.subtle, "arm": arm,
+                lines.append(json.dumps({"type": "result", "problem": p.id, "response": f"{arm if (arm == 'C' and ids_flip(p.id)) else 'same'}", "lang": p.lang, "difficulty": p.difficulty, "subtle": p.subtle, "arm": arm,
                                          "sample": s, "pass": ok, "kind": None if ok else "test_fail", "cap_hit": p.id in cap, "tok_s": tok,
                                          "completion_tokens": 100, "wall_s": 10.0}))
         (d / f"{arm}.jsonl").write_text("\n".join(lines) + "\n", encoding="utf-8")
@@ -436,8 +456,10 @@ class Report(unittest.TestCase):
             text = qreport.build_report(d, "A")
             self.assertIn("| A | off | 40 | 30 | 75% | 60%–86% |", text)
             self.assertIn("| B | on | 40 | 30 | 75% |", text)
-            self.assertRegex(text, r"\| C \| off \| 40 \| 20 \| 50% \|.*\| 10 / 0 \| 0\.002 \| worse \(p<0\.05\) \| 7\.00 \|")
+            self.assertRegex(text, r"\| C \| off \| 40 \| 20 \| 50% \|.*\| 10 / 0 \| 0\.002 \| worse \(p<0\.05\) \| 31/40 \| 7\.00 \|")
             self.assertIn("within noise", text)
+            self.assertRegex(text, r"\| B \| on \|.*\| 40/40 \|")           # identical text to A on every problem
+            self.assertRegex(text, r"\| C \| off \|.*\| 31/40 \|")           # arm C differs on the 9 js_0x problems
             self.assertIn("| 5 |", text)                                                   # B's cap hits
 
     def test_pass_at_k_section(self):
@@ -452,10 +474,20 @@ class Report(unittest.TestCase):
 class Grid(unittest.TestCase):
     def test_arms_cover_the_issue_and_are_fully_specified(self):
         arms = qgrid.load_arms()
-        self.assertEqual([k for k in arms if "-" not in k], ["A", "B", "C", "D", "E"])
+        self.assertEqual([k for k in arms if "-" not in k], ["A", "B", "C", "D", "E", "A2"])
+        self.assertEqual([k for k in arms if k.startswith("P-")], ["P-v1", "P-v2"])
         a, b, c, d, e = (arms[x] for x in "ABCDE")
+        for key in ("serve", "thinking", "temperature", "samples", "think_budget"):
+            self.assertEqual(arms["A2"][key], a[key], "A2 must be an exact repeat of A")
         self.assertEqual((a["serve"], a["thinking"]), ([], "off"))
         self.assertEqual((b["serve"], b["thinking"]), (a["serve"], "on"))
+        self.assertEqual(b["reasoning_budget"], 1024)
+        self.assertEqual(qgrid.arm_server_env(a), {})
+        self.assertEqual(qgrid.arm_server_env(b)["LLAMA_ARG_THINK_BUDGET"], "1024")
+        self.assertIn("thinking budget", qgrid.arm_server_env(b)["LLAMA_ARG_THINK_BUDGET_MESSAGE"])
+        rcb = qgrid.runner_command(b, 8081, "py", Path("out"), None)
+        self.assertEqual(rcb[rcb.index("--think-budget") + 1], str(1024 + qgrid.REASONING_MARGIN))
+        self.assertEqual(rcb[rcb.index("--budget-message") + 1], b["reasoning_budget_message"])
         self.assertEqual(c["serve"], ["--kv", "q8_0", "--fa", "on", "--ubatch", "256"])
         self.assertEqual(d["serve"], ["--ctx", "32768", "--ubatch", "256"])
         self.assertEqual(e["serve"], ["--spec", "ngram-mod"])
@@ -474,6 +506,12 @@ class Grid(unittest.TestCase):
     def test_parse_serve_json_finds_the_object_after_the_progress_lines(self):
         text = 'select: plan gpu\nattempt 1: ngl=16\n{\n  "endpoint": "http://127.0.0.1:8081/v1",\n  "command": ["a", "b"],\n  "config": {"ngl": 16}\n}\n'
         self.assertEqual(qgrid.parse_serve_json(text)["command"], ["a", "b"])
+        # the real output nests objects (config, attempts): the top-level object is the unindented brace, not the last brace
+        real = json.dumps({"endpoint": "http://127.0.0.1:8081/v1", "plan": "gpu", "source": "tuned", "config": {"ngl": 16, "ctx": 16384},
+                           "attempts": [{"ngl": 16, "ctx": 16384, "ok": True, "detail": "healthy"}], "command": ["llama-server", "-ngl", "16"],
+                           "log": "x.log"}, indent=2)
+        parsed = qgrid.parse_serve_json("select: x\nattempt 1: ngl=16\n" + real + "\n")
+        self.assertEqual((parsed["config"]["ngl"], parsed["command"][0], len(parsed["attempts"])), (16, "llama-server", 1))
         self.assertIsNone(qgrid.parse_serve_json("attempt 1\nnothing yet\n"))
         self.assertIsNone(qgrid.parse_serve_json('{\n  "endpoint": "x",\n'))
 

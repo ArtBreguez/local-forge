@@ -32,6 +32,9 @@ LANG_NOTE = {
     "js": "Language: JavaScript for Node.js (CommonJS, no dependencies). Define the requested function(s) or class and "
           "export them with `module.exports = { ... };`.",
 }
+# Prompt variants. v1 is the first wording. v2 adds one sentence for Python: in the first smoke run this model sometimes wrote a
+# whole function with one-space (or no) indentation, which is an IndentationError and says nothing about the logic.
+PROMPT_VARIANTS = {"v1": LANG_NOTE, "v2": {**LANG_NOTE, "py": LANG_NOTE["py"] + " Indent with 4 spaces per level."}}
 FENCE_LANGS = {"py": {"python", "py", "python3", ""}, "js": {"javascript", "js", "node", "nodejs", "cjs", ""}}
 CODE_HINTS = {"py": ("def ", "class "), "js": ("function", "=>", "class ")}
 OUTPUT_LIMIT = 2000
@@ -71,9 +74,9 @@ def load_problems(root: Path = HERE) -> list[Problem]:
     return [Problem(d["id"], d["lang"], tuple(d["entries"]), d["difficulty"], int(d["max_tokens"]), tuple(d["tags"]), bool(d["subtle"]), root) for d in data]
 
 
-def build_messages(p: Problem) -> list[dict[str, str]]:
+def build_messages(p: Problem, variant: str = "v1") -> list[dict[str, str]]:
     """The same two messages for every arm. Thinking is switched by the template kwargs of the request, not by the text."""
-    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": f"{LANG_NOTE[p.lang]}\n\n{p.prompt}"}]
+    return [{"role": "system", "content": SYSTEM_PROMPT}, {"role": "user", "content": f"{PROMPT_VARIANTS[variant][p.lang]}\n\n{p.prompt}"}]
 
 
 # ------------------------------------------------------------------------------------------------ extraction

@@ -76,7 +76,7 @@ def server_props(endpoint: str) -> dict[str, Any]:
 def build_payload(p: qbench.Problem, a: argparse.Namespace, sample: int) -> dict[str, Any]:
     thinking = a.thinking == "on"
     budget = p.max_tokens + (a.think_budget if thinking else 0)
-    return {"model": a.model_name, "messages": qbench.build_messages(p), "temperature": a.temperature, "seed": a.seed + sample,
+    return {"model": a.model_name, "messages": qbench.build_messages(p, a.prompt_variant), "temperature": a.temperature, "seed": a.seed + sample,
             "max_tokens": budget, "stream": False, "cache_prompt": False,
             "chat_template_kwargs": {"enable_thinking": thinking}}
 
@@ -85,7 +85,7 @@ def run_problem(p: qbench.Problem, a: argparse.Namespace, sample: int) -> dict[s
     thinking = a.thinking == "on"
     payload = build_payload(p, a, sample)
     rec: dict[str, Any] = {"type": "result", "problem": p.id, "lang": p.lang, "difficulty": p.difficulty, "subtle": p.subtle, "arm": a.arm,
-                           "sample": sample, "temperature": a.temperature, "seed": payload["seed"], "thinking": thinking,
+                           "sample": sample, "prompt_variant": a.prompt_variant, "temperature": a.temperature, "seed": payload["seed"], "thinking": thinking,
                            "max_tokens": payload["max_tokens"], "at": time.strftime("%Y-%m-%dT%H:%M:%S")}
     t0 = time.monotonic()
     try:
@@ -108,7 +108,8 @@ def run_problem(p: qbench.Problem, a: argparse.Namespace, sample: int) -> dict[s
         "tok_s": round(tok_s, 3) if tok_s else None, "wall_s": round(wall, 2),
         "timings": {k: timings[k] for k in ("prompt_n", "prompt_ms", "prompt_per_second", "predicted_n", "predicted_ms", "predicted_per_second",
                                             "draft_n", "draft_n_accepted") if k in timings},
-        "response": content, "reasoning": reasoning, "answer_chars": len(content), "reasoning_chars": len(reasoning)})
+        "response": content, "reasoning": reasoning, "answer_chars": len(content), "reasoning_chars": len(reasoning),
+        "budget_exhausted": bool(a.budget_message) and (a.budget_message in reasoning or a.budget_message in content)})
     code, how = qbench.extract_code(content, p.lang, thinking=thinking, reasoning_split=bool(reasoning))
     rec["extract"] = how
     if code is None:
@@ -147,8 +148,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--out", required=True, type=Path)
     ap.add_argument("--thinking", choices=["on", "off"], default="off")
     ap.add_argument("--think-budget", type=int, default=2048, help="tokens added to the problem's budget when thinking is on (the cap)")
+    ap.add_argument("--budget-message", default="", help="the text the server injects when its reasoning budget runs out (LLAMA_ARG_THINK_BUDGET_MESSAGE); "
+                    "finding it in the answer or the reasoning is recorded as budget_exhausted")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--seed", type=int, default=1234)
+    ap.add_argument("--prompt-variant", choices=sorted(qbench.PROMPT_VARIANTS), default="v1", help="wording of the language note (see qbench.PROMPT_VARIANTS)")
     ap.add_argument("--samples", type=int, default=1, help="samples per problem (sample i uses seed+i)")
     ap.add_argument("--lang", choices=["py", "js"])
     ap.add_argument("--problems", help="comma-separated ids or id prefixes")
@@ -173,7 +177,7 @@ def main(argv: list[str] | None = None) -> int:
     if not a.out.exists() or a.out.stat().st_size == 0:
         serve = json.loads(a.serve_json.read_text(encoding="utf-8-sig")) if a.serve_json and a.serve_json.exists() else None
         meta = {"type": "meta", "runner_version": RUNNER_VERSION, "arm": a.arm, "endpoint": a.endpoint, "thinking": a.thinking == "on",
-                "think_budget": a.think_budget if a.thinking == "on" else 0, "temperature": a.temperature, "seed": a.seed, "samples": a.samples,
+                "think_budget": a.think_budget if a.thinking == "on" else 0, "budget_message": a.budget_message, "prompt_variant": a.prompt_variant, "temperature": a.temperature, "seed": a.seed, "samples": a.samples,
                 "started": time.strftime("%Y-%m-%dT%H:%M:%S"), "host": platform.node(), "platform": platform.platform(),
                 "python": sys.version.split()[0], "node": tool_version([qbench.find_node(a.node) or "node", "--version"]),
                 "server_props": server_props(a.endpoint), "serve": serve, "note": a.note, "argv": sys.argv[1:]}
