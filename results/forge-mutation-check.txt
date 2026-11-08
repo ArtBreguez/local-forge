@@ -1,18 +1,36 @@
 baseline: PASS
 KILLED  vram-budget-1.5x-free                [plan tests] layers are chosen against 150% of the free VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
 KILLED  vram-comparison-inverted             [plan tests] the fit comparison is inverted (picks layers that do NOT fit)   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
-KILLED  vram-margin-removed                  [plan tests] no safety margin: plans to the last MiB of free VRAM   <- first failing test: IndependentOracle.test_plan_for_the_idle_card_survives_the_drift_seen_in_the_fixtures
+KILLED  vram-margin-removed                  [plan tests] no safety margin: plans to the last MiB of free VRAM   <- first failing test: IndependentOracle.test_reserve_sits_inside_the_window_the_facts_leave_open
 KILLED  estimate-ignores-kv-cache            [plan tests] KV cache not charged to VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
 KILLED  estimate-ignores-scratch             [plan tests] graph scratch not charged to VRAM   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
-KILLED  offload-first-layers-not-last        [plan tests] offloads blocks 0..n instead of the last n   <- first failing test: IndependentOracle.test_estimate_matches_hand_arithmetic
-KILLED  serve-ignores-vram-drop              [full suite] serve keeps the tuned config even when free VRAM dropped   <- first failing test: Selection.test_fits_now
+KILLED  offload-first-layers-not-last        [plan tests] offloads the first blocks instead of the last ones   <- first failing test: IndependentOracle.test_estimate_matches_hand_arithmetic
+KILLED  serve-ignores-vram-shortage          [full suite] serve keeps a configuration whose VRAM estimate exceeds what is free now   <- first failing test: Selection.test_a_config_pinned_to_one_card_is_checked_against_that_card
 KILLED  cache-key-drops-model                [full suite] cache key ignores the model file   <- first failing test: Cache.test_changed_model_retunes
 KILLED  cache-key-drops-hardware             [full suite] cache key ignores the hardware   <- first failing test: Cache.test_changed_hardware_retunes
 KILLED  cache-key-drops-llama-build          [full suite] cache key ignores the llama.cpp build   <- first failing test: Cache.test_changed_llama_build_retunes
 KILLED  hardware-fingerprint-ignores-gpu     [full suite] hardware fingerprint does not include the GPU   <- first failing test: Cache.test_changed_hardware_retunes
-KILLED  cache-never-hits                     [full suite] cache is written but never read (every start re-tunes)   <- first failing test: Cache.test_load_changes_do_not_invalidate
-KILLED  oom-does-not-stop-the-search         [full suite] keeps probing larger layer counts after an out-of-memory failure   <- first failing test: WithFakeBench.test_finds_best_and_stops_at_oom
+KILLED  cache-never-hits                     [full suite] cache is written but never read (every start re-tunes)   <- first failing test: Cache.test_cache_variant_does_not_depend_on_the_order_of_ubatches
+KILLED  loaded-setting-keeps-descending      [full suite] keeps measuring lower layer counts after a setting already ran   <- first failing test: WithFakeBench.test_hanging_benchmark_is_killed_not_awaited
 KILLED  floor-ignored                        [full suite] prompt-speed floor not applied   <- first failing test: Objective.test_floor_excludes_faster_generation
-KILLED  list-devices-swaps-total-and-free    [full suite] free and total VRAM swapped   <- first failing test: IndependentOracle.test_plan_for_the_idle_card_survives_the_drift_seen_in_the_fixtures
+KILLED  compute-ignores-context              [plan tests] compute buffer sized for llama-bench's context, whatever the server context is (the original bug)   <- first failing test: IndependentOracle.test_compute_buffer_grows_with_context_and_ubatch_and_ignores_context_with_flash_attention
+KILLED  compute-ignores-ubatch               [plan tests] compute buffer always sized for ubatch 512   <- first failing test: IndependentOracle.test_compute_buffer_grows_with_context_and_ubatch_and_ignores_context_with_flash_attention
+KILLED  flash-attention-still-pays-for-scores [plan tests] attention-score matrix charged even with flash attention on   <- first failing test: IndependentOracle.test_compute_buffer_grows_with_context_and_ubatch_and_ignores_context_with_flash_attention
+KILLED  output-matrix-not-offloaded-first    [plan tests] output matrix (796 MiB) charged to the GPU only when every block is there   <- first failing test: IndependentOracle.test_chosen_layers_never_exceed_free_vram_even_ignoring_the_margin
+KILLED  mtp-slot-not-counted-as-a-layer      [plan tests] -ngl N puts N-1 blocks on the GPU instead of N-2 (the empty MTP slot is ignored)   <- first failing test: IndependentOracle.test_estimate_matches_hand_arithmetic
+KILLED  reserve-too-small                    [plan tests] reserve outside the window the six load/fail facts allow   <- first failing test: IndependentOracle.test_reserve_sits_inside_the_window_the_facts_leave_open
+KILLED  server-ignores-ubatch                [plan tests] llama-server always gets -ub 512, whatever was planned or tuned   <- first failing test: VramFit.test_a_smaller_ubatch_buys_layers_and_the_server_plan_carries_it
+KILLED  speculation-on-by-default            [plan tests] ngram-mod switched on unless the user asked for something else   <- first failing test: CommandLine.test_modern_flags
+KILLED  tuner-has-no-ubatch-axis             [full suite] tune only measures the planned ubatch   <- first failing test: Cache.test_truncated_result_is_not_reused_for_a_request_with_more_time
+KILLED  tuner-measures-layers-the-server-cannot-hold [full suite] tune measures 2 layers above the server's limit (what llama-bench can load at a smaller context)   <- first failing test: WithFakeBench.test_estimate_guard_skips_points_the_server_cannot_hold
+KILLED  cache-variant-ignores-search-version [full suite] results of an older search space are reused   <- first failing test: Cache.test_cache_variant_does_not_depend_on_the_order_of_ubatches
+KILLED  serve-trusts-the-tuned-layer-count   [full suite] a tune measured by llama-bench is served without re-checking it against the server's own memory estimate   <- first failing test: Selection.test_a_ubatch_outside_the_modelled_range_is_rejected_not_a_crash
+KILLED  replan-drops-the-tuned-ubatch        [full suite] re-planning after a failed re-check forgets the tuned ubatch   <- first failing test: Selection.test_tuned_ubatch_survives_the_recheck_and_reaches_the_command_line
+KILLED  fallback-jumps-four-layers           [full suite] fallback ladder skips straight to steps of 4 layers (15 -> 11)   <- first failing test: Launch.test_ladder_continues_with_bigger_steps_and_then_context
+KILLED  pinned-device-checked-against-the-roomiest-card [full suite] a config pinned to one GPU is judged by another GPU's free VRAM   <- first failing test: Selection.test_a_config_pinned_to_one_card_is_checked_against_that_card
+KILLED  ladder-keeps-duplicate-rungs         [full suite] fallback ladder retries a placement it has already tried   <- first failing test: Selection.test_ladder_has_no_duplicate_server_starts
+KILLED  mtp-block-not-charged                [plan tests] weights of a present MTP block are not charged anywhere   <- first failing test: IndependentOracle.test_mtp_block_weights_are_charged_when_the_file_has_them
+KILLED  fallback-never-reaches-smaller-contexts [full suite] fallback ladder has no smaller-context rungs   <- first failing test: Selection.test_fallback_ladder_reaches_the_smaller_contexts_within_the_attempt_limit
+KILLED  list-devices-swaps-total-and-free    [full suite] free and total VRAM swapped   <- first failing test: IndependentOracle.test_plan_follows_free_vram_down_to_the_busy_card
 
-15/15 mutants killed
+33/33 mutants killed

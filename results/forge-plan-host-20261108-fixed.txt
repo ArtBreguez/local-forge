@@ -1,0 +1,41 @@
+model: qwen35 IQ4_XS 4956 MiB, 32 blocks (8 with KV cache), KV 32.0 KiB/token f16; -ngl N = N-2 blocks + the output matrix on the GPU
+* [gpu] ngl=14 ctx=16384 threads=6 fa=off kv=f16 | est VRAM 3065 MiB, RAM 3135 MiB
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 16 layers vs 14 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 14: 12 of 32 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 16384, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 696 MiB at ctx 16384, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 14 = 12 blocks + the output matrix (796 MiB, offloaded first)
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  [cpu] ngl=0 ctx=4096 threads=6 fa=off kv=f16 | est VRAM 0 MiB, RAM 5120 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-CPU-ONLY [partially measured]: 0 GPU layers
+  - H-CTX-RAM [partially measured]: context reduced 16384 -> 4096 to fit 5000 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~5120 MiB at ctx 4096 but only 4750 MiB of 5000 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [low-power] ngl=16 ctx=8192 threads=3 fa=off kv=f16 | est VRAM 3047 MiB, RAM 2718 MiB
+  - H-LOW-POWER [untested]: battery/UPS profile: 3 threads, context capped at 8192
+  - H-CTX-TARGET [partially measured]: target context 8192
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 17 layers vs 16 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 16: 14 of 32 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 8192, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 517 MiB at ctx 8192, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 16 = 14 blocks + the output matrix (796 MiB, offloaded first)
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+applies now: gpu (GPU available on mains power)

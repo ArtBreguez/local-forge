@@ -1,0 +1,291 @@
+start 2026-11-08T17:48:27
+preflight: sweep-c.log last line: exit=0 2026-11-08T13:10:36
+preflight: llama processes running: 0
+preflight: ollama models loaded: 0
+preflight:   Vulkan0: AMD Radeon RX 6500 XT (4080 MiB, 3443 MiB free)
+git-tree files: 9 py in forge, tests: 5
+=== A: forge serve --once (plan path, real cache dir)
+select: plan 'gpu': GPU available on mains power
+attempt 1: ngl=14 ctx=16384 fa=off kv=f16 ub=512 spec=none
+{
+  "endpoint": "http://127.0.0.1:8088/v1",
+  "plan": "gpu",
+  "source": "plan",
+  "config": {
+    "ngl": 14,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 512,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 14,
+      "ctx": 16384,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8088",
+    "-ngl",
+    "14",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "512",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "none"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-174832-0.log"
+}
+A rc=0
+=== B: forge serve --once with the REAL first-tune result (15 layers, llama-bench) replayed
+cache C:\Users\arthu\llm\forge\cache-replay: key f2f82e89c059d99b356cd0bf build b12207-998200491
+variant ctx=16384;depth=8192;floor=100;plan=gpu;ub=512/256;search=v2-ubatch-server-bound
+REPLAY of the real result of the first host tune (llama-bench, 15 layers, ubatch 512)
+config {'ngl': 15, 'ctx': 16384, 'threads': 6, 'threads_batch': 6, 'fa': False, 'kv': 'f16', 'ubatch': 512, 'parallel': 1, 'spec_type': None, 'device': None}
+select: plan 'gpu': GPU available on mains power
+select: tuned configuration skipped: needs ~3236 MiB VRAM at ctx 16384, ubatch 512 (weights 2265, KV+state 275, compute 696), budget now 3119 MiB of 3443 MiB free
+select: re-planned for the server with fa=off kv=f16 ubatch=512: 14 layers
+attempt 1: ngl=14 ctx=16384 fa=off kv=f16 ub=512 spec=none
+{
+  "endpoint": "http://127.0.0.1:8088/v1",
+  "plan": "gpu",
+  "source": "plan",
+  "config": {
+    "ngl": 14,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 512,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 14,
+      "ctx": 16384,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8088",
+    "-ngl",
+    "14",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "512",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "none"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache-replay\\logs\\llama-server-20261108-174904-0.log"
+}
+B rc=0
+=== C: long-running serve, plan path, one completion
+[C] healthy=True after 26s
+[C] completion wall=18s completion_tokens=146 prompt_tokens=26 finish=stop
+[C] timings predicted_per_second=9.23 prompt_per_second=12.77 predicted_n=146 prompt_n=26
+[C] --- content
+```javascript
+function isLeapYear(y) {
+ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+```
+[C] --- end content
+[C] server cmdline:
+C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8088 -ngl 14 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 512 -np 1 --fit off --spec-type none
+[C] serve stdout:
+  select: plan 'gpu': GPU available on mains power
+  attempt 1: ngl=14 ctx=16384 fa=off kv=f16 ub=512 spec=none
+  {
+    "endpoint": "http://127.0.0.1:8088/v1",
+    "plan": "gpu",
+    "source": "plan",
+    "config": {
+      "ngl": 14,
+      "ctx": 16384,
+      "threads": 6,
+      "threads_batch": 6,
+      "fa": false,
+      "kv": "f16",
+      "ubatch": 512,
+      "parallel": 1,
+      "spec_type": null,
+      "device": null
+    },
+    "attempts": [
+      {
+        "ngl": 14,
+        "ctx": 16384,
+        "ok": true,
+        "detail": "healthy"
+      }
+    ],
+    "command": [
+      "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+      "-m",
+      "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8088",
+      "-ngl",
+      "14",
+      "-c",
+      "16384",
+      "-t",
+      "6",
+      "-tb",
+      "6",
+      "-fa",
+      "off",
+      "-ctk",
+      "f16",
+      "-ctv",
+      "f16",
+      "-ub",
+      "512",
+      "-np",
+      "1",
+      "--fit",
+      "off",
+      "--spec-type",
+      "none"
+    ],
+    "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-174930-0.log"
+  }
+[C] serve stderr:
+[C] llama-server processes left: 0
+=== D: long-running serve, SYNTHETIC 16 layers / ubatch 256 entry, one completion
+cache C:\Users\arthu\llm\forge\cache-replay-d: key f2f82e89c059d99b356cd0bf build b12207-998200491
+variant ctx=16384;depth=8192;floor=100;plan=gpu;ub=512/256;search=v2-ubatch-server-bound
+SYNTHETIC entry: 16 layers at ubatch 256, no measurement behind it (checks the planner's prediction for the server)
+config {'ngl': 16, 'ctx': 16384, 'threads': 6, 'threads_batch': 6, 'fa': False, 'kv': 'f16', 'ubatch': 256, 'parallel': 1, 'spec_type': None, 'device': None}
+[D] healthy=True after 23s
+[D] completion wall=16s completion_tokens=146 prompt_tokens=26 finish=stop
+[D] timings predicted_per_second=9.84 prompt_per_second=17.30 predicted_n=146 prompt_n=26
+[D] --- content
+```javascript
+function isLeapYear(y) {
+ return (y % 4 === 0 && y % 100 !== 0) || y % 400 === 0;
+}
+```
+[D] --- end content
+[D] server cmdline:
+C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8088 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+[D] serve stdout:
+  select: plan 'gpu': GPU available on mains power
+  select: tuned configuration fits the server's memory estimate
+  attempt 1: ngl=16 ctx=16384 fa=off kv=f16 ub=256 spec=none
+  {
+    "endpoint": "http://127.0.0.1:8088/v1",
+    "plan": "gpu",
+    "source": "tuned",
+    "config": {
+      "ngl": 16,
+      "ctx": 16384,
+      "threads": 6,
+      "threads_batch": 6,
+      "fa": false,
+      "kv": "f16",
+      "ubatch": 256,
+      "parallel": 1,
+      "spec_type": null,
+      "device": null
+    },
+    "attempts": [
+      {
+        "ngl": 16,
+        "ctx": 16384,
+        "ok": true,
+        "detail": "healthy"
+      }
+    ],
+    "command": [
+      "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+      "-m",
+      "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+      "--host",
+      "127.0.0.1",
+      "--port",
+      "8088",
+      "-ngl",
+      "16",
+      "-c",
+      "16384",
+      "-t",
+      "6",
+      "-tb",
+      "6",
+      "-fa",
+      "off",
+      "-ctk",
+      "f16",
+      "-ctv",
+      "f16",
+      "-ub",
+      "256",
+      "-np",
+      "1",
+      "--fit",
+      "off",
+      "--spec-type",
+      "none"
+    ],
+    "log": "C:\\Users\\arthu\\llm\\forge\\cache-replay-d\\logs\\llama-server-20261108-175019-0.log"
+  }
+[D] serve stderr:
+[D] llama-server processes left: 0
+final: llama processes left: 0
+exit=0 2026-11-08T17:50:58
