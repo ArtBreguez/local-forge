@@ -28,6 +28,7 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 | `02-bench/` | `bench.py` sweeps GPU layers, context and threads through the Ollama API and writes JSON lines; `model-info.ps1` reads what Ollama actually did (layers offloaded, threads, flash attention) |
 | `03-agent/` | a fixed coding task (`agent-test/`: implement `parseDuration` so 5 tests pass), the OpenCode config, and the runner that times the agent and counts passing tests itself |
 | `tools/` | small status probes used while runs are in flight |
+| `skills/` | vendored agent skills for the offline agent, each with `PROVENANCE.md` (source, commit, licence) |
 | `results/` | raw outputs of every run (JSONL, logs, the code the agent wrote) |
 | `forge/` | the hardware-adaptive layer (Python 3.11+, standard library only, Windows and Linux): `probe` the machine, `plan` a configuration from a GGUF header without running anything, `tune` it with llama-bench, `serve` llama-server with the result |
 | `tests/` | unit tests for all of it, with fake llama-bench/llama-server programs and recorded outputs of the real ones in `tests/fixtures/` (`README.md` there says which are real and which are hand-written), plus `mutation_check.py` |

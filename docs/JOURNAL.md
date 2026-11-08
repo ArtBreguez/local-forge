@@ -189,3 +189,25 @@ Decision for now: default `--spec-type none`; `ngram-mod` is an arm in phase 3 a
 **Not verified.** `forge tune` was not run again on the host (the allowance was one run); the new search order, the ubatch axis and the server bound are tested against the fake llama-bench only, with the real sweep D numbers in the fake's prompt-speed ratio. The reserve window is 118 MiB wide and the data on this card cannot narrow it; how it scales with free VRAM or card size is untested. The compute-buffer model is one model, one backend: CUDA, Metal, other architectures and ubatch 128/1024 are untested. The first launch of the host script was detached and died with the SSH session before any model load; the second ran without `FORGE_HOME` and left two server logs in `%LOCALAPPDATA%\forge` (a directory that did not exist; the two files and the directory were removed, nothing else was touched there); the later runs, with `FORGE_HOME` under `forge\cache`, behave the same; the last one, made after the review fixes below on the code that is committed, is the one in `results/`.
 
 **Independent review, and what it found.** A fresh agent read the diff cold (no conclusions given) and found seven edge-case defects, none on the target host's path; six were fixed with regression tests and mutants: (1) the re-check judged a config pinned to one GPU by the roomiest GPU's free VRAM; (2) the weights of an MTP block were never charged when a file contains them (the slot offloaded right after the output matrix); (3) the fallback ladder was cut at 20 attempts for models of 53+ blocks, so its smaller-context rungs were unreachable (the coarse step now scales with depth); (4) `-ngl 2` and `-ngl 1` are the same placement on a model with an MTP slot and were tried twice; (5) the cache key depended on the order of `--ubatches`; (6) `plan --ubatch 1024` printed a traceback. The seventh is a fact the review read out of the grid, not a fix: **`-ngl 0` on a Vulkan build still reserves a 1312 MiB compute buffer on the GPU** (ubatch 512, 16K); `-dev none` moves it to the host (604 MiB) (`results/fit-params-ngl0-devnone-host-20261108.txt`, a dry run of fit-params). The planner charges a CPU plan 0 MiB of VRAM and `forge serve` does not pass `-dev none`, so the CPU rungs of the ladder still need ~1.3 GiB of free VRAM. Recorded in H-CPU-ONLY as a measured gap; not changed, because no CPU-only server was started to see that `-dev none` loads.
+
+## 2026-11-08 — REA (Reverse Engineer Anything) on the host
+
+Requested by the user as an essential "apocalypse" skill: understand software and files with no source and no internet.
+
+Audit before installing (repo `morluto/rea`, MIT, npm `rea-agents` 6.8.0; full method in the Hermes skill `vetting-third-party-agent-tooling`):
+- No `preinstall`/`postinstall`/`install` scripts in `package.json`; 42 runtime dependencies, Frida optional (skipped).
+- URLs in runtime code are test fixtures (`example.test`, `127.0.0.1`); real npm/GitHub calls live only in release, update and CI scripts. The "telemetry" matches are local Hopper/Ghidra lifecycle logs, nothing sent out.
+- `rea setup` edits every agent's configuration (it reports `config_drift` for Hermes, OpenCode, Gemini CLI, Copilot CLI): not run.
+- Noted, not blocking: ~443k stars on a repo created 2026-04-14. The account (2020) and the code are coherent with the stated purpose.
+
+Install (`tools/rea-install.ps1`): REA needs Node 22.23+/24.22+, the host has 20.9. A portable Node v24.22.2 (official zip, SHA-256 `ca1bff5d…99e2` matched) in `C:\Users\arthu\llm\rea\`, then `npm install --ignore-scripts --omit=optional rea-agents@6.8.0` into a local folder: 149 packages, 60 s, 136 MB, lockfile integrity equal to the registry's. Nothing global.
+
+Tests on real local files, offline (`tools/rea-tests.ps1`, raw JSON in `results/rea/`):
+
+| test | command | result |
+|---|---|---|
+| model file | `rea inspect-model-artifact <the DeepSeek heretic GGUF>` | 2 s. `qwen35`, `block_count = 33`, `nextn_predict_layers = 1`, tensors in blocks 0–31 only, **no `blk.32` / `nextn` tensors**. Independently confirms the MTP finding from `forge/gguf.py` and phase 2. It also lists its own limits (header only, weights not read). |
+| native binary | `rea inspect-pe-imports llama-server.exe` | 1 s. Imports KERNEL32, the MSVC runtime and `llama-server-impl.dll`: the server is a thin launcher, the real code is in the DLL. |
+| readiness | `rea doctor --json` | static analyzers ready; no native decompiler installed (Hopper, Ghidra, IDA, JADX, Kuna all missing), so `decompile` is not available yet. |
+
+Next: Ghidra (offline, open source, needs a JDK) so REA can decompile native code; then register REA as an MCP server for the local agent (OpenCode + the 9B model) by hand, not through `rea setup`, and measure in phase 4 whether the small model can use REA's tools to answer a real question about a binary.
