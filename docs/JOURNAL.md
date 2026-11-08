@@ -211,3 +211,20 @@ Tests on real local files, offline (`tools/rea-tests.ps1`, raw JSON in `results/
 | readiness | `rea doctor --json` | static analyzers ready; no native decompiler installed (Hopper, Ghidra, IDA, JADX, Kuna all missing), so `decompile` is not available yet. |
 
 Next: Ghidra (offline, open source, needs a JDK) so REA can decompile native code; then register REA as an MCP server for the local agent (OpenCode + the 9B model) by hand, not through `rea setup`, and measure in phase 4 whether the small model can use REA's tools to answer a real question about a binary.
+
+## 2026-11-08 — first real `forge tune` with the fixed planner
+
+`tools/tune2-host.ps1` (`forge tune --budget 2400 --reps 2`, then `forge serve` with the result and three temperature-0 completions). Raw: `results/forge-tune2-host-20261108.log`.
+
+| ngl | FA | KV | ubatch | prompt tok/s at depth 8192 | gen tok/s at depth 8192 |
+|---|---|---|---|---|---|
+| 14 | off | f16 | 512 | 187.1 | 8.53 |
+| **16** | **off** | **f16** | **256** | **145.8** | **9.13** |
+| 16 | on | q8_0 | 512 | 85.8 | 7.49 |
+| 15 | on | f16 | 512 | 80.3 | 7.57 |
+| 18 | on | q8_0 | 256 | 76.3 | 7.87 |
+| 17 | on | f16 | 256 | 75.9 | 8.06 |
+
+- 6 measurements in 956 s (the old search needed 12 in 1195 s). The winner is the point the corrected planner predicted out of sample earlier: 16 layers, ubatch 256. Every flash-attention arm is under the 100 tok/s prompt floor again.
+- `forge serve` accepted the tuned result ("fits the server's memory estimate"), loaded on the first attempt, and served at **9.85 / 9.82 / 9.88 tok/s** (200 tokens each). Before the fix the server path gave 8.0 tok/s at 11 layers after a failed load; Ollama's own default was 7.6.
+- Trade-off of ubatch 256: prompt processing at depth drops from 187 to 146 tok/s (still above the floor). For an agent turn that re-reads ~1,500 new tokens and writes ~400, the two settings are within a few seconds of each other; generation-heavy work favours 256.

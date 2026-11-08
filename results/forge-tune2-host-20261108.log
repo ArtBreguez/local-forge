@@ -1,0 +1,84 @@
+start 2026-11-08T18:07:11
+--- tune
+tuning plan 'gpu': [gpu] ngl=14 ctx=16384 threads=6 fa=off kv=f16 ub=512 | est VRAM 3065 MiB, RAM 3135 MiB
+budget 2400s, depth 8192, reps 2, prompt floor 100 tok/s
+  ngl=14 fa=off kv=f16  ub=512 ok      pp@d=187.1 tg@d=8.53 tok/s
+  ngl=16 fa=off kv=f16  ub=256 ok      pp@d=145.8 tg@d=9.13 tok/s
+  ngl=16 fa=on  kv=q8_0 ub=512 ok      pp@d=85.8 tg@d=7.49 tok/s
+  ngl=15 fa=on  kv=f16  ub=512 ok      pp@d=80.3 tg@d=7.57 tok/s
+  ngl=18 fa=on  kv=q8_0 ub=256 ok      pp@d=76.3 tg@d=7.87 tok/s
+  ngl=17 fa=on  kv=f16  ub=256 ok      pp@d=75.9 tg@d=8.06 tok/s
+measured in 956s (key f2f82e89c059d99b356cd0bf, cache C:\Users\arthu\llm\forge\cache\tune-cache.json)
+best: ngl=16 fa=off kv=f16 ub=256: 9.13 tok/s generation, 145.8 tok/s prompt at depth (max generation tok/s at agent depth subject to prompt tok/s >= 100)
+llama-server command line (`forge serve` re-checks it against the server's own memory estimate before using it):
+  C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8080 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+tune rc=0 secs=958
+--- serve --once
+select: plan 'gpu': GPU available on mains power
+select: tuned configuration fits the server's memory estimate
+attempt 1: ngl=16 ctx=16384 fa=off kv=f16 ub=256 spec=none
+{
+  "endpoint": "http://127.0.0.1:8088/v1",
+  "plan": "gpu",
+  "source": "tuned",
+  "config": {
+    "ngl": 16,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 256,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 16,
+      "ctx": 16384,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8088",
+    "-ngl",
+    "16",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "256",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "none"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-182318-0.log"
+}
+serve rc=0
+--- long serve + completion
+healthy=True
+completion 1 tokens=200 gen_tps=9.85 prompt_tps=26.1
+completion 2 tokens=200 gen_tps=9.82 prompt_tps=8.6
+completion 3 tokens=200 gen_tps=9.88 prompt_tps=15.3
+cmd: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8088 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+exit=0 2026-11-08T18:25:36
