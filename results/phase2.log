@@ -1,0 +1,9 @@
+start 2026-11-08T14:08:58
+load ngl=15 ctx=16384 ok=False
+load ngl=14 ctx=16384 ok=True
+spec=none done
+spec=ngram-simple done
+spec=ngram-mod done
+spec=ngram-cache done
+spec=draft-mtp failed to start: 0.07.358.822 I cmn          init: llama threadpool init, n_threads = 6 | 0.35.393.764 I common_speculative_init_result: creating MTP draft context against the target model 'C:\Users\arthu\.ollama\models\blobs\sha256-55f5
+exit=0 2026-11-08T14:32:37

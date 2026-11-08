@@ -1,0 +1,39 @@
+start 2026-11-08T12:23:41
+sweep B finished or absent at 2026-11-08T12:24:11
+llama-bench: C:\Users\arthu\llm\llama-b12207\llama-bench.exe
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+ggml_vulkan: Found 1 Vulkan devices:
+ggml_vulkan: 0 = AMD Radeon RX 6500 XT (AMD proprietary driver) | uma: 0 | rebar: 0 | fp16: 1 | bf16: 0 | fp4: 0 | warp size: 32 | shared memory: 32768 | int dot: 1 | matrix cores: none
+load_backend: loaded Vulkan backend from C:\Users\arthu\llm\llama-b12207\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+load_backend: loaded RPC backend from C:\Users\arthu\llm\llama-b12207\ggml-rpc.dll
+load_backend: loaded Vulkan backend from C:\Users\arthu\llm\llama-b12207\ggml-vulkan.dll
+load_backend: loaded CPU backend from C:\Users\arthu\llm\llama-b12207\ggml-cpu-haswell.dll
+Available devices:
+  Vulkan0: AMD Radeon RX 6500 XT (4080 MiB, 3443 MiB free)
+free RAM GB before: 5.5
+ngl=0 fa=off kv=f16 rc=0 secs=231 lines=4 
+ngl=0 fa=on kv=f16 rc=0 secs=291 lines=4 
+ngl=0 fa=on kv=q8_0 rc=0 secs=288 lines=4 
+ngl=8 fa=off kv=f16 rc=0 secs=197 lines=4 
+ngl=8 fa=on kv=f16 rc=0 secs=251 lines=4 
+ngl=8 fa=on kv=q8_0 rc=0 secs=244 lines=4 
+ngl=12 fa=off kv=f16 rc=0 secs=181 lines=4 
+ngl=12 fa=on kv=f16 rc=0 secs=224 lines=4 
+ngl=12 fa=on kv=q8_0 rc=0 secs=222 lines=4 
+ngl=16 fa=off kv=f16 rc=0 secs=162 lines=4 
+ngl=16 fa=on kv=f16 rc=0 secs=202 lines=4 
+ngl=16 fa=on kv=q8_0 rc=0 secs=204 lines=4 
+ngl=20 fa=off kv=f16 rc=1 secs=11 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=20 fa=on kv=f16 rc=1 secs=10 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=20 fa=on kv=q8_0 rc=1 secs=9 lines=0 llama_bench: error: failed to create context with model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=24 fa=off kv=f16 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=24 fa=on kv=f16 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=24 fa=on kv=q8_0 rc=1 secs=5 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=28 fa=off kv=f16 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=28 fa=on kv=f16 rc=1 secs=3 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=28 fa=on kv=q8_0 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=99 fa=off kv=f16 rc=1 secs=5 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=99 fa=on kv=f16 rc=1 secs=2 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+ngl=99 fa=on kv=q8_0 rc=1 secs=1 lines=0 llama_bench: error: failed to load model  | 'C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312'
+exit=0 2026-11-08T13:10:36
