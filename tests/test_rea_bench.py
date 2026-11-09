@@ -346,6 +346,24 @@ class EncodingReference(unittest.TestCase):
         self.assertFalse(s("It encodes Base58.", dec.truth))
 
 
+class StrobfModel(unittest.TestCase):
+    def test_plaintexts_are_plain_and_varied(self):
+        tasks = families.generate("strobf", 70, 8)
+        plains = {t.params["plain"] for t in tasks}
+        self.assertGreater(len(plains), 60)
+        for t in tasks:
+            p = t.params["plain"]
+            self.assertLessEqual(len(p), 40)
+            self.assertTrue(all(c.isalnum() and c.islower() or c.isdigit() or c in "_ ./-:" for c in p), p)
+            self.assertNotIn(p, t.body, "the plaintext must not appear in the C source")
+
+    def test_scorer_ignores_spacing_but_not_a_changed_character(self):
+        t = families.generate("strobf", 1, 8)[0]
+        p = t.params["plain"]
+        self.assertTrue(scoring.score(f"The string is `{p}`.", t.truth))
+        self.assertFalse(scoring.score(t.wrong, t.truth))
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
