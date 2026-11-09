@@ -1,0 +1,58 @@
+{
+  "endpoint": "http://127.0.0.1:8081/v1",
+  "plan": "gpu",
+  "source": "tuned",
+  "config": {
+    "ngl": 16,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 256,
+    "parallel": 1,
+    "spec_type": "ngram-mod",
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 16,
+      "ctx": 16384,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8081",
+    "-ngl",
+    "16",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "256",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "ngram-mod"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-231557-0.log",
+  "server_env": {}
+}

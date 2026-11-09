@@ -1,0 +1,60 @@
+select: forced kv=q8_0 fa=on ubatch=256: the tuned entry is not used, the planner places the layers
+select: plan 'gpu': GPU available on mains power
+attempt 1: ngl=18 ctx=16384 fa=on kv=q8_0 ub=256 spec=none
+{
+  "endpoint": "http://127.0.0.1:8081/v1",
+  "plan": "gpu",
+  "source": "plan",
+  "config": {
+    "ngl": 18,
+    "ctx": 16384,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": true,
+    "kv": "q8_0",
+    "ubatch": 256,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 18,
+      "ctx": 16384,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8081",
+    "-ngl",
+    "18",
+    "-c",
+    "16384",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "on",
+    "-ctk",
+    "q8_0",
+    "-ctv",
+    "q8_0",
+    "-ub",
+    "256",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "none"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-221810-0.log"
+}

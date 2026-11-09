@@ -1,0 +1,46 @@
+2026-11-08T19:34:12 wrapper start arms=P-v1,P-v2,B tag=probe maxProblems=0
+2026-11-08T19:34:12 host is free
+2026-11-08T19:34:12 ARM P-v1 start: prompt probe: A with prompt variant v1 (run on a few Python problems only)
+2026-11-08T19:34:12 ARM P-v1 forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T19:34:54 ARM P-v1 server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T19:34:54 ARM P-v1 llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T19:34:54 ARM P-v1 runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm P-v1 --out C:\Users\arthu\llm\phase3\results-probe\P-v1.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-probe\P-v1.serve.json --note prompt probe: A with prompt variant v1 (run on a few Python problems only) --prompt-variant v1 --node C:\Program Files\nodejs\node.exe --problems py_01,py_02,py_03,py_04,py_05
+[P-v1] 5 requests to do (0 already in C:\Users\arthu\llm\phase3\results-probe\P-v1.jsonl)
+[P-v1] 1/5 py_01_parse_duration s0 FAIL syntax tokens=244 tok/s=9.311 wall=33.22s eta=2min
+[P-v1] 2/5 py_02_roman s0 FAIL syntax tokens=338 tok/s=9.103 wall=42.5s eta=2min
+[P-v1] 3/5 py_03_iso_week s0 FAIL test_fail tokens=396 tok/s=4.427 wall=97.51s eta=2min
+[P-v1] 4/5 py_04_add_months s0 FAIL test_fail tokens=343 tok/s=9.411 wall=43.67s eta=1min
+[P-v1] 5/5 py_05_business_days s0 PASS tokens=202 tok/s=9.367 wall=25.84s eta=0min
+[P-v1] done in 4.1 min
+2026-11-08T19:38:57 ARM P-v1 runner rc=0
+2026-11-08T19:39:01 ARM P-v1 stopped; llama-server processes left: 0
+2026-11-08T19:39:01 ARM P-v2 start: prompt probe: A with prompt variant v2 (adds: Indent with 4 spaces per level)
+2026-11-08T19:39:01 ARM P-v2 forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T19:39:43 ARM P-v2 server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T19:39:43 ARM P-v2 llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T19:39:43 ARM P-v2 runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm P-v2 --out C:\Users\arthu\llm\phase3\results-probe\P-v2.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-probe\P-v2.serve.json --note prompt probe: A with prompt variant v2 (adds: Indent with 4 spaces per level) --prompt-variant v2 --node C:\Program Files\nodejs\node.exe --problems py_01,py_02,py_03,py_04,py_05
+[P-v2] 5 requests to do (0 already in C:\Users\arthu\llm\phase3\results-probe\P-v2.jsonl)
+[P-v2] 1/5 py_01_parse_duration s0 FAIL syntax tokens=270 tok/s=9.765 wall=32.31s eta=2min
+[P-v2] 2/5 py_02_roman s0 FAIL syntax tokens=269 tok/s=3.029 wall=94.97s eta=3min
+[P-v2] 3/5 py_03_iso_week s0 FAIL syntax tokens=176 tok/s=9.563 wall=25.81s eta=2min
+[P-v2] 4/5 py_04_add_months s0 FAIL test_fail tokens=345 tok/s=9.756 wall=41.03s eta=1min
+[P-v2] 5/5 py_05_business_days s0 PASS tokens=202 tok/s=9.324 wall=27.25s eta=0min
+[P-v2] done in 3.7 min
+2026-11-08T19:43:25 ARM P-v2 runner rc=0
+2026-11-08T19:43:28 ARM P-v2 stopped; llama-server processes left: 0
+2026-11-08T19:43:28 ARM B start: A with thinking on, thinking budget 1024 tokens (the server ends the thinking when it is used up)
+2026-11-08T19:43:28 ARM B forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T19:43:28 ARM B server environment: {'LLAMA_ARG_THINK_BUDGET': '1024', 'LLAMA_ARG_THINK_BUDGET_MESSAGE': 'I have used my thinking budget, so I will stop thinking here and write the final answer now.'}
+2026-11-08T19:44:06 ARM B server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T19:44:06 ARM B llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T19:44:06 ARM B runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm B --out C:\Users\arthu\llm\phase3\results-probe\B.jsonl --thinking on --think-budget 1152 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-probe\B.serve.json --note A with thinking on, thinking budget 1024 tokens (the server ends the thinking when it is used up) --prompt-variant v1 --budget-message I have used my thinking budget, so I will stop thinking here and write the final answer now. --node C:\Program Files\nodejs\node.exe --problems py_01,py_02,py_03,py_04,py_05
+[B] 5 requests to do (0 already in C:\Users\arthu\llm\phase3\results-probe\B.jsonl)
+[B] 1/5 py_01_parse_duration s0 FAIL syntax tokens=1332 tok/s=8.149 wall=166.95s eta=11min
+[B] 2/5 py_02_roman s0 FAIL syntax tokens=1367 tok/s=9.72 wall=144.34s eta=8min
+[B] 3/5 py_03_iso_week s0 FAIL syntax tokens=1234 tok/s=9.729 wall=131.27s eta=5min
+[B] 4/5 py_04_add_months s0 FAIL syntax tokens=1321 tok/s=9.745 wall=139.84s eta=2min
+[B] 5/5 py_05_business_days s0 FAIL syntax tokens=806 tok/s=9.726 wall=85.84s eta=0min
+[B] done in 11.1 min
+2026-11-08T19:55:15 ARM B runner rc=0
+2026-11-08T19:55:18 ARM B stopped; llama-server processes left: 0
+exit=0 2026-11-08T19:55:18
