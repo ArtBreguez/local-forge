@@ -26,7 +26,7 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 |---|---|
 | `01-model/` | `setup.cmd` pulls the GGUF, builds the `dsv4-9b-heretic` variant from `Modelfile`, installs OpenCode |
 | `02-bench/` | `bench.py` sweeps GPU layers, context and threads through the Ollama API and writes JSON lines; `model-info.ps1` reads what Ollama actually did (layers offloaded, threads, flash attention) |
-| `03-agent/` | a fixed coding task (`agent-test/`: implement `parseDuration` so 5 tests pass), the OpenCode config, and the runner that times the agent and counts passing tests itself |
+| `03-agent/` | the agent experiments: `tasks/` (the phase 4 suite: 12 tasks with hidden tests), `harness/` (task loader and validators, the runner that enforces the time limit on the whole process tree and judges the result itself, the grid driver, the report), `orchestrator/` (the thin orchestrator and its Python indentation repair), `quality/` (phase 3, 40 function-level problems), `agent-test/` (the task of OpenCode run 1) |
 | `tools/` | small status probes used while runs are in flight |
 | `skills/` | vendored agent skills for the offline agent, each with `PROVENANCE.md` (source, commit, licence) |
 | `results/` | raw outputs of every run (JSONL, logs, the code the agent wrote) |
@@ -59,3 +59,23 @@ The endpoint is `http://127.0.0.1:8080/v1` (OpenAI-compatible). `serve` probes a
 Speculative decoding is off (`--spec-type none` is passed explicitly). `--spec ngram-mod` (serve, plan) turns on the one variant that helped in phase 2: up to 17.5 tok/s on code it had already seen, but not output-identical to the non-speculative run at temperature 0. `--ubatch N` (plan) sets the physical batch; `plan --explain` shows the compute buffer the GPU plan reserves. `python -m forge heuristics` lists every planning rule and the measurement behind it (or "untested"): the llama.cpp offload order, the compute-buffer model (checked against `llama-fit-params`, `02-bench/fit-params-grid.ps1`), the reserve, the one-layer fallback.
 
 Do not run `tune` while another benchmark holds the GPU: it loads the model. Tests: `python -m unittest discover -s tests -t .`; `python tests/mutation_check.py` breaks one rule at a time in a temporary copy and requires the tests to fail.
+
+### The agent suite and the orchestrator (phase 4)
+
+```
+python 03-agent/harness/taskbench.py validate            # reference passes, broken and the start fail: all 12 tasks
+python tests/test_agent.py                               # (or: python -m unittest tests.test_agent) runner, orchestrator, report, repair
+
+# the thin orchestrator on any OpenAI-compatible endpoint (here the forge server of the section above), on any repository:
+python 03-agent/orchestrator/orchestrate.py --endpoint http://127.0.0.1:8080/v1 --repo path\to\repo ^
+       --task-file task.md --test-cmd "[\"python\", \"-m\", \"unittest\"]" --protect tests/test_x.py --result result.json
+
+# one agent on one task from a clean copy, judged by the runner (arms: O = OpenCode alone, T = orchestrator, T-norepair, T-ngram)
+python 03-agent/harness/runner.py --arm T --tasks py-wrap --endpoint http://127.0.0.1:8080/v1 --out-dir results/phase4 --time-limit 900
+
+# the whole grid on the host (starts and stops forge serve itself), then the report
+python 03-agent/harness/grid.py --stages "O+T@1;T-norepair@1" --out-dir OUT --work-dir WORK --repo . --opencode PATH\to\opencode.exe
+python 03-agent/harness/report.py results/phase4 > results/phase4/report.md
+```
+
+The orchestrator is the loop, the model only writes files. Per round it sends the task, the repository files, the visible tests and the *first* failing test's trimmed output; the reply is the full new text of at most two files (`FILE: path` + fenced block). Before a file is written, Python goes through a deterministic indentation repair (`pyindent.py`, `--no-repair` switches it off) and a syntax check; the orchestrator runs the tests itself after every edit and never reads the model's summary. When the visible tests pass it asks once whether anything in the task text is still missing (`DONE` ends it), and at the end it restores the best state it saw. Budgets: `--max-calls`, `--retries` (rounds without more tests passing), `--deadline-s`. `tests/test_agent.py` runs all of it against an oracle chat server, no model needed. `03-agent/tasks/README.md` lists the tasks.

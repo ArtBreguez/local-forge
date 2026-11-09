@@ -72,6 +72,14 @@ def summarize(rows: list[dict[str, Any]], limit_s: float) -> dict[str, Any]:
             "usable_rate": rate >= USABLE_RATE, "usable_time": med is not None and med <= USABLE_MEDIAN_MIN}
 
 
+def pooled(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Every run of the arm counted, not only the first run of each task: the success probability of one run (a second estimator for an
+    agent that is not repeatable; the runs of one task are not independent, so the interval is optimistic)."""
+    n, k = len(rows), sum(1 for r in rows if r["success"])
+    lo, hi = qbench.wilson(k, n) if n else (0.0, 0.0)
+    return {"runs": n, "successes": k, "rate": k / n if n else 0.0, "wilson": (lo, hi)}
+
+
 def paired(a_rows: list[dict[str, Any]], b_rows: list[dict[str, Any]]) -> dict[str, Any]:
     """First run of every task that both arms have: (only a, only b, both, neither), exact McNemar p."""
     fa, fb = first_runs(a_rows), first_runs(b_rows)
@@ -116,7 +124,10 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
         out.append(f"| {a} | {s['tasks']} | {s['successes']}/{s['tasks']} | {100 * s['rate']:.0f}% ({100 * lo:.0f}-{100 * hi:.0f}%) | "
                    f"{fmt_min(s['median_min'])} | {fmt_min(s['median_min_success'])} | {s['timeouts']} | {graded} | "
                    f"{fmt_min(s['steps_median'])} | {fmt_min(s['tool_calls_median'])} | {fmt_min(s['completion_tokens_median'])} | {verdict} |")
-    out += ["", "Usable = success rate >= 60% **and** median time per task <= 15 min (docs/PROTOCOL.md). Times count a failed run at the time it ran "
+    out += ["", "Pooled over every run of the arm (second estimator; the runs of one task are not independent, so these intervals are optimistic): "
+            + "; ".join(f"**{a}** {pooled(runs[a])['successes']}/{pooled(runs[a])['runs']} = {100 * pooled(runs[a])['rate']:.0f}% "
+                        f"({100 * pooled(runs[a])['wilson'][0]:.0f}-{100 * pooled(runs[a])['wilson'][1]:.0f}%)" for a in arms) + ".",
+            "", "Usable = success rate >= 60% **and** median time per task <= 15 min (docs/PROTOCOL.md). Times count a failed run at the time it ran "
             "(at most the limit).", "", "## Why runs failed (first run of each task)", ""]
     for a in arms:
         out.append(f"- **{a}**: " + ", ".join(f"{k} {v}" for k, v in sorted(sums[a]["reasons"].items(), key=lambda kv: -kv[1])))

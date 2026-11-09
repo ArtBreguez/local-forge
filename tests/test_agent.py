@@ -624,6 +624,12 @@ class Report(unittest.TestCase):
         rows = [fake_run(f"t{i}", "O", 1, False, wall=5000) for i in range(3)]
         self.assertEqual(report.summarize(rows, 900)["median_min"], 15.0)
 
+    def test_pooled_counts_every_run(self):
+        rows = [fake_run("a", "O", 1, False), fake_run("a", "O", 2, True), fake_run("b", "O", 1, True)]
+        p = report.pooled(rows)
+        self.assertEqual((p["runs"], p["successes"]), (3, 2))
+        self.assertEqual(report.summarize(rows, 900)["successes"], 1)       # the primary unit: the first run of each task
+
     def test_paired_mcnemar(self):
         a = [fake_run(f"t{i}", "O", 1, i < 2) for i in range(12)]
         b = [fake_run(f"t{i}", "T", 1, i < 2 or i >= 8) for i in range(12)]

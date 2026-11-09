@@ -1,0 +1,30 @@
+2026-11-09T02:42:03 wrapper start stages=T@1;O@1 tag=smoke tasks=py-wrap,js-duration budget=0 limit=420
+2026-11-09T02:42:03 host is free
+2026-11-09T02:42:03 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T02:42:53 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T02:42:53 RUN T js-duration run 1 (stage 1/2, 1 min in)
+02:42:53 start js-duration arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+02:46:32 done  js-duration arm=T run=1: success=False reason=tests_failed tests=7/11 wall=218.2s steps=4
+2026-11-09T02:46:32 RUN T js-duration run 1 runner rc=0
+2026-11-09T02:46:32 RUN T py-wrap run 1 (stage 1/2, 4 min in)
+02:46:32 start py-wrap arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+02:51:14 done  py-wrap arm=T run=1: success=False reason=tests_failed tests=7/9 wall=282.2s steps=2
+2026-11-09T02:51:14 RUN T py-wrap run 1 runner rc=0
+2026-11-09T02:51:14 RUN O js-duration run 1 (stage 2/2, 9 min in)
+02:51:15 start js-duration arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+02:58:15 done  js-duration arm=O run=1: success=False reason=timeout tests=5/11 wall=420.0s steps=10
+2026-11-09T02:58:15 RUN O js-duration run 1 runner rc=0
+2026-11-09T02:58:15 RUN O py-wrap run 1 (stage 2/2, 16 min in)
+02:58:15 start py-wrap arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:00:28 done  py-wrap arm=O run=1: success=True reason=ok tests=9/9 wall=132.1s steps=5
+2026-11-09T03:00:28 RUN O py-wrap run 1 runner rc=0
+2026-11-09T03:00:31 server stopped; llama-server processes on the host now, any owner: 0
+exit=0 2026-11-09T03:00:31
