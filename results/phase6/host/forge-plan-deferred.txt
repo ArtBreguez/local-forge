@@ -1,0 +1,111 @@
+# forge plan for the two deferred uncensored candidates (issue #23 part B), 2026-11-09. PREDICTION, NOT A MEASUREMENT:
+# the GGUF files are NOT on the host; the planner ran on the Linux VM with the saved host probe (results/forge-probe-host-20261108.json:
+# RAM 16291 MiB total, 5784 MiB available when probed, RX 6500 XT 3443 MiB free) and a sparse stub of each file (first 12 MiB fetched from Hugging Face = the complete GGUF header, truncated to the real size).
+# cmd: python -m forge plan --profile results/forge-probe-host-20261108.json --model <stub> --explain
+
+=== Qwen3.5-35B-A3B-heretic.i1-IQ3_XXS.gguf
+model: qwen35moe IQ3_XXS 12906 MiB, 40 blocks (10 with KV cache), KV 20.0 KiB/token f16; -ngl N = N-1 blocks + the output matrix on the GPU
+* [gpu] ngl=8 ctx=4096 threads=6 fa=off kv=f16 ub=512 | est VRAM 3038 MiB, RAM 10821 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 8 layers vs 8 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 8: 7 of 40 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 4096, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 517 MiB at ctx 4096, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 8 = 7 blocks + the output matrix (333 MiB, offloaded first)
+  - H-CTX-RAM [partially measured]: context reduced 16384 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: no nextn_predict_layers in the header; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~10821 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [cpu] ngl=0 ctx=4096 threads=6 fa=off kv=f16 ub=512 | est VRAM 0 MiB, RAM 13342 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-CPU-ONLY [partially measured]: 0 GPU layers
+  - H-CTX-RAM [partially measured]: context reduced 16384 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: no nextn_predict_layers in the header; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~13342 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [low-power] ngl=8 ctx=4096 threads=3 fa=off kv=f16 ub=512 | est VRAM 3038 MiB, RAM 10821 MiB | INFEASIBLE
+  - H-LOW-POWER [untested]: battery/UPS profile: 3 threads, context capped at 8192
+  - H-CTX-TARGET [partially measured]: target context 8192
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 8 layers vs 8 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 8: 7 of 40 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 4096, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 517 MiB at ctx 4096, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 8 = 7 blocks + the output matrix (333 MiB, offloaded first)
+  - H-CTX-RAM [partially measured]: context reduced 8192 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: no nextn_predict_layers in the header; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~10821 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+applies now: gpu (GPU available on mains power)
+=== Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-IQ3_XXS.gguf
+model: qwen35 IQ3_XXS 10668 MiB, 64 blocks (16 with KV cache), KV 64.0 KiB/token f16; -ngl N = N-2 blocks + the output matrix on the GPU
+* [gpu] ngl=13 ctx=4096 threads=6 fa=off kv=f16 ub=512 | est VRAM 3019 MiB, RAM 8553 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 13 layers vs 13 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 13: 11 of 64 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 4096, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 517 MiB at ctx 4096, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 13 = 11 blocks + the output matrix (834 MiB, offloaded first)
+  - H-CTX-RAM [partially measured]: context reduced 16384 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~8553 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [cpu] ngl=0 ctx=4096 threads=6 fa=off kv=f16 ub=512 | est VRAM 0 MiB, RAM 11054 MiB | INFEASIBLE
+  - H-THREADS-PHYSICAL [measured]: 6 threads = physical cores
+  - H-CTX-TARGET [partially measured]: target context 16384
+  - H-CPU-ONLY [partially measured]: 0 GPU layers
+  - H-CTX-RAM [partially measured]: context reduced 16384 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~11054 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+  [low-power] ngl=13 ctx=4096 threads=3 fa=off kv=f16 ub=512 | est VRAM 3019 MiB, RAM 8553 MiB | INFEASIBLE
+  - H-LOW-POWER [untested]: battery/UPS profile: 3 threads, context capped at 8192
+  - H-CTX-TARGET [partially measured]: target context 8192
+  - H-KV-Q8-GAIN [partially measured]: q8_0 would fit 13 layers vs 13 with f16 (gain < 6): keeping f16
+  - H-FA-BACKEND [measured]: flash attention off, KV f16 (backend Vulkan)
+  - H-VRAM-HEADROOM [partially measured]: 324 MiB of 3443 MiB free kept unused
+  - H-LAYERS-VRAM-FIT [partially measured]: -ngl 13: 11 of 64 blocks on AMD Radeon RX 6500 XT: budget 3119 MiB of 3443 MiB free, ctx 4096, ubatch 512
+  - H-COMPUTE-SCRATCH [partially measured]: compute buffer 517 MiB at ctx 4096, ubatch 512, flash attention off
+  - H-OUTPUT-LAYER [measured]: -ngl 13 = 11 blocks + the output matrix (834 MiB, offloaded first)
+  - H-CTX-RAM [partially measured]: context reduced 8192 -> 4096 to fit 5784 MiB of available RAM
+  - H-UBATCH [partially measured]: ubatch 512
+  - H-PARALLEL-1 [untested]: 1 slot
+  - H-FIT-OFF [derived]: --fit off
+  - H-MTP [derived]: MTP: header declares 1 MTP layer(s) but the file has no tensors for it; not enabled
+  - H-SPEC-NONE [measured]: --spec-type none (default)
+  ! RAM: needs ~8553 MiB at ctx 4096 but only 5495 MiB of 5784 MiB available may be used; the model would be paged from disk (slow) or the OS may kill the server
+applies now: gpu (GPU available on mains power)
+
+# WHAT-IF: the same plan with available RAM set to 12000 MiB (i.e. the Linux VM stopped); profile edited by hand, not measured
+=== Qwen3.5-35B-A3B-heretic.i1-IQ3_XXS.gguf [what-if 12000 MiB available]
+model: qwen35moe IQ3_XXS 12906 MiB, 40 blocks (10 with KV cache), KV 20.0 KiB/token f16; -ngl N = N-1 blocks + the output matrix on the GPU
+* [gpu] ngl=7 ctx=16384 threads=6 fa=off kv=f16 ub=512 | est VRAM 2953 MiB, RAM 11325 MiB
+  [cpu] ngl=0 ctx=4096 threads=6 fa=off kv=f16 ub=512 | est VRAM 0 MiB, RAM 13342 MiB | INFEASIBLE
+  [low-power] ngl=8 ctx=8192 threads=3 fa=off kv=f16 ub=512 | est VRAM 3054 MiB, RAM 10885 MiB
+applies now: gpu (GPU available on mains power)
+=== Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-IQ3_XXS.gguf [what-if 12000 MiB available]
+model: qwen35 IQ3_XXS 10668 MiB, 64 blocks (16 with KV cache), KV 64.0 KiB/token f16; -ngl N = N-2 blocks + the output matrix on the GPU
+* [gpu] ngl=13 ctx=16384 threads=6 fa=on kv=q8_0 ub=512 | est VRAM 3073 MiB, RAM 8787 MiB
+  [cpu] ngl=0 ctx=8192 threads=6 fa=off kv=f16 ub=512 | est VRAM 0 MiB, RAM 11310 MiB
+  [low-power] ngl=13 ctx=8192 threads=3 fa=off kv=f16 ub=512 | est VRAM 3072 MiB, RAM 8761 MiB
+applies now: gpu (GPU available on mains power)

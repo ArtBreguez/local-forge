@@ -26,7 +26,7 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 |---|---|
 | `01-model/` | `setup.cmd` pulls the GGUF, builds the `dsv4-9b-heretic` variant from `Modelfile`, installs OpenCode |
 | `02-bench/` | `bench.py` sweeps GPU layers, context and threads through the Ollama API and writes JSON lines; `model-info.ps1` reads what Ollama actually did (layers offloaded, threads, flash attention) |
-| `03-agent/` | the agent experiments: `tasks/` (the phase 4 suite: 12 tasks with hidden tests), `harness/` (task loader and validators, the runner that enforces the time limit on the whole process tree and judges the result itself, the grid driver, the report), `orchestrator/` (the thin orchestrator and its Python indentation repair), `quality/` (phase 3, 40 function-level problems), `agent-test/` (the task of OpenCode run 1) |
+| `03-agent/` | the agent experiments: `tasks/` (the phase 4 suite: 12 tasks with hidden tests), `harness/` (task loader and validators, the runner that enforces the time limit on the whole process tree and judges the result itself, the grid driver, the report), `orchestrator/` (the thin orchestrator and its Python indentation repair), `quality/` (phase 3, 40 function-level problems; phase 6: the visible/hidden test split and best-of-N, `bestofn.py`), `rea/` (phase 6: the REA tool-use benchmark, 15 tasks with ground truth, a fixed-recipe arm and an OpenCode arm), `agent-test/` (the task of OpenCode run 1) |
 | `tools/` | small status probes used while runs are in flight |
 | `skills/` | vendored agent skills for the offline agent, each with `PROVENANCE.md` (source, commit, licence) |
 | `results/` | raw outputs of every run (JSONL, logs, the code the agent wrote) |
@@ -38,6 +38,7 @@ Status: work in progress. The goal is in `docs/VISION.md`: an agent that keeps w
 
 - The agent's own summary is not evidence. The runner re-runs the tests and hashes the test file after the agent stops.
 - One model loaded at a time: two do not fit in 16 GB next to the VM.
+- The agent's model must be uncensored (heretic / abliterated), by the owner's decision. A model that is not appears in a table only as a reference row and is never the default.
 - Every config claim is a measurement in `results/`, not a recommendation copied from elsewhere.
 
 ## Run it
