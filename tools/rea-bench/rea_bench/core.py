@@ -61,10 +61,12 @@ class Task:
     helpers: list = field(default_factory=list)   # extra functions to decompile with proc (multi-function family)
     params: dict = field(default_factory=dict)
     wrong: str = ""                 # a plausible wrong answer the scorer must reject
-    check: tuple | None = None      # (C main, expected stdout): a harness that proves the truth
+    check: tuple | None = None      # (C main, expected stdout[, preamble]): a harness that proves the truth
 
-    def source(self, main: str | None = None) -> str:
-        return self.headers + self.body + (MAIN if main is None else "\n\n" + main)
+    def source(self, main: str | None = None, preamble: str = "") -> str:
+        """The generated file; with `main` a harness instead of the stub main, with `preamble` (macros that swap a libc call for a
+        fake) placed after the headers and before the body."""
+        return self.headers + preamble + self.body + (MAIN if main is None else "\n\n" + main)
 
     def meta(self) -> dict:
         d = {"id": self.id, "kind": self.kind, "question": self.question, "opt": self.opt}

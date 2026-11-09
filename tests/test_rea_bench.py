@@ -197,8 +197,8 @@ class FamilyChecks:
         for t in self.tasks:
             if not t.check:
                 continue
-            main_c, want = t.check
-            src = t.source(main_c)
+            main_c, want, *pre = t.check
+            src = t.source(main_c, pre[0] if pre else "")
             runs = [("-O0", ()), ("-O2", ())] + ([("-O1", ("-fsanitize=undefined", "-fno-sanitize-recover=all"))] if UBSAN else [])
             for opt, extra in runs:
                 r = run_harness(src, opt, extra)
@@ -396,6 +396,32 @@ class BoundsModel(unittest.TestCase):
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "loop_iterations"}, {"up_lt", "up_le", "down_gt", "down_ge"})
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "index_limit"}, set(range(6)))
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "range_chain"}, set(range(5)))
+
+
+class AntidebugModel(unittest.TestCase):
+    def test_details_are_in_the_code_and_techniques_rejected_across(self):
+        tasks = families.generate("antidebug", 60, 13)
+        for t in tasks:
+            p = t.params
+            if t.variant == "env":
+                self.assertIn(f'getenv("{p["name"]}")', t.body)
+            if t.variant.startswith("timing"):
+                self.assertIn(str(p["thr"]), t.body)
+        one = next(t for t in tasks if t.variant == "ptrace")
+        s = scoring.score
+        self.assertTrue(s(f"ptrace, returns {one.params['rv']}", one.truth))
+        self.assertTrue(s(f"PTRACE_TRACEME self-attach; return value {one.params['rv']}", one.truth))
+        self.assertFalse(s(f"env, {one.params['rv']}", one.truth))
+        self.assertFalse(s("ptrace", one.truth), "the detail is missing")
+        env = next(t for t in tasks if t.variant == "env")
+        self.assertTrue(s(f"env: {env.params['name']}", env.truth))
+        self.assertTrue(s(f"It probes the environment variable {env.params['name'].lower()}.", env.truth))
+
+    def test_harness_uses_fakes_not_the_real_process(self):
+        for t in families.generate("antidebug", 6, 13):
+            self.assertEqual(len(t.check), 3 if t.variant != "env" else 2)
+            if t.variant != "env":
+                self.assertRegex(t.check[2], r"#define (ptrace|syscall|clock_gettime|gettimeofday|fopen) fake_")
 
 
 for _fam in families.modules():
