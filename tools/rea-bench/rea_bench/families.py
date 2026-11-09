@@ -2,10 +2,10 @@
 `legacy` is special (frozen, one shared rng, no `cc` field) and has its own generate()."""
 from __future__ import annotations
 
-from . import legacy
+from . import f_structs, legacy
 from .core import build
 
-NEW_MODULES: list = []   # appended to as each family lands
+NEW_MODULES: list = [f_structs]
 
 
 def modules() -> dict:

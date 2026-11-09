@@ -210,6 +210,21 @@ class FamilyChecks:
             self.assertFalse(scoring.score("", t.truth))
 
 
+# ---- family-specific reference checks (things the generic harness cannot see) -------------------------------------------
+
+class StructsModel(unittest.TestCase):
+    def test_layout_matches_hand_computation(self):
+        from rea_bench import f_structs as fs
+        u8, u16, u32, u64 = (fs.Scalar(c, n) for c, n in (("uint8_t", 1), ("uint16_t", 2), ("uint32_t", 4), ("uint64_t", 8)))
+        st = fs.Struct("t", [("a", u8), ("b", u32), ("c", u16)])
+        self.assertEqual((st.offsets, st.size, st.align), ({"a": 0, "b": 4, "c": 8}, 12, 4))
+        st = fs.Struct("t", [("a", u8), ("b", u64), ("c", fs.Arr(u8, 3)), ("d", u16)])
+        self.assertEqual((st.offsets["b"], st.offsets["c"], st.offsets["d"], st.size), (8, 16, 20, 24))
+        inner = fs.Struct("i", [("x", u8), ("y", u16)])           # size 4, align 2
+        outer = fs.Struct("o", [("h", u8), ("sub", inner), ("t", u32)])
+        self.assertEqual((outer.offsets["sub"], outer.offsets["t"], outer.size), (2, 8, 12))
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
