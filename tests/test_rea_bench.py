@@ -380,6 +380,24 @@ class PktsumModel(unittest.TestCase):
                 self.assertGreaterEqual(verdicts.count("0"), 3, "covered flips and the swapped checksum bytes all fail")
 
 
+class BoundsModel(unittest.TestCase):
+    def test_negative_bounds_need_their_sign(self):
+        seen = 0
+        for t in families.generate("bounds", 120, 11):
+            lo = t.params.get("lo")
+            if t.variant in ("range_chain", "window", "clamp") and lo is not None and lo < 0:
+                seen += 1
+                self.assertTrue(scoring.score(f"lowest {lo}, highest {t.params['hi']}", t.truth))
+                self.assertFalse(scoring.score(f"lowest {-lo}, highest {t.params['hi']}", t.truth))
+        self.assertGreater(seen, 3, "the sample should contain negative bounds")
+
+    def test_every_loop_and_guard_form_occurs(self):
+        tasks = families.generate("bounds", 240, 12)
+        self.assertEqual({t.params["form"] for t in tasks if t.variant == "loop_iterations"}, {"up_lt", "up_le", "down_gt", "down_ge"})
+        self.assertEqual({t.params["form"] for t in tasks if t.variant == "index_limit"}, set(range(6)))
+        self.assertEqual({t.params["form"] for t in tasks if t.variant == "range_chain"}, set(range(5)))
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
