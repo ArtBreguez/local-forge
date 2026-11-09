@@ -120,6 +120,13 @@ class Scorer(unittest.TestCase):
         r = {"score": "tokens", "accept": [["5"], ["9"]]}
         self.assertTrue(scoring.score("range 5-9", r))        # a hyphen between digits separates the numbers
 
+    def test_exact_case_is_case_sensitive(self):
+        t = {"score": "exact_case", "accept": ["aBcD"]}
+        self.assertTrue(scoring.score("alphabet: `aBcD`", t))
+        self.assertTrue(scoring.score("a B c D", t))          # whitespace is ignored
+        self.assertFalse(scoring.score("AbCd", t))
+        self.assertFalse(scoring.score("abcd", t))
+
     def test_canonical_roundtrip(self):
         for t in ({"score": "tokens", "accept": [["a1", "0xa1"], ["tea"]]}, {"score": "exact", "accept": ["x"]},
                   {"score": "all", "accept": ["12", "ff"]}, {"score": "all_groups", "accept": [["djb"], ["12ab"]]}):
@@ -158,7 +165,7 @@ class FamilyChecks:
             self.assertEqual(meta["kind"], self.family)
             self.assertIn(meta["cc"], core.CCS)
             self.assertIn(meta["opt"], core.OPTS)
-            self.assertIn(meta["score"], ("exact", "any", "all", "all_groups", "tokens"))
+            self.assertIn(meta["score"], ("exact", "any", "all", "all_groups", "tokens", "exact_case"))
             self.assertTrue(meta["accept"])
             self.assertLessEqual(len(t.question), 400, "short, self-contained question")
             self.assertRegex(t.source(), r"\bproc\s*\(")
@@ -299,6 +306,44 @@ class CipherReference(unittest.TestCase):
         self.assertTrue(s("XTEA (eXtended TEA): it decrypts, 32 rounds", xtea))
         self.assertFalse(s("TEA, decrypts, 32", xtea))
         self.assertFalse(s("XTEA, encrypts, 32", xtea))
+
+
+class EncodingReference(unittest.TestCase):
+    def test_base58_known_values(self):
+        from rea_bench import f_encoding as fe
+        self.assertEqual(fe.b58encode(b"Hello World!", fe.B58), "2NEpo7TZRRrLZSi2U")
+        self.assertEqual(fe.b58encode(b"\x00\x00\x01", fe.B58), "112")
+        self.assertEqual(fe.b58encode(b"", fe.B58), "")
+
+    def test_standard_alphabets_match_stdlib(self):
+        import base64
+        from rea_bench import f_encoding as fe
+        self.assertEqual(fe.encode_ref("base64", b"\xfb\xff\xfe", fe.B64, True), base64.b64encode(b"\xfb\xff\xfe").decode())
+        self.assertEqual(fe.encode_ref("base32", b"foobar", fe.B32, True), "MZXW6YTBOI======")
+        self.assertEqual(fe.encode_ref("base32", b"foobar", fe.B32, False), "MZXW6YTBOI")
+        custom = fe.B64[::-1]
+        self.assertEqual(fe.encode_ref("base64", b"abc", custom, True), base64.b64encode(b"abc").decode().translate(str.maketrans(fe.B64, custom)))
+
+    def test_both_alphabet_kinds_and_both_questions_occur(self):
+        tasks = families.generate("encoding", 120, 4)
+        self.assertEqual({t.params["custom"] for t in tasks}, {True, False})
+        self.assertEqual({t.params["asked"] for t in tasks}, {"alphabet", "ident"})
+        self.assertEqual({t.truth["score"] for t in tasks}, {"tokens", "exact_case"})
+        for t in tasks:
+            if t.params["asked"] == "alphabet":
+                self.assertTrue(t.params["custom"])
+                self.assertEqual(len(set(t.params["alphabet"])), len(t.params["alphabet"]))
+
+    def test_direction_and_base_rules(self):
+        enc = next(t for t in families.generate("encoding", 60, 4) if t.params["asked"] == "ident" and t.params["direction"] == "encode" and t.params["base"] == "base64")
+        dec = next(t for t in families.generate("encoding", 60, 4) if t.params["asked"] == "ident" and t.params["direction"] == "decode" and t.params["base"] == "base58")
+        s = scoring.score
+        self.assertTrue(s("It is a Base64 encoder.", enc.truth))
+        self.assertTrue(s("encodes using base-64", enc.truth))
+        self.assertFalse(s("It is a Base64 decoder.", enc.truth))
+        self.assertFalse(s("It is a Base32 encoder.", enc.truth))
+        self.assertTrue(s("It decodes a Base58 encoding.", dec.truth))   # "encoding" as a noun is fine for a decoder
+        self.assertFalse(s("It encodes Base58.", dec.truth))
 
 
 for _fam in families.modules():

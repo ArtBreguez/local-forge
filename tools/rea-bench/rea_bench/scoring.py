@@ -4,9 +4,10 @@ Modes:
   exact / any       one accepted spelling must appear in the answer (whitespace and case ignored)
   all               every accepted value must appear (each with its numeric spellings, see `variants`)
   all_groups        every group must have one spelling in the answer
+  exact_case        like exact but case-sensitive (alphabets: "aB" and "Ab" are different alphabets)
   tokens            every group must match a whole token of the answer; any `reject` token present fails the answer
 
-The first four are the original modes and substring-based, which is fine for long values (a key, a 32-bit constant) but
+exact, any, all and all_groups are the original modes and substring-based, which is fine for long values (a key, a 32-bit constant) but
 vacuous for small ones: "0x18" contains "8", and "XTEA" contains "tea". `tokens` compares whole tokens, so small
 numbers and algorithm names are checked properly. Used by the families that ask for offsets, rounds, key lengths and names.
 """
@@ -43,6 +44,8 @@ def tokens(answer: str) -> set:
 
 
 def score(answer: str, t: dict) -> bool:
+    if t["score"] == "exact_case":
+        return any(x in re.sub(r"\s+", "", answer) for x in t["accept"])
     if t["score"] == "tokens":
         toks = tokens(answer)
         if any(r.lower() in toks for r in t.get("reject", [])):
