@@ -199,6 +199,12 @@ class Resume(unittest.TestCase):
             self.assertEqual([json.loads(l)["sample"] for l in out.read_text(encoding="utf-8").splitlines()], [0, 1, 2], "the torn line is gone, nothing is doubled")
 
 
+    def test_an_unknown_timezone_is_refused_not_scored_in_utc(self):
+        bestofn.check_tz("America/Sao_Paulo")
+        bestofn.check_tz("UTC")
+        with self.assertRaises(SystemExit):
+            bestofn.check_tz("America/Sewuo")
+
     @unittest.skipUnless(HAVE_NODE, "node is needed")
     def test_qbench_tz_runs_the_tests_in_the_given_zone(self):
         """phase 3 found js_08_age_on failing on the UTC-3 host for an answer that passes at UTC: the answer parses 'YYYY-MM-DD' as UTC and reads it back in local time."""

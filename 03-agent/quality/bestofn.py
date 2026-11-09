@@ -335,6 +335,15 @@ def pair_lines(dirpath: Path, pairs: list[str]) -> str:
 
 # ------------------------------------------------------------------------------------------------ CLI
 
+def check_tz(name: str) -> None:
+    """node and python fall back to UTC for a zone name they do not know, which would silently score in the wrong zone."""
+    import zoneinfo
+    try:
+        zoneinfo.ZoneInfo(name)
+    except (zoneinfo.ZoneInfoNotFoundError, ValueError, OSError):
+        raise SystemExit(f"unknown timezone {name!r} (use an IANA name such as America/Sao_Paulo or UTC)")
+
+
 def parse_ns(text: str) -> list[int]:
     return [int(x) for x in text.split(",") if x.strip()]
 
@@ -375,6 +384,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if a.cmd == "score":
         if a.tz:
+            check_tz(a.tz)
             os.environ["QBENCH_TZ"] = a.tz      # read by qbench.run_tests
         done = score_file(a.src, a.out, a.workers, a.python, a.node, a.pause)
         print(f"{len(done)} scored answers in {a.out}")
