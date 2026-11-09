@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""funcs <binary>: list function start addresses of a (stripped) ELF, smallest first, one per line with size.
+
+Tries REA's procedure listing (Ghidra analysis) first; falls back to call targets + endbr64 starts from objdump."""
+import json
+import re
+import subprocess
+import sys
+
+path = sys.argv[1]
+try:
+    out = subprocess.run(["rea", "list_procedures", path, "--format", "json", "--provider", "ghidra"], capture_output=True, text=True, timeout=900)
+except (FileNotFoundError, subprocess.TimeoutExpired):
+    out = subprocess.CompletedProcess([], 1, "", "")
+addrs = {}
+for m in re.finditer(r'"(?:address|entry|entry_point)"\s*:\s*"?(0x[0-9a-fA-F]+)"?.{0,200}?"(?:size|body_size|length)"\s*:\s*(\d+)', out.stdout, re.S):
+    addrs[m.group(1).lower()] = int(m.group(2))
+if not addrs:
+    dis = subprocess.run(["objdump", "-d", "--no-show-raw-insn", path], capture_output=True, text=True).stdout
+    starts = set(re.findall(r"call\s+([0-9a-f]+)\s", dis))
+    starts |= set(re.findall(r"lea\s+-?0x[0-9a-f]+\(%rip\),%rdi\s+#\s+([0-9a-f]+)", dis))  # main passed to __libc_start_main
+    lines = dis.splitlines()
+    for i, l in enumerate(lines):
+        if re.search(r"\sendbr64\s*$", l):
+            starts.add(l.split(":")[0].strip())
+    text = sorted(int(s, 16) for s in starts)
+    for a, b in zip(text, text[1:] + [None]):
+        addrs[hex(a)] = (b - a) if b else 0
+for a, n in sorted(((a, n) for a, n in addrs.items() if n == 0 or n > 16), key=lambda t: (t[1] == 0, t[1])):  # >16 drops PLT stubs
+    print(a, f"{n} bytes" if n else "")

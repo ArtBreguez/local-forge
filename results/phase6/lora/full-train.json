@@ -1,0 +1,9 @@
+{
+ "tag": "full",
+ "n": 3646,
+ "train_loss_first": 0.6981462478637696,
+ "train_loss_last": 0.24111652374267578,
+ "steps": 456,
+ "wall_s": 2668,
+ "trainable": "{'gate_proj', 'out_proj', 'o_proj', 'down_proj', 'in_proj_qkvz', 'v_proj', 'k_proj', 'in_proj_ba', 'up_proj', 'q_proj'}"
+}

@@ -1,0 +1,9 @@
+{
+ "tag": "smoke",
+ "n": 60,
+ "train_loss_first": null,
+ "train_loss_last": null,
+ "steps": 1,
+ "wall_s": 212,
+ "trainable": "{'k_proj', 'in_proj_qkvz', 'out_proj', 'gate_proj', 'in_proj_ba', 'v_proj', 'o_proj', 'down_proj', 'q_proj', 'up_proj'}"
+}

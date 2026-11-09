@@ -1,0 +1,11 @@
+#!/usr/bin/env python3
+"""decomp <binary> <address|name>: Ghidra pseudocode of one function via REA, without the JSON envelope."""
+import json
+import re
+import subprocess
+import sys
+
+out = subprocess.run(["rea", "decompile", "--procedure", sys.argv[2], sys.argv[1], "--format", "json", "--provider", "ghidra"],
+                     capture_output=True, text=True, timeout=900).stdout
+m = re.search(r'"normalized_result"\s*:\s*("(?:[^"\\]|\\.)*")', out)
+print(json.loads(m.group(1)) if m else out[-1500:])

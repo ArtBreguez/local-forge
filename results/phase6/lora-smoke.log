@@ -1,0 +1,74 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-8QaQLePsiW2tKwIN8SwQVu
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_lora.py
+├── ✓ Created Function train.
+└── ✓ Created Function to_gguf.
+
+[1AGenerating train split: 0 examples [00:00, ? examples/s]
+[1AGenerating train split: 3646 examples [00:00, 224535.40 examples/s]
+
+[1AMap:   0%|          | 0/60 [00:00<?, ? examples/s]
+[1AMap: 100%|██████████| 60/60 [00:00<00:00, 613.92 examples/s]
+[transformers] `torch_dtype` is deprecated! Use `dtype` instead!
+
+[1AFetching 5 files:   0%|          | 0/5 [00:00<?, ?it/s]
+[1AFetching 5 files:  20%|██        | 1/5 [00:20<01:23, 20.79s/it]
+[1AFetching 5 files:  40%|████      | 2/5 [01:24<02:17, 45.75s/it]
+[1AFetching 5 files:  60%|██████    | 3/5 [01:26<00:51, 25.95s/it]
+[1AFetching 5 files:  80%|████████  | 4/5 [01:45<00:23, 23.29s/it]
+[1AFetching 5 files: 100%|██████████| 5/5 [02:23<00:00, 28.54s/it]
+[1AFetching 5 files: 100%|██████████| 5/5 [02:23<00:00, 28.69s/it]
+
+[1ALoading weights:   0%|          | 0/427 [00:00<?, ?it/s]
+[1ALoading weights:   0%|          | 1/427 [00:00<01:07,  6.31it/s]
+[1ALoading weights:   0%|          | 2/427 [00:00<01:27,  4.87it/s]
+[1ALoading weights:   7%|▋         | 29/427 [00:00<00:04, 80.38it/s]
+[1ALoading weights:  11%|█         | 48/427 [00:00<00:03, 111.67it/s]
+[1ALoading weights:  19%|█▊        | 80/427 [00:00<00:02, 170.29it/s]
+[1ALoading weights:  24%|██▎       | 101/427 [00:00<00:01, 177.35it/s]
+[1ALoading weights:  31%|███▏      | 134/427 [00:00<00:01, 216.80it/s]
+[1ALoading weights:  37%|███▋      | 158/427 [00:01<00:01, 211.18it/s]
+[1ALoading weights:  44%|████▍     | 188/427 [00:01<00:01, 230.60it/s]
+[1ALoading weights:  50%|████▉     | 213/427 [00:01<00:00, 231.08it/s]
+[1ALoading weights:  56%|█████▋    | 241/427 [00:01<00:00, 244.71it/s]
+[1ALoading weights:  64%|██████▎   | 272/427 [00:01<00:00, 254.28it/s]
+[1ALoading weights:  71%|███████   | 302/427 [00:01<00:00, 263.52it/s]
+[1ALoading weights:  77%|███████▋  | 329/427 [00:01<00:00, 261.87it/s]
+[1ALoading weights:  83%|████████▎ | 356/427 [00:01<00:00, 246.56it/s]
+[1ALoading weights:  89%|████████▉ | 381/427 [00:01<00:00, 222.61it/s]
+[1ALoading weights:  96%|█████████▌| 410/427 [00:02<00:00, 238.69it/s]
+[1ALoading weights: 100%|██████████| 427/427 [00:02<00:00, 199.40it/s]
+trainable params: 64,487,424 || all params: 9,018,290,688 || trainable%: 0.7151
+[RANK 0] Detected kernel version 4.19.0, which is below the recommended minimum of 5.5.0; this can cause the process to hang. It is recommended to upgrade the kernel to the minimum version or higher.
+
+[1A  0%|          | 0/1 [00:00<?, ?it/s][transformers] `causal_conv1d_fn` is falling back to its reference PyTorch implementation because `causal_conv1d` is not installed. This is correct but much slower; install `causal_conv1d` for the optimized kernel.
+[transformers] `chunk_gated_delta_rule` is falling back to its reference PyTorch implementation because `flash-linear-attention` is not installed. This is correct but much slower; install `flash-linear-attention` for the optimized kernel.
+
+[1A100%|██████████| 1/1 [00:04<00:00,  4.81s/it]
+[1A                                             
+{'train_runtime': '4.831', 'train_samples_per_second': '2.484', 'train_steps_per_second': '0.207', 'train_loss': '0.6077', 'epoch': '0.2667'}
+[1A
+[1A100%|██████████| 1/1 [00:04<00:00,  4.81s/it]
+[1A100%|██████████| 1/1 [00:04<00:00,  4.83s/it]
+
+[1AWriting model shards:   0%|          | 0/1 [00:00<?, ?it/s]
+[1AWriting model shards: 100%|██████████| 1/1 [00:22<00:00, 22.19s/it]Writing model shards: 100%|██████████| 1/1 [00:22<00:00, 22.19s/it]
+train: {'tag': 'smoke', 'n': 60, 'train_loss_first': None, 'train_loss_last': None, 'steps': 1, 'wall_s': 212, 'trainable': "{'k_proj', 'in_proj_qkvz', 'out_proj', 'gate_proj', 'in_proj_ba', 'v_proj', 'o_proj', 'down_proj', 'q_proj', 'up_proj'}"}
+
+[1AFetching 16 files:   0%|          | 0/16 [00:00<?, ?it/s]
+[1AFetching 16 files:   6%|▋         | 1/16 [00:00<00:04,  3.63it/s]
+[1AFetching 16 files:  12%|█▎        | 2/16 [00:00<00:03,  3.68it/s]
+[1AFetching 16 files:  19%|█▉        | 3/16 [00:00<00:03,  3.55it/s]
+[1AFetching 16 files:  25%|██▌       | 4/16 [00:01<00:03,  3.52it/s]
+[1AFetching 16 files:  31%|███▏      | 5/16 [00:01<00:02,  4.11it/s]
+[1AFetching 16 files:  50%|█████     | 8/16 [00:01<00:00,  8.60it/s]
+[1AFetching 16 files:  62%|██████▎   | 10/16 [00:01<00:00,  9.04it/s]
+[1AFetching 16 files:  75%|███████▌  | 12/16 [00:04<00:02,  1.94it/s]
+[1AFetching 16 files:  81%|████████▏ | 13/16 [00:15<00:07,  2.59s/it]
+[1AFetching 16 files:  88%|████████▊ | 14/16 [00:21<00:07,  3.51s/it]
+[1AFetching 16 files:  94%|█████████▍| 15/16 [00:30<00:04,  4.78s/it]Fetching 16 files: 100%|██████████| 16/16 [00:30<00:00,  1.93s/it]
+gguf: [{'which': 'lora', 'gguf': '/out/smoke/gguf/lora-Q4_K_M.gguf', 'size_gb': 5.63, 'wall_s': 151}, {'error': 'convert failed', 'tail': 'INFO:hf-to-gguf:Loading model: e4bfa83c72896cbb4990c909967d6f27bb97bac4\nINFO:hf-to-gguf:Model architecture: Qwen3_5ForConditionalGeneration\nINFO:hf-to-gguf:gguf: loading model weight map from \'model.safetensors.index.json\'\nINFO:hf-to-gguf:gguf: indexing model part \'model-00001-of-00004.safetensors\'\nINFO:hf-to-gguf:gguf: indexing model part \'model-00002-of-00004.safetensors\'\nINFO:hf-to-gguf:gguf: indexing model part \'model-00003-of-00004.safetensors\'\nINFO:hf-to-gguf:gguf: indexing model part \'model-00004-of-00004.safetensors\'\nINFO:hf-to-gguf:gguf: indexing model part \'model-mtp.safetensors\'\nTraceback (most recent call last):\n  File "/app/convert_hf_to_gguf.py", line 325, in <module>\n    main()\n  File "/app/convert_hf_to_gguf.py", line 298, in main\n    model_instance = model_class(dir_model, output_type, fname_out,\n                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/app/conversion/qwen.py", line 705, in __init__\n    super().__init__(dir_model, *args, hparams=hparams, **kwargs)\n  File "/app/conversion/qwen.py", line 316, in __init__\n    super().__init__(*args, **kwargs)\n  File "/app/conversion/base.py", line 1761, in __init__\n    super().__init__(*args, **kwargs)\n  File "/app/conversion/base.py", line 172, in __init__\n    self.model_tensors = self.index_tensors(remote_hf_model_id=remote_hf_model_id)\n                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/app/conversion/qwen.py", line 332, in index_tensors\n    return super().index_tensors(remote_hf_model_id=remote_hf_model_id)  # ty: ignore[unresolved-attribute]\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/app/conversion/base.py", line 242, in index_tensors\n    return self.index_local_tensors("model" if not self.is_mistral_format else "consolidated")\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/app/conversion/base.py", line 279, in index_local_tensors\n    ctx = cast(ContextManager[Any], gguf.utility.SafetensorsLocal(self.dir_model / part_name))\n                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File "/app/gguf-py/gguf/utility.py", line 301, in __init__\n    with open(filename, "rb") as f:\n         ^^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: \'/root/.cache/huggingface/hub/models--xtools-at--DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic/snapshots/e4bfa83c72896cbb4990c909967d6f27bb97bac4/model-mtp.safetensors\'\n'}]
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-8QaQLePsiW2tKwIN8SwQVu

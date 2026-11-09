@@ -2,3 +2,7 @@ ocdata/
 node_modules/
 __pycache__/
 *.pyc
+results/phase6/rea-data/*.jsonl
+results/phase6/censor*.json
+results/phase6/censor.log
+results/phase6/hf-upload.log
