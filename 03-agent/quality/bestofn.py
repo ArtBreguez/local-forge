@@ -23,6 +23,7 @@ import json
 import statistics
 import sys
 import tempfile
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
@@ -62,7 +63,7 @@ def load_scored(path: Path) -> dict[KEY, dict[str, Any]]:
     return out
 
 
-def score_file(src: Path, out: Path, workers: int = 2, python: str | None = None, node: str | None = None) -> dict[KEY, dict[str, Any]]:
+def score_file(src: Path, out: Path, workers: int = 2, python: str | None = None, node: str | None = None, pause: float = 0.0) -> dict[KEY, dict[str, Any]]:
     """Score every stored answer of `src` (a runner JSONL) on both halves of its problem's tests; appends to `out`, skips what is there."""
     problems = {p.id: p for p in qbench.load_problems()}
     _, rows = qbench.read_results(src)
@@ -72,7 +73,12 @@ def score_file(src: Path, out: Path, workers: int = 2, python: str | None = None
         parts = split.write_parts(HERE, Path(tmp))
         out.parent.mkdir(parents=True, exist_ok=True)
         with ThreadPoolExecutor(max_workers=max(1, workers)) as ex, out.open("a", encoding="utf-8", newline="\n") as f:
-            for rec in ex.map(lambda r: score_row(problems[r["problem"]], r, parts[r["problem"]], python, node), todo):
+            def one(r: dict[str, Any]) -> dict[str, Any]:
+                rec = score_row(problems[r["problem"]], r, parts[r["problem"]], python, node)
+                if pause:
+                    time.sleep(pause)            # a duty cycle, so that scoring next to a timed benchmark on the same machine stays light
+                return rec
+            for rec in ex.map(one, todo):
                 f.write(json.dumps(rec) + "\n")
                 f.flush()
                 done[(rec["problem"], rec["sample"])] = rec
@@ -257,6 +263,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("src", type=Path)
     sc.add_argument("--out", type=Path, required=True)
     sc.add_argument("--workers", type=int, default=2)
+    sc.add_argument("--pause", type=float, default=0.0, help="seconds to sleep after every scored answer (per worker)")
     sc.add_argument("--python", default=None)
     sc.add_argument("--node", default=None)
     rp = sub.add_parser("report", help="pass rates and time of best-of-N against pass@1")
@@ -272,7 +279,7 @@ def main(argv: list[str] | None = None) -> int:
     md.add_argument("--ns", default="5,10")
     a = ap.parse_args(argv)
     if a.cmd == "score":
-        done = score_file(a.src, a.out, a.workers, a.python, a.node)
+        done = score_file(a.src, a.out, a.workers, a.python, a.node, a.pause)
         print(f"{len(done)} scored answers in {a.out}")
         return 0
     if a.cmd == "report":
