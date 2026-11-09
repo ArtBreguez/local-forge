@@ -79,3 +79,14 @@ python 03-agent/harness/report.py results/phase4 > results/phase4/report.md
 ```
 
 The orchestrator is the loop, the model only writes files. Per round it sends the task, the repository files, the visible tests and the *first* failing test's trimmed output; the reply is the full new text of at most two files (`FILE: path` + fenced block). Before a file is written, Python goes through a deterministic indentation repair (`pyindent.py`, `--no-repair` switches it off) and a syntax check; the orchestrator runs the tests itself after every edit and never reads the model's summary. When the visible tests pass it asks once whether anything in the task text is still missing (`DONE` ends it), and at the end it restores the best state it saw. Budgets: `--max-calls`, `--retries` (rounds without more tests passing), `--deadline-s`. `tests/test_agent.py` runs all of it against an oracle chat server, no model needed. `03-agent/tasks/README.md` lists the tasks.
+
+### Time or ability (phase 5)
+
+```
+# arms: O30 = OpenCode alone with a 30-minute limit, O30-ngram = O30 on a `--spec ngram-mod` server, O30-tool = O30 + one MCP tool
+python 03-agent/harness/grid.py --stages "O30@1;O30-ngram@1;O30-tool@1" --out-dir OUT --work-dir WORK --repo . --opencode PATH\to\opencode.exe
+python 03-agent/harness/report.py results/phase5 --phase4 results/phase4 > results/phase5/report.md   # phase 4's O is the baseline
+python -m unittest tests.test_phase5                                                                  # arms, MCP server, timings, report
+```
+
+Each arm runs under its own limit (`limit_s` in `runner.ARMS`; `--time-limit` overrides all). The report scores a 30-minute arm twice, at its limit and at the protocol's 15 minutes, lists the passes that arrive after minute 15, and shows the phase-4 timeouts task by task. `03-agent/harness/testtool_mcp.py` is the tool of arm O30-tool: a stdlib MCP server that OpenCode starts inside its own process tree (`mcp.servers.forge` in v2.2.5's config, `codemode: false` so the model sees it as the native tool `forge_run_tests`); it runs the visible tests with the orchestrator's own parser and returns `ALL TESTS PASS` or only the first failing test. `tools/phase5-host.ps1` is the host driver.

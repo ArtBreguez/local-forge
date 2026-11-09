@@ -1,0 +1,22 @@
+2026-11-09T08:48:35 wrapper start stages=O30-tool@1;O30-ngram@1 tag=smoke tasks=py-intervals budget=0 limit=420
+2026-11-09T08:48:35 scheduled task llm-phase5 state=Running triggers=2030-01-01T00:00:00
+2026-11-09T08:48:35 host is free
+2026-11-09T08:48:35 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T08:49:11 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T08:49:11 RUN O30-tool py-intervals run 1 (stage 1/2, 1 min in)
+08:49:12 start py-intervals arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+08:51:57 done  py-intervals arm=O30-tool run=1: success=True reason=ok tests=9/9 wall=165.2s steps=4
+2026-11-09T08:51:57 RUN O30-tool py-intervals run 1 runner rc=0
+2026-11-09T08:52:00 server stopped; llama-server processes on the host now, any owner: 0
+2026-11-09T08:52:00 server A+specngrammod: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600 --spec ngram-mod
+2026-11-09T08:52:37 server A+specngrammod up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=ngram-mod source=tuned
+2026-11-09T08:52:37 RUN O30-ngram py-intervals run 1 (stage 2/2, 4 min in)
+08:52:37 start py-intervals arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+08:54:40 done  py-intervals arm=O30-ngram run=1: success=True reason=ok tests=9/9 wall=123.1s steps=4
+2026-11-09T08:54:40 RUN O30-ngram py-intervals run 1 runner rc=0
+2026-11-09T08:54:43 server stopped; llama-server processes on the host now, any owner: 0
+exit=0 2026-11-09T08:54:43

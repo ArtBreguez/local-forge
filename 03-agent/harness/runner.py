@@ -12,7 +12,9 @@ Per (task, arm, run):
 Success = every test passes AND the visible test files are byte-identical AND the agent finished inside the time limit.
 
 Arms (see ARMS): O = OpenCode alone, T = the thin orchestrator, T-norepair = T without the Python indentation repair, T-ngram = T on a
-server started with `--spec ngram-mod` (the server is the grid driver's business, the runner only needs the endpoint).
+server started with `--spec ngram-mod` (the server is the grid driver's business, the runner only needs the endpoint). Phase 5: O30 = O with
+a 30-minute limit, O30-ngram = O30 on a `--spec ngram-mod` server, O30-tool = O30 plus one MCP tool (`testtool_mcp.py`) that runs the visible
+tests and returns only the first failing test. An arm may carry its own limit (`limit_s`); `--time-limit` overrides it.
 One JSON object per line is appended to `<out-dir>/<arm>.jsonl`; a (task, arm, run) already in the file is skipped, so a killed grid resumes.
 """
 from __future__ import annotations
@@ -36,25 +38,43 @@ import meter as metermod  # noqa: E402
 import proctree  # noqa: E402
 import taskbench  # noqa: E402
 
-RUNNER_VERSION = 1
+RUNNER_VERSION = 2          # 2 (phase 5): per-arm time limit, the O30 arms, the MCP test tool, server timings in the record
 DEFAULT_LIMIT_S = 900.0
 ARMS: dict[str, dict[str, Any]] = {
     "O": {"kind": "opencode", "title": "OpenCode alone on the forge endpoint, config A"},
     "T": {"kind": "orchestrator", "title": "thin orchestrator, config A"},
     "T-norepair": {"kind": "orchestrator", "no_repair": True, "title": "T without the Python indentation repair"},
     "T-ngram": {"kind": "orchestrator", "serve": ["--spec", "ngram-mod"], "title": "T on a server with --spec ngram-mod"},
+    "O30": {"kind": "opencode", "limit_s": 1800.0, "title": "OpenCode alone, 30-minute limit, config A"},
+    "O30-ngram": {"kind": "opencode", "limit_s": 1800.0, "serve": ["--spec", "ngram-mod"], "title": "O30 on a server with --spec ngram-mod"},
+    "O30-tool": {"kind": "opencode", "limit_s": 1800.0, "mcp_tests": True, "title": "O30 plus one MCP tool: run the visible tests, first failure only"},
 }
 OPENCODE_MODEL = "forge/dsv4"
+MCP_SERVER = HERE / "testtool_mcp.py"
 
 
-def opencode_config(base_url: str, ctx: int = 16384, out: int = 4096) -> dict[str, Any]:
-    return {"$schema": "https://opencode.ai/config.json",
+def opencode_config(base_url: str, ctx: int = 16384, out: int = 4096, mcp: dict[str, Any] | None = None) -> dict[str, Any]:
+    cfg = {"$schema": "https://opencode.ai/config.json",
             "provider": {"forge": {"npm": "@ai-sdk/openai-compatible", "name": "forge (llama-server, config A)",
                                    "options": {"baseURL": base_url, "apiKey": "none"},
                                    "models": {"dsv4": {"name": "DeepSeek-V4-Pro-Qwen3.5-9B heretic (forge)", "tool_call": True, "reasoning": False,
                                                        "limit": {"context": ctx, "output": out}}}}},
             "model": OPENCODE_MODEL, "autoupdate": False, "share": "disabled",
             "permission": {"edit": "allow", "bash": "allow", "webfetch": "deny"}}
+    if mcp:
+        cfg["mcp"] = mcp
+    return cfg
+
+
+def test_tool_mcp(t: taskbench.Task, repo: Path, a: argparse.Namespace, log: Path) -> dict[str, Any]:
+    """The `mcp` block of OpenCode's config for arm O30-tool: one local server, started by OpenCode inside its own process tree.
+    The schema is v2.2.5's (documented at opencode.ai/docs/mcp-servers, and what `opencode mcp add --global forge -- <command...>` writes):
+    `mcp.servers.<name>` with `type` and `command`; the v1 form `mcp.<name>` is not read (`opencode mcp list` stays empty). `codemode: false`
+    is the documented switch that puts the tool in the model's native tool list as `forge_run_tests`: by default (Code Mode) v2 hides MCP
+    tools behind its `execute` tool, where the model would have to write JavaScript (`tools.forge.run_tests()`) to reach them."""
+    argv = [a.python or sys.executable, str(MCP_SERVER), "--repo", str(repo), "--test-cmd", json.dumps(taskbench.expand(t.test_cmd, a.python, a.node)),
+            "--lang", t.lang, "--log", str(log)]
+    return {"servers": {"forge": {"type": "local", "command": argv, "codemode": False}}}
 
 
 def rmtree(path: Path) -> None:
@@ -112,7 +132,8 @@ def start_agent(arm: dict[str, Any], t: taskbench.Task, work: Path, repo: Path, 
     oc = work / "oc"
     for d in ("config/opencode", "data", "state", "cache"):
         (oc / d).mkdir(parents=True, exist_ok=True)
-    (oc / "config" / "opencode" / "opencode.json").write_text(json.dumps(opencode_config(mt.url if mt else a.endpoint), indent=2), encoding="utf-8")
+    mcp = test_tool_mcp(t, repo, a, work / "mcp-calls.jsonl") if arm.get("mcp_tests") else None
+    (oc / "config" / "opencode" / "opencode.json").write_text(json.dumps(opencode_config(mt.url if mt else a.endpoint, mcp=mcp), indent=2), encoding="utf-8")
     env.update({"XDG_CONFIG_HOME": str(oc / "config"), "XDG_DATA_HOME": str(oc / "data"), "XDG_STATE_HOME": str(oc / "state"),
                 "XDG_CACHE_HOME": str(oc / "cache"), "OPENCODE_DISABLE_AUTOUPDATE": "1"})
     if a.oc_cache_seed and Path(a.oc_cache_seed).is_dir():
@@ -201,7 +222,12 @@ def run_one(t: taskbench.Task, arm_id: str, run_idx: int, a: argparse.Namespace,
         rec["prompt_tokens"], rec["completion_tokens"] = stats["prompt_tokens"], stats["completion_tokens"]
         rec["model_seconds"], rec["api_errors"], rec["context_overflow"] = stats["model_seconds"], stats["errors"], stats["context_overflow"]
         rec["requests"] = stats["requests"]
-        rec["trace"] = [{k: r.get(k) for k in ("t", "status", "tools", "tool_calls", "prompt_tokens", "completion_tokens", "finish", "secs")}
+        for k in ("gen_tok_s", "pp_tok_s", "draft_n", "draft_accepted"):
+            rec[k] = stats.get(k)
+        if arm.get("mcp_tests"):
+            rec["tool_runs"] = mcp_calls(base / "mcp-calls.jsonl")
+        rec["trace"] = [{k: r.get(k) for k in ("t", "status", "tools", "tool_calls", "prompt_tokens", "completion_tokens", "finish", "secs", "pred_n", "pred_ms",
+                                  "draft_n", "draft_accepted")}
                         for r in mt.records][-60:]
     elif result_path is not None and result_path.is_file():
         try:
@@ -216,11 +242,53 @@ def run_one(t: taskbench.Task, arm_id: str, run_idx: int, a: argparse.Namespace,
         rec["trace"] = o.get("trace")
     else:
         rec["steps"] = rec["tool_calls"] = rec["prompt_tokens"] = rec["completion_tokens"] = None
+    if arm["kind"] == "opencode":
+        rec.update(agent_events(log_path))
     rec["diff"] = taskbench.diff_summary(start_copy, repo, a.diff_chars)
     rec["agent_log_tail"] = tail_text(log_path, a.log_chars)
     if not a.keep_work:
         rmtree(base)
     return rec
+
+
+def agent_events(path: Path) -> dict[str, Any]:
+    """How an OpenCode run ended, from its JSON event stream (`--format json`, one object per line): the `error` events (a type and a short
+    message) and how many lines mention a compaction. Phase 5 found that a 16K context makes OpenCode compact a long session and that a
+    compaction the model cannot summarise ends the run (`compaction.failed`), which is neither the time limit nor the model giving up."""
+    errors: list[str] = []
+    compaction = 0
+    steps = 0
+    try:
+        with open(path, "rb") as f:
+            for raw in f:
+                line = raw.decode("utf-8", "replace")
+                if "compaction" in line.lower():
+                    compaction += 1
+                if line.startswith('{"type":"step_finish"'):
+                    steps += 1
+                if line.startswith('{"type":"error"'):
+                    try:
+                        e = json.loads(line).get("error") or {}
+                    except ValueError:
+                        e = {}
+                    if len(errors) < 5:
+                        errors.append(f"{e.get('type')}: {str(e.get('message'))[:120]}")
+    except OSError:
+        pass
+    return {"agent_errors": errors, "compaction_lines": compaction, "agent_step_finishes": steps}
+
+
+def mcp_calls(path: Path) -> dict[str, Any]:
+    """What the test tool did in one run: how many calls, how many reported all tests passing, whether the last call did."""
+    rows: list[dict[str, Any]] = []
+    if path.is_file():
+        for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                rows.append(json.loads(line))
+            except ValueError:
+                continue
+    return {"calls": len(rows), "passing": sum(1 for r in rows if r.get("ok")), "last_ok": bool(rows and rows[-1].get("ok")),
+            "secs": round(sum(r.get("secs") or 0 for r in rows), 1)}
 
 
 def write_record(path: Path, rec: dict[str, Any], meta: dict[str, Any]) -> None:
@@ -251,7 +319,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--endpoint", required=True, help="the forge endpoint, e.g. http://127.0.0.1:8081/v1")
     ap.add_argument("--out-dir", required=True, type=Path)
     ap.add_argument("--work-dir", type=Path, default=Path(tempfile.gettempdir()) / "p4work")
-    ap.add_argument("--time-limit", type=float, default=DEFAULT_LIMIT_S, help="seconds per run, enforced on the whole process tree")
+    ap.add_argument("--time-limit", type=float, default=None,
+                    help=f"seconds per run, enforced on the whole process tree (default: the arm's own limit, else {DEFAULT_LIMIT_S:g})")
     ap.add_argument("--grace-s", type=float, default=30.0, help="the orchestrator is told to stop this long before the limit")
     ap.add_argument("--test-timeout", type=float, default=120.0)
     ap.add_argument("--max-calls", type=int, default=10)
@@ -265,6 +334,8 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--log-chars", type=int, default=2500)
     ap.add_argument("--note", default="")
     a = ap.parse_args(argv)
+    if a.time_limit is None:
+        a.time_limit = float(ARMS[a.arm].get("limit_s", DEFAULT_LIMIT_S))
     tasks = taskbench.load_tasks(ids=[x for x in a.tasks.split(",") if x] or None)
     runs = list(range(1, int(a.runs) + 1)) if a.runs.isdigit() else [int(x) for x in a.runs.split(",")]
     if a.shuffle_seed:
@@ -274,7 +345,8 @@ def main(argv: list[str] | None = None) -> int:
     refs = reference_totals(tasks, a)
     meta = {"runner_version": RUNNER_VERSION, "arm": a.arm, "arm_title": ARMS[a.arm]["title"], "endpoint": a.endpoint, "time_limit_s": a.time_limit,
             "platform": sys.platform, "python": sys.version.split()[0], "node": taskbench.qbench.find_node(a.node), "note": a.note,
-            "max_calls": a.max_calls, "temperature": 0, "seed": 1, "thinking": False, "reference_totals": refs, "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            "max_calls": a.max_calls, "temperature": 0, "seed": 1, "thinking": False, "serve_flags": ARMS[a.arm].get("serve", []),
+            "mcp_tests": bool(ARMS[a.arm].get("mcp_tests")), "opencode": a.opencode, "reference_totals": refs, "started": time.strftime("%Y-%m-%dT%H:%M:%S")}
     meta["job_objects"] = proctree.IS_WINDOWS
     code = 0
     for run_idx in runs:

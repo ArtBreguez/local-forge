@@ -3,7 +3,9 @@
 It forwards every request unchanged except for the settings that define config A (they are forced, so the agent cannot
 change them): temperature 0, a fixed seed, thinking off (`chat_template_kwargs.enable_thinking=false`), prompt caching on.
 It counts what the agent asks for: requests, requests that carry tools (the agent's steps), tool calls the model made, tokens,
-errors (a context overflow is an HTTP 400). Stdlib only; one thread per connection; streams are passed through line by line.
+errors (a context overflow is an HTTP 400). Phase 5: it also keeps llama-server's own `timings` of every answer (generated tokens and
+milliseconds, new prompt tokens and milliseconds, speculative drafts proposed and accepted), so that the speed of an arm is measured on the
+server's clock and not on the proxy's. Stdlib only; one thread per connection; streams are passed through line by line.
 """
 from __future__ import annotations
 
@@ -42,7 +44,11 @@ class Meter:
     def totals(self) -> dict[str, Any]:
         with self.lock:
             recs = list(self.records)
-        return {"requests": len(recs), "steps": sum(1 for r in recs if r.get("tools")), "tool_calls": sum(r.get("tool_calls", 0) for r in recs),
+        pred_n, pred_ms = sum(r.get("pred_n") or 0 for r in recs), sum(r.get("pred_ms") or 0 for r in recs)
+        pp_n, pp_ms = sum(r.get("pp_n") or 0 for r in recs), sum(r.get("pp_ms") or 0 for r in recs)
+        return {"gen_tok_s": round(1000 * pred_n / pred_ms, 2) if pred_ms else None, "pp_tok_s": round(1000 * pp_n / pp_ms, 1) if pp_ms else None,
+                "draft_n": sum(r.get("draft_n") or 0 for r in recs), "draft_accepted": sum(r.get("draft_accepted") or 0 for r in recs),
+                "requests": len(recs), "steps": sum(1 for r in recs if r.get("tools")), "tool_calls": sum(r.get("tool_calls", 0) for r in recs),
                 "prompt_tokens": sum(r.get("prompt_tokens") or 0 for r in recs), "completion_tokens": sum(r.get("completion_tokens") or 0 for r in recs),
                 "errors": sum(1 for r in recs if r.get("status", 200) >= 400), "model_seconds": round(sum(r.get("secs", 0) for r in recs), 1),
                 "context_overflow": sum(1 for r in recs if r.get("status") == 400 and "context" in (r.get("error") or "").lower())}
@@ -115,6 +121,12 @@ class Meter:
                     with meter.lock:
                         meter.records.append(rec)
 
+            @staticmethod
+            def _timings(rec: dict[str, Any], tm: dict[str, Any]) -> None:
+                rec["pred_n"], rec["pred_ms"] = tm.get("predicted_n"), tm.get("predicted_ms")
+                rec["pp_n"], rec["pp_ms"] = tm.get("prompt_n"), tm.get("prompt_ms")
+                rec["draft_n"], rec["draft_accepted"] = tm.get("draft_n"), tm.get("draft_n_accepted")
+
             def _summarize(self, rec: dict[str, Any], buf: bytes, body: dict[str, Any] | None) -> None:
                 text = buf.decode("utf-8", "replace")
                 names: set[int] = set()
@@ -139,6 +151,8 @@ class Meter:
                         if u:
                             rec["prompt_tokens"], rec["completion_tokens"] = u.get("prompt_tokens"), u.get("completion_tokens")
                         tm = ev.get("timings") or {}
+                        if tm:
+                            self._timings(rec, tm)
                         if tm and rec.get("prompt_tokens") is None:
                             rec["prompt_tokens"], rec["completion_tokens"] = tm.get("prompt_n"), tm.get("predicted_n")
                     rec["tool_calls"] = len(names)
@@ -149,6 +163,8 @@ class Meter:
                         return
                     u = data.get("usage") or {}
                     rec["prompt_tokens"], rec["completion_tokens"] = u.get("prompt_tokens"), u.get("completion_tokens")
+                    if data.get("timings"):
+                        self._timings(rec, data["timings"])
                     ch = (data.get("choices") or [{}])[0]
                     rec["finish"] = ch.get("finish_reason")
                     rec["tool_calls"] = len((ch.get("message") or {}).get("tool_calls") or [])
