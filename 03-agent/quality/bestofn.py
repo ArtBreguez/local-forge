@@ -304,6 +304,23 @@ def passes_table(dirpath: Path, ref: str, meta: dict[str, Any], ks: list[int]) -
     return "\n".join(lines)
 
 
+def pair_lines(dirpath: Path, pairs: list[str]) -> str:
+    """`a:b` pairs of models compared on their stored greedy pass flags (exact McNemar): e.g. a censored model against its abliterated version."""
+    problem_ids = [p.id for p in qbench.load_problems()]
+
+    def greedy(name: str) -> dict[str, bool]:
+        _, rows = qbench.read_results(dirpath / f"{name}.greedy.jsonl")
+        return {r["problem"]: bool(r["pass"]) for r in rows if r.get("kind") != "api_error"}
+    out = []
+    for spec in pairs:
+        a, b = spec.split(":", 1)
+        ga, gb = greedy(a), greedy(b)
+        only_a = sum(1 for pid in problem_ids if ga[pid] and not gb[pid])
+        only_b = sum(1 for pid in problem_ids if gb[pid] and not ga[pid])
+        out.append(f"- {a} {sum(ga.values())}/40 vs {b} {sum(gb.values())}/40: only {a} {only_a}, only {b} {only_b}, McNemar p = {qbench.mcnemar_exact(only_a, only_b):.3f}")
+    return "\n".join(out)
+
+
 # ------------------------------------------------------------------------------------------------ CLI
 
 def parse_ns(text: str) -> list[int]:
@@ -337,9 +354,12 @@ def main(argv: list[str] | None = None) -> int:
     ps.add_argument("--ref", required=True)
     ps.add_argument("--meta", type=Path, help="JSON {model: {uncensored: bool, size_gb, licence}}")
     ps.add_argument("--ks", default="5,10")
+    ps.add_argument("--pair", action="append", default=[], metavar="A:B", help="also compare two models on their greedy pass flags (repeatable)")
     a = ap.parse_args(argv)
     if a.cmd == "passes":
         print(passes_table(a.dir, a.ref, json.loads(a.meta.read_text(encoding="utf-8")) if a.meta else {}, parse_ns(a.ks)))
+        if a.pair:
+            print("\n" + pair_lines(a.dir, a.pair))
         return 0
     if a.cmd == "score":
         if a.tz:

@@ -229,6 +229,7 @@ class Passes(unittest.TestCase):
             write("censored", set(ids[:40]), {pid: 10 for pid in ids})
             table = bestofn.passes_table(d, "base", {"base": {"uncensored": True, "size_gb": 5.2, "licence": "Apache-2.0 (card)"},
                                                       "better": {"uncensored": True, "size_gb": 11.0, "licence": "Apache-2.0 (card)"}}, [5, 10])
+            pairs = bestofn.pair_lines(d, ["base:better", "censored:better"])
         rows = [r for r in table.splitlines()[2:]]
         self.assertEqual([r.split(" | ")[0].strip("| ") for r in rows], ["better", "base", "censored (censored: reference row only)"],
                          "uncensored models first (best first), a censored model only as a reference row after them")
@@ -240,6 +241,8 @@ class Passes(unittest.TestCase):
         self.assertIn("| no |", rows[2])
         self.assertIn("5.2 GB, Apache-2.0", rows[1])
         self.assertIn("pass@10", table)
+        self.assertIn("- base 10/40 vs better 30/40: only base 0, only better 20, McNemar p = 0.000", pairs)
+        self.assertIn("- censored 40/40 vs better 30/40: only censored 10, only better 0, McNemar p = 0.002", pairs)
 
 
 if __name__ == "__main__":
