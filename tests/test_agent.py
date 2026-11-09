@@ -424,6 +424,34 @@ class Orchestrator(unittest.TestCase):
         self.assertIn("1 != 2", res.blocks[0][1])
         self.assertNotIn("boom", res.blocks[0][1])
 
+    def test_windows_crlf_output_is_parsed_like_unix_output(self):
+        """Phase 4 first pass: on Windows the pipes give CRLF, no failure block was found and the model was told nothing failed."""
+        err = ("======================================================================\r\nFAIL: test_a (tests.test_x.T.test_a)\r\n"
+               "----------------------------------------------------------------------\r\nTraceback (most recent call last):\r\n"
+               "  File \"/x/tests/test_x.py\", line 5, in test_a\r\nAssertionError: 1 != 2\r\n\r\n"
+               "----------------------------------------------------------------------\r\nRan 2 tests in 0.001s\r\n\r\nFAILED (failures=1)\r\n")
+        res = orchestrate.parse_python(1, err)
+        self.assertEqual((res.total, res.failed, len(res.blocks)), (2, 1, 1))
+        self.assertIn("1 != 2", res.blocks[0][1])
+        tap = "TAP version 13\r\nnot ok 1 - adds\r\n  ---\r\n  error: 'boom'\r\n  ...\r\n1..1\r\n# tests 1\r\n# pass 0\r\n# fail 1\r\n"
+        res = orchestrate.parse_node(1, tap, "")
+        self.assertEqual((res.total, res.failed, len(res.blocks)), (1, 1, 1))
+
+    def test_a_failure_without_a_parsable_block_is_never_reported_as_passing(self):
+        d = tmpdir(self)
+        res = orchestrate.run_tests(d, [sys.executable, "-c", "import sys; sys.stderr.write('boom happened'); sys.exit(1)"], "py", timeout=30)
+        self.assertFalse(res.ok)
+        self.assertIn("boom happened", res.blocks[0][1])
+        prompt = orchestrate.build_prompt("task", d, set(), res, [], [], "fix")
+        self.assertNotIn("visible tests pass", prompt)
+        self.assertIn("boom happened", prompt)
+
+    def test_the_example_in_the_system_prompt_matches_the_language(self):
+        self.assertIn("```javascript", orchestrate.system_prompt("js"))
+        self.assertNotIn("```python", orchestrate.system_prompt("js"))
+        self.assertIn("```python", orchestrate.system_prompt("py"))
+        self.assertIn("4 spaces", orchestrate.system_prompt("py"))
+
     def test_node_failure_blocks(self):
         tap = textwrap.dedent("""\
             TAP version 13

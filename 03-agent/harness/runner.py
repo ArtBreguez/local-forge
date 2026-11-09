@@ -211,7 +211,7 @@ def run_one(t: taskbench.Task, arm_id: str, run_idx: int, a: argparse.Namespace,
         rec["steps"], rec["tool_calls"] = o.get("steps"), o.get("tool_calls")
         rec["prompt_tokens"], rec["completion_tokens"] = o.get("prompt_tokens"), o.get("completion_tokens")
         rec["model_seconds"], rec["edits"] = o.get("model_seconds"), o.get("edits")
-        rec["orchestrator"] = {k: o.get(k) for k in ("stop_reason", "repairs", "rescues", "syntax_rejects", "no_edit", "blocked_paths", "reviews",
+        rec["orchestrator"] = {k: o.get(k) for k in ("version", "stop_reason", "repairs", "rescues", "syntax_rejects", "no_edit", "blocked_paths", "reviews",
                                                     "test_runs", "restored_best", "repair_enabled")}
         rec["trace"] = o.get("trace")
     else:

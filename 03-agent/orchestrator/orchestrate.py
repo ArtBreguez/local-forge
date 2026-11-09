@@ -36,6 +36,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import pyindent  # noqa: E402
 
+VERSION = 2          # 1: first grid pass (Windows CRLF output was not parsed, Python failures reached the model without text)
 TEXT_EXT = {".py", ".js", ".mjs", ".cjs", ".json", ".md", ".txt"}
 TEST_DIRS = {"tests", "test", "__tests__"}
 SKIP_DIRS = {"__pycache__", "node_modules", ".git"}
@@ -43,24 +44,29 @@ FILES_BUDGET = 14000          # characters of repository files in a request (abo
 TESTS_BUDGET = 8000
 MAX_FILES_PER_REPLY = 2
 
-SYSTEM = """You are a careful programmer working in a small repository. You get the task, the files of the repository, the tests (read only) and the output of the failing test. Reply with the complete new content of every file you change (at most two files per reply) and nothing else, in exactly this format:
+SYSTEM_HEAD = """You are a careful programmer working in a small repository. You get the task, the files of the repository, the tests (read only) and the output of the failing test. Reply with the complete new content of every file you change (at most two files per reply) and nothing else, in exactly this format:
 
 FILE: path/relative/to/the/repository/root
-```python
+```{fence}
 <the whole file>
 ```
 
-Rules: write the whole file, never a fragment or a diff. Keep every part of a file that does not need to change exactly as it is. Indent Python with 4 spaces per level. Never edit the tests. Do not explain. If a task needs more than two files, do the most important two now; you will be asked again.
+Rules: write the whole file, never a fragment or a diff. Keep every part of a file that does not need to change exactly as it is. {style} Never edit the tests. Do not explain. If a task needs more than two files, do the most important two now; you will be asked again.
 
 Example of a reply:
 
-FILE: src/example.py
-```python
-def add(a, b):
-    if not isinstance(a, int):
-        raise TypeError("a must be an int")
-    return a + b
-```"""
+"""
+EXAMPLES = {
+    "py": ("python", "Indent Python with 4 spaces per level. The files of this repository are Python.",
+           'FILE: src/example.py\n```python\ndef add(a, b):\n    if not isinstance(a, int):\n        raise TypeError("a must be an int")\n    return a + b\n```'),
+    "js": ("javascript", "Indent JavaScript with 2 spaces per level. The files of this repository are JavaScript, not Python.",
+           'FILE: src/example.js\n```javascript\nfunction add(a, b) {\n  if (typeof a !== \'number\') {\n    throw new TypeError(\'a must be a number\');\n  }\n  return a + b;\n}\n\nmodule.exports = { add };\n```'),
+}
+
+
+def system_prompt(lang: str) -> str:
+    fence, style, example = EXAMPLES.get(lang, EXAMPLES["py"])
+    return SYSTEM_HEAD.format(fence=fence, style=style) + example
 
 
 # ------------------------------------------------------------------------------------------------ repository helpers
@@ -122,6 +128,7 @@ def _trim_traceback(block: str, limit: int = 1500) -> str:
 
 
 def parse_python(rc: int | None, err: str) -> TestResult:
+    err = err.replace("\r\n", "\n")
     m = re.search(r"^Ran (\d+) tests?", err, re.M)
     total = int(m.group(1)) if m else None
     blocks: list[tuple[str, str]] = []
@@ -139,6 +146,8 @@ def parse_python(rc: int | None, err: str) -> TestResult:
 
 
 def parse_node(rc: int | None, out: str, err: str) -> TestResult:
+    out, err = out.replace("\r\n", "\n"), err.replace("\r\n", "\n")
+
     def num(key: str) -> int | None:
         m = re.search(rf"^# {key} (\d+)", out, re.M)
         return int(m.group(1)) if m else None
@@ -183,10 +192,12 @@ def run_tests(repo: Path, cmd: list[str], lang: str, timeout: float = 120.0) -> 
         _kill(proc)
         out, err = proc.communicate()
         rc = None
-    o, e = out.decode("utf-8", "replace"), err.decode("utf-8", "replace")
+    o, e = out.decode("utf-8", "replace").replace("\r\n", "\n"), err.decode("utf-8", "replace").replace("\r\n", "\n")   # Windows pipes give CRLF
     res = parse_python(rc, e) if lang == "py" else parse_node(rc, o, e)
     if rc is None:
         res.blocks = [("timeout", f"the tests did not finish in {timeout:g}s (an endless loop?)")]
+    elif not res.ok and not res.blocks:               # never tell the model "nothing fails" when something does
+        res.blocks = [("run", _trim_traceback((e if lang == "py" else (o + e))[-1800:]))]
     return res
 
 
@@ -302,7 +313,7 @@ def build_prompt(task: str, repo: Path, protect: set[str], failing: TestResult |
         parts.append("RESULT\nThe visible tests pass. Hidden tests check the requirements of the task text more strictly. Compare the files with the task "
                      "text point by point. If any requirement is not implemented yet, reply with the FILE blocks that implement it. If everything "
                      "is implemented, reply with exactly: DONE. No analysis, no explanation: only DONE or FILE blocks.")
-    elif failing is not None and failing.blocks:
+    elif failing is not None and not failing.ok and failing.blocks:
         total = failing.total if failing.total is not None else "?"
         names = [n for n, _ in failing.blocks]
         parts.append(f"RESULT\n{len(failing.blocks)} test(s) fail ({failing.passed} of {total} pass). Failing: " + "; ".join(names[:6])
@@ -312,8 +323,7 @@ def build_prompt(task: str, repo: Path, protect: set[str], failing: TestResult |
     if history:
         parts.append("EARLIER ROUNDS\n" + "\n".join(history[-3:]))
     if history and mode != "review" and any("did not fix" in h or "nothing was written" in h or "no FILE block" in h for h in history[-2:]):
-        parts.append("Your last reply changed nothing or did not fix the failure. Read the failing output again, work out what the code returns "
-                     "and what the test expects, and change the code accordingly.")
+        parts.append("Your last reply changed nothing or did not fix the failure. Change the code so that this test passes.")
     parts.append("Reply with the FILE blocks of the next change.")
     return "\n\n".join(parts)
 
@@ -375,7 +385,7 @@ class Run:
         return run_tests(self.repo, self.cmd, self.lang, timeout=min(120.0, max(20.0, self.left())))
 
     def save(self, final: bool = False) -> None:
-        out = {"steps": self.llm.calls, "prompt_tokens": self.llm.prompt_tokens, "completion_tokens": self.llm.completion_tokens,
+        out = {"version": VERSION, "steps": self.llm.calls, "prompt_tokens": self.llm.prompt_tokens, "completion_tokens": self.llm.completion_tokens,
                "model_seconds": round(self.llm.seconds, 1), "wall_s": round(time.monotonic() - self.t0, 1), "stop_reason": self.stop_reason,
                "final": final, "repair_enabled": not self.a.no_repair, **self.stats, "trace": self.trace}
         tmp = Path(str(self.a.result) + ".tmp")
@@ -464,8 +474,8 @@ class Run:
             # loop retries with a little temperature (and another seed); the first attempt of every step stays greedy
             temp = a.temperature if no_progress == 0 else min(0.8, a.retry_temperature * no_progress)
             try:
-                reply, meta = self.llm.chat(SYSTEM, prompt, self.left() - 20, temp, a.seed + rounds,
-                                            a.review_max_tokens if mode == "review" else None)
+                reply, meta = self.llm.chat(system_prompt(self.lang), prompt, self.left() - 20, temp, a.seed + rounds,
+                                            a.review_max_tokens if mode == "review" else (a.retry_max_tokens if no_progress else None))
                 meta["temperature"] = temp
             except (urllib.error.URLError, OSError, ValueError, TimeoutError) as e:
                 self.stop_reason = f"model error: {type(e).__name__}: {str(e)[:120]}"
@@ -551,6 +561,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reviews", type=int, default=1, help="comparisons with the task text once the visible tests pass")
     ap.add_argument("--deadline-s", type=float, default=840.0, help="stop starting new requests when this many seconds are used")
     ap.add_argument("--max-tokens", type=int, default=2200)
+    ap.add_argument("--retry-max-tokens", type=int, default=1500, help="a retry that rambles instead of answering is cut here")
     ap.add_argument("--review-max-tokens", type=int, default=1100, help="a review that rambles instead of answering is cut here")
     ap.add_argument("--temperature", type=float, default=0.0)
     ap.add_argument("--retry-temperature", type=float, default=0.3, help="temperature added per round without progress (0: stay greedy)")
