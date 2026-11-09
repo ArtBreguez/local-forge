@@ -43,7 +43,7 @@ REA_PKG = "rea-agents@6.8.0"   # same version as the host install (tools/rea-ins
 image = (
     modal.Image.from_registry(f"ghcr.io/ggml-org/llama.cpp@{LLAMA_DIGEST}", add_python="3.11")
     .entrypoint([])
-    .apt_install("curl", "unzip", "xz-utils", "gcc", "binutils", "ca-certificates")
+    .apt_install("curl", "unzip", "xz-utils", "gcc", "clang", "binutils", "ca-certificates")
     .run_commands(
         f"curl -fsSL -o /tmp/jdk.tgz {JDK_URL} && echo '{JDK_SHA}  /tmp/jdk.tgz' | sha256sum -c - && mkdir -p /opt/jdk && tar -xzf /tmp/jdk.tgz -C /opt/jdk --strip-components=1 && rm /tmp/jdk.tgz",
         f"curl -fsSL -o /tmp/ghidra.zip {GHIDRA_URL} && echo '{GHIDRA_SHA}  /tmp/ghidra.zip' | sha256sum -c - && unzip -q /tmp/ghidra.zip -d /opt && mv /opt/ghidra_12.1.4_PUBLIC /opt/ghidra && rm /tmp/ghidra.zip",
