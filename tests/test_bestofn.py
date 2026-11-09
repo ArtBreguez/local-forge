@@ -205,5 +205,42 @@ class Resume(unittest.TestCase):
         self.assertNotEqual((utc.passed, utc.detail), (brt.passed, brt.detail), "the timezone must reach the node process")
 
 
+class Passes(unittest.TestCase):
+    def test_pass_at_k_is_the_unbiased_estimate(self):
+        self.assertEqual(bestofn.pass_at_k(10, 0, 5), 0.0)
+        self.assertEqual(bestofn.pass_at_k(10, 10, 5), 1.0)
+        self.assertEqual(bestofn.pass_at_k(10, 6, 5), 1.0, "fewer than k failures: every draw of k contains a pass")
+        self.assertAlmostEqual(bestofn.pass_at_k(10, 1, 5), 0.5)          # 1 - C(9,5)/C(10,5)
+        self.assertAlmostEqual(bestofn.pass_at_k(4, 1, 1), 0.25)
+
+    def test_passes_table_from_stored_flags(self):
+        ids = [p.id for p in qbench.load_problems()]
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp)
+
+            def write(name: str, greedy_pass: set[str], sample_pass: dict[str, int]) -> None:
+                g = [{"type": "meta", "arm": name}] + [{"type": "result", "problem": pid, "sample": 0, "pass": pid in greedy_pass, "tok_s": 10.0, "wall_s": 20.0} for pid in ids]
+                s = [{"type": "meta", "arm": name}] + [{"type": "result", "problem": pid, "sample": i, "pass": i < sample_pass.get(pid, 0), "wall_s": 30.0}
+                                                      for pid in ids for i in range(10)]
+                (d / f"{name}.greedy.jsonl").write_text("\n".join(json.dumps(r) for r in g) + "\n", encoding="utf-8")
+                (d / f"{name}.sample.jsonl").write_text("\n".join(json.dumps(r) for r in s) + "\n", encoding="utf-8")
+            write("base", set(ids[:10]), {pid: 1 for pid in ids[:20]})
+            write("better", set(ids[:30]), {pid: 5 for pid in ids[:30]})
+            write("censored", set(ids[:40]), {pid: 10 for pid in ids})
+            table = bestofn.passes_table(d, "base", {"base": {"uncensored": True, "size_gb": 5.2, "licence": "Apache-2.0 (card)"},
+                                                      "better": {"uncensored": True, "size_gb": 11.0, "licence": "Apache-2.0 (card)"}}, [5, 10])
+        rows = [r for r in table.splitlines()[2:]]
+        self.assertEqual([r.split(" | ")[0].strip("| ") for r in rows], ["better", "base", "censored (censored: reference row only)"],
+                         "uncensored models first (best first), a censored model only as a reference row after them")
+        better = rows[0]
+        self.assertIn("30/40 = 75%", better)
+        self.assertIn("0 / 20, p = 0.000", better)                       # only base: 0, only model: 20 (ids 10..29)
+        self.assertIn("(reference)", rows[1])
+        self.assertIn("10/40 = 25%", rows[1])
+        self.assertIn("| no |", rows[2])
+        self.assertIn("5.2 GB, Apache-2.0", rows[1])
+        self.assertIn("pass@10", table)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -12,7 +12,8 @@ reported for every arm, both computed from the stored code of the answers:
     python bestofn.py score  A.jsonl      --out A.scored.jsonl         # run both halves on every stored answer (resumable)
                                           # add --tz America/Sao_Paulo for answers made on the UTC-3 host: some answers pass or fail by timezone
     python bestofn.py report --greedy A.jsonl --samples S10.jsonl --scored S10.scored.jsonl --greedy-scored A.scored.jsonl --ns 5,10
-    python bestofn.py models --dir results/phase6/modal --ref heretic-9b --meta models.json
+    python bestofn.py models --dir results/phase6/modal --ref heretic-9b --meta models.json     # needs `score` output for every model
+    python bestofn.py passes --dir results/phase6/modal --ref heretic-9b --meta models.json     # same models from the stored pass flags only
 
 Time per problem is the sequential procedure's: generate a sample, run the visible tests, stop at the first pass; the temperature-0
 answer is generated only when no sample passes. Test run time (well under a second) is not counted. Stdlib only.
@@ -21,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import statistics
 import sys
@@ -251,6 +253,57 @@ def model_table(dirpath: Path, ref: str, meta: dict[str, Any], ns: list[int]) ->
     return "\n".join(lines)
 
 
+def pass_at_k(n: int, c: int, k: int) -> float:
+    """Unbiased pass@k estimate (Chen et al. 2021) from c passes among n candidates."""
+    return 1.0 if n - c < k else 1.0 - math.comb(n - c, k) / math.comb(n, k)
+
+
+def passes_table(dirpath: Path, ref: str, meta: dict[str, Any], ks: list[int]) -> str:
+    """The model comparison from the STORED pass flags of `<model>.greedy.jsonl` and `<model>.sample.jsonl` (every test of the problem, as run by
+    the runner that made them): pass@1 at temperature 0 with McNemar against `ref`, the mean pass rate of the temperature-0.7 candidates, and
+    the unbiased pass@k. No rescoring is needed, so this is cheap; `models` is the variant that also splits the tests."""
+    problem_ids = [p.id for p in qbench.load_problems()]
+    rows: dict[str, dict[str, Any]] = {}
+    for g in sorted(dirpath.glob("*.greedy.jsonl")):
+        name = g.name[: -len(".greedy.jsonl")]
+        s = dirpath / f"{name}.sample.jsonl"
+        if not s.exists():
+            continue
+        _, grows = qbench.read_results(g)
+        _, srows = qbench.read_results(s)
+        rows[name] = {"greedy": {r["problem"]: r for r in grows if r.get("kind") != "api_error"}, "samples": by_problem(srows)}
+    if ref not in rows:
+        raise SystemExit(f"reference model {ref!r} not found in {dirpath}")
+    refpass = {pid: bool(rows[ref]["greedy"][pid]["pass"]) for pid in problem_ids}
+    head = ["model", "uncensored", "GGUF", "pass@1 at T=0, every test (Wilson 95%)", f"vs {ref}: only {ref} / only model, McNemar p",
+            "mean candidate pass rate at T=0.7"] + [f"pass@{k}" for k in ks] + ["median tok/s", "median s per problem"]
+    lines = ["| " + " | ".join(head) + " |", "|" + "---|" * len(head)]
+    order = sorted(rows, key=lambda m: (not meta.get(m, {}).get("uncensored", False), -sum(bool(r["pass"]) for r in rows[m]["greedy"].values())))
+    for name in order:
+        m = rows[name]
+        info = meta.get(name, {})
+        gp = {pid: bool(m["greedy"][pid]["pass"]) for pid in problem_ids}
+        k1 = sum(gp.values())
+        only_ref = sum(1 for pid in problem_ids if refpass[pid] and not gp[pid])
+        only_m = sum(1 for pid in problem_ids if gp[pid] and not refpass[pid])
+        cands = {pid: list(m["samples"].get(pid, {}).values()) for pid in problem_ids}
+        tot = sum(len(v) for v in cands.values())
+        okc = sum(1 for v in cands.values() for r in v if r["pass"])
+        cells = []
+        for k in ks:
+            elig = [v for v in cands.values() if len(v) >= k]
+            cells.append(f"{100 * sum(pass_at_k(len(v), sum(1 for r in v if r['pass']), k) for v in elig) / len(elig):.0f}%" if len(elig) == len(problem_ids) else "-")
+        tps = [r["tok_s"] for r in m["greedy"].values() if r.get("tok_s")]
+        secs = [r["wall_s"] for r in m["greedy"].values() if r.get("wall_s")]
+        label = f"{name}" + ("" if info.get("uncensored") else " (censored: reference row only)")
+        gguf = f"{info['size_gb']} GB, {info.get('licence', '?').split(' ')[0]}" if info.get("size_gb") else "?"
+        cmp_cell = "(reference)" if name == ref else f"{only_ref} / {only_m}, p = {qbench.mcnemar_exact(only_ref, only_m):.3f}"
+        lines.append("| " + " | ".join([label, "yes" if info.get("uncensored") else "no", gguf, ci(k1, len(problem_ids)), cmp_cell,
+                                         f"{100 * okc / tot:.0f}% ({okc}/{tot})"] + cells
+                                        + [f"{statistics.median(tps):.0f}" if tps else "-", f"{statistics.median(secs):.0f}" if secs else "-"]) + " |")
+    return "\n".join(lines)
+
+
 # ------------------------------------------------------------------------------------------------ CLI
 
 def parse_ns(text: str) -> list[int]:
@@ -279,7 +332,15 @@ def main(argv: list[str] | None = None) -> int:
     md.add_argument("--ref", required=True, help="the model every other one is compared with (McNemar on the hidden half)")
     md.add_argument("--meta", type=Path, help="JSON {model: {uncensored: bool, ...}}")
     md.add_argument("--ns", default="5,10")
+    ps = sub.add_parser("passes", help="the model comparison from the stored pass flags (no rescoring): pass@1, McNemar, candidate pass rate, pass@k")
+    ps.add_argument("--dir", type=Path, required=True)
+    ps.add_argument("--ref", required=True)
+    ps.add_argument("--meta", type=Path, help="JSON {model: {uncensored: bool, size_gb, licence}}")
+    ps.add_argument("--ks", default="5,10")
     a = ap.parse_args(argv)
+    if a.cmd == "passes":
+        print(passes_table(a.dir, a.ref, json.loads(a.meta.read_text(encoding="utf-8")) if a.meta else {}, parse_ns(a.ks)))
+        return 0
     if a.cmd == "score":
         if a.tz:
             os.environ["QBENCH_TZ"] = a.tz      # read by qbench.run_tests
