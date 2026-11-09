@@ -1,0 +1,1 @@
+The test `test_last_partial_page` in `tests/test_pager.py` fails. Find the bug in `pager.py` and fix it, without changing the documented behaviour of `paginate` (see its docstring) and without breaking the tests that pass. Run the tests with `python -m unittest`. More tests that you cannot see check the same function. Do not modify anything under `tests/`.

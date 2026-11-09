@@ -1,0 +1,97 @@
+2026-11-09T03:01:57 wrapper start stages=O+T@1;T-norepair@1;T@2;T-ngram@1 tag=full tasks= budget=255 limit=900
+2026-11-09T03:01:57 host is free
+2026-11-09T03:01:58 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T03:02:34 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T03:02:34 RUN O py-todo-tags run 1 (stage 1/4, 1 min in)
+03:02:34 start py-todo-tags arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:16:16 done  py-todo-tags arm=O run=1: success=False reason=tests_failed tests=10/13 wall=821.5s steps=41
+2026-11-09T03:16:16 RUN O py-todo-tags run 1 runner rc=0
+2026-11-09T03:16:16 RUN T py-todo-tags run 1 (stage 1/4, 14 min in)
+03:16:16 start py-todo-tags arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:22:32 done  py-todo-tags arm=T run=1: success=False reason=tests_failed tests=3/13 wall=375.3s steps=3
+2026-11-09T03:22:32 RUN T py-todo-tags run 1 runner rc=0
+2026-11-09T03:22:32 RUN O js-lru run 1 (stage 1/4, 21 min in)
+03:22:32 start js-lru arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:25:18 done  js-lru arm=O run=1: success=True reason=ok tests=9/9 wall=165.2s steps=4
+2026-11-09T03:25:18 RUN O js-lru run 1 runner rc=0
+2026-11-09T03:25:18 RUN T js-lru run 1 (stage 1/4, 23 min in)
+03:25:18 start js-lru arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:26:29 done  js-lru arm=T run=1: success=False reason=tests_failed tests=8/9 wall=71.1s steps=2
+2026-11-09T03:26:29 RUN T js-lru run 1 runner rc=0
+2026-11-09T03:26:29 RUN O py-wrap run 1 (stage 1/4, 25 min in)
+03:26:30 start py-wrap arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:41:30 done  py-wrap arm=O run=1: success=False reason=timeout tests=0/9 wall=900.0s steps=11
+2026-11-09T03:41:30 RUN O py-wrap run 1 runner rc=0
+2026-11-09T03:41:30 RUN T py-wrap run 1 (stage 1/4, 40 min in)
+03:41:30 start py-wrap arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:48:56 done  py-wrap arm=T run=1: success=False reason=tests_failed tests=7/9 wall=445.3s steps=4
+2026-11-09T03:48:56 RUN T py-wrap run 1 runner rc=0
+2026-11-09T03:48:56 RUN O py-fix-paginate run 1 (stage 1/4, 47 min in)
+03:48:56 start py-fix-paginate arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:52:02 done  py-fix-paginate arm=O run=1: success=True reason=ok tests=10/10 wall=186.2s steps=8
+2026-11-09T03:52:03 RUN O py-fix-paginate run 1 runner rc=0
+2026-11-09T03:52:03 RUN T py-fix-paginate run 1 (stage 1/4, 50 min in)
+03:52:03 start py-fix-paginate arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+03:59:31 done  py-fix-paginate arm=T run=1: success=True reason=ok tests=10/10 wall=448.3s steps=4
+2026-11-09T03:59:31 RUN T py-fix-paginate run 1 runner rc=0
+2026-11-09T03:59:31 RUN O js-fix-csv run 1 (stage 1/4, 58 min in)
+03:59:32 start js-fix-csv arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:14:32 done  js-fix-csv arm=O run=1: success=False reason=timeout tests=2/9 wall=900.0s steps=11
+2026-11-09T04:14:32 RUN O js-fix-csv run 1 runner rc=0
+2026-11-09T04:14:32 RUN T js-fix-csv run 1 (stage 1/4, 73 min in)
+04:14:32 start js-fix-csv arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:16:25 done  js-fix-csv arm=T run=1: success=True reason=ok tests=9/9 wall=112.1s steps=2
+2026-11-09T04:16:25 RUN T js-fix-csv run 1 runner rc=0
+2026-11-09T04:16:25 RUN O js-queue run 1 (stage 1/4, 74 min in)
+04:16:25 start js-queue arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:29:06 done  js-queue arm=O run=1: success=True reason=ok tests=10/10 wall=760.5s steps=28
+2026-11-09T04:29:06 RUN O js-queue run 1 runner rc=0
+2026-11-09T04:29:06 RUN T js-queue run 1 (stage 1/4, 87 min in)
+04:29:06 start js-queue arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:31:40 done  js-queue arm=T run=1: success=False reason=tests_failed tests=4/10 wall=153.1s steps=3
+2026-11-09T04:31:40 RUN T js-queue run 1 runner rc=0
+2026-11-09T04:31:40 RUN O py-discount run 1 (stage 1/4, 90 min in)
+04:31:40 start py-discount arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:38:47 done  py-discount arm=O run=1: success=True reason=ok tests=11/11 wall=426.3s steps=16
+2026-11-09T04:38:47 RUN O py-discount run 1 runner rc=0
+2026-11-09T04:38:47 RUN T py-discount run 1 (stage 1/4, 97 min in)
+04:38:47 start py-discount arm=T run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:41:52 done  py-discount arm=T run=1: success=False reason=tests_failed tests=9/11 wall=185.1s steps=3
+2026-11-09T04:41:52 RUN T py-discount run 1 runner rc=0
+2026-11-09T04:41:52 RUN O js-duration run 1 (stage 1/4, 100 min in)
+04:41:53 start js-duration arm=O run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:64: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+04:56:53 done  js-duration arm=O run=1: success=False reason=timeout tests=6/11 wall=900.0s steps=13
+2026-11-09T04:56:53 RUN O js-duration run 1 runner rc=0
+2026-11-09T04:56:57 server stopped; llama-server processes on the host now, any owner: 0
+2026-11-09T04:56:57 NOT RUN (budget or stop file): 45 runs: T:js-duration:1, O:py-intervals:1, T:py-intervals:1, O:js-slugify:1, T:js-slugify:1, O:js-router-wildcard:1, T:js-router-wildcard:1, O:py-refactor-split:1, T:py-refactor-split:1, T-norepair:py-todo-tags:1, T-norepair:js-lru:1, T-norepair:py-wrap:1, T-norepair:py-fix-paginate:1, T-norepair:js-fix-csv:1, T-norepair:js-queue:1, T-norepair:py-discount:1, T-norepair:js-duration:1, T-norepair:py-intervals:1, T-norepair:js-slugify:1, T-norepair:js-router-wildcard:1, T-norepair:py-refactor-split:1, T:py-discount:2, T:js-slugify:2, T:js-lru:2, T:js-queue:2, T:py-intervals:2, T:py-todo-tags:2, T:py-wrap:2, T:js-duration:2, T:js-router-wildcard:2, T:py-fix-paginate:2, T:js-fix-csv:2, T:py-refactor-split:2, T-ngram:py-todo-tags:1, T-ngram:js-lru:1, T-ngram:py-wrap:1, T-ngram:py-fix-paginate:1, T-ngram:js-fix-csv:1, T-ngram:js-queue:1, T-ngram:py-discount:1, T-ngram:js-duration:1, T-ngram:py-intervals:1, T-ngram:js-slugify:1, T-ngram:js-router-wildcard:1, T-ngram:py-refactor-split:1
+exit=0 2026-11-09T04:56:57

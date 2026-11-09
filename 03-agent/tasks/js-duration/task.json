@@ -1,0 +1,6 @@
+{"id": "js-duration", "lang": "js", "kind": "function", "difficulty": "medium",
+ "title": "parseDuration (the task of OpenCode run 1)",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/duration.test.js"],
+ "hidden_tests": ["test/duration.hidden.test.js"],
+ "start_state": "failing"}

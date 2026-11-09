@@ -1,0 +1,6 @@
+{"id": "py-todo-tags", "lang": "py", "kind": "codebase", "difficulty": "hard",
+ "title": "read a small todo-list codebase and add tags",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_commands.py", "tests/test_cli.py"],
+ "hidden_tests": ["tests/test_tags_hidden.py"],
+ "start_state": "failing"}

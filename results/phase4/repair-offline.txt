@@ -1,0 +1,33 @@
+== phase 3 answers that did not compile (distinct): 22
+  A.jsonl      py_02_roman              compiles after repair: False  hidden tests pass: None
+  A.jsonl      py_09_lru_cache          compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_01_parse_duration     compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_02_roman              compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_03_iso_week           compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_04_add_months         compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_05_business_days      compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_06_csv_line           compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_07_balanced           compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_08_merge_intervals    compiles after repair: True   hidden tests pass: True
+  B.jsonl      py_09_lru_cache          compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_10_semver_compare     compiles after repair: False  hidden tests pass: None
+  B.jsonl      py_11_wrap_text          compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_12_validate_username  compiles after repair: True   hidden tests pass: True
+  B.jsonl      py_13_flatten_dict       compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_14_run_length         compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_17_allocate_cents     compiles after repair: True   hidden tests pass: True
+  B.jsonl      py_18_spiral             compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_19_time_12h           compiles after repair: True   hidden tests pass: False
+  B.jsonl      py_20_maze_steps         compiles after repair: True   hidden tests pass: False
+  C.jsonl      py_01_parse_duration     compiles after repair: True   hidden tests pass: False
+  C.jsonl      py_09_lru_cache          compiles after repair: True   hidden tests pass: False
+   -> 20 of 22 compile after the repair, 3 of them pass the hidden tests (before: 0 compile)
+
+== phase 4 Python reference solutions flattened to one space per line
+  py-discount          all tests pass after flatten + repair: False
+  py-fix-paginate      all tests pass after flatten + repair: True
+  py-intervals         all tests pass after flatten + repair: False
+  py-refactor-split    all tests pass after flatten + repair: True
+  py-todo-tags         all tests pass after flatten + repair: False
+  py-wrap              all tests pass after flatten + repair: False
+   -> files: 10/10 compile again, 2/10 identical to the original; tasks: 2/6 pass all tests

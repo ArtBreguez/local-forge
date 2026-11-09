@@ -1,0 +1,6 @@
+{"id": "py-wrap", "lang": "py", "kind": "function", "difficulty": "medium",
+ "title": "word wrap with long-word splitting",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_wrap.py"],
+ "hidden_tests": ["tests/test_wrap_hidden.py"],
+ "start_state": "failing"}

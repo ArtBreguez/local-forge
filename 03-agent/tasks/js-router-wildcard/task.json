@@ -1,0 +1,6 @@
+{"id": "js-router-wildcard", "lang": "js", "kind": "codebase", "difficulty": "hard",
+ "title": "read a small HTTP router and add wildcard routes",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/pattern.test.js", "test/router.test.js"],
+ "hidden_tests": ["test/wildcard.hidden.test.js"],
+ "start_state": "failing"}

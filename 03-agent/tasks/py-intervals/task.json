@@ -1,0 +1,6 @@
+{"id": "py-intervals", "lang": "py", "kind": "function", "difficulty": "easy",
+ "title": "merge overlapping intervals",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_intervals.py"],
+ "hidden_tests": ["tests/test_intervals_hidden.py"],
+ "start_state": "failing"}

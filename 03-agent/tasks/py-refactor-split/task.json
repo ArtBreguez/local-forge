@@ -1,0 +1,6 @@
+{"id": "py-refactor-split", "lang": "py", "kind": "refactor", "difficulty": "medium",
+ "title": "refactor: split util.py into parsing.py and formatting.py",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_util.py"],
+ "hidden_tests": ["tests/test_split_hidden.py"],
+ "start_state": "green"}

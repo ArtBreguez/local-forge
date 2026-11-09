@@ -1,0 +1,6 @@
+{"id": "js-slugify", "lang": "js", "kind": "function", "difficulty": "easy",
+ "title": "slugify with accents, separator and max length",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/slugify.test.js"],
+ "hidden_tests": ["test/slugify.hidden.test.js"],
+ "start_state": "failing"}
