@@ -56,10 +56,8 @@ def score_row(p: qbench.Problem, row: dict[str, Any], parts: dict[str, Path], py
 def load_scored(path: Path) -> dict[KEY, dict[str, Any]]:
     out: dict[KEY, dict[str, Any]] = {}
     if path.exists():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                d = json.loads(line)
-                out[(d["problem"], d["sample"])] = d
+        for d in qbench.read_jsonl(path):
+            out[(d["problem"], d["sample"])] = d
     return out
 
 
@@ -67,6 +65,7 @@ def score_file(src: Path, out: Path, workers: int = 2, python: str | None = None
     """Score every stored answer of `src` (a runner JSONL) on both halves of its problem's tests; appends to `out`, skips what is there."""
     problems = {p.id: p for p in qbench.load_problems()}
     _, rows = qbench.read_results(src)
+    qbench.repair_tail(out)                  # a scoring run killed mid-write must not glue its next record onto a torn line
     done = load_scored(out)
     todo = [r for r in rows if r.get("kind") != "api_error" and (r["problem"], r.get("sample", 0)) not in done]
     with tempfile.TemporaryDirectory(prefix="bestofn-") as tmp:

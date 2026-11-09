@@ -465,6 +465,19 @@ class Runner(unittest.TestCase):
             self.run_runner(srv, "--problems", "py_01", "--samples", "3", "--stop-file", str(stop))
             self.assertEqual([r["sample"] for r in self.rows()[1]], [0, 1, 2])
 
+    def test_a_rerun_after_a_kill_in_the_middle_of_a_write_drops_the_torn_line(self):
+        with FakeOpenAI("bad") as srv:
+            self.run_runner(srv, "--problems", "py_01,py_02", "--samples", "1")
+            whole = self.out.read_text()
+            lines = whole.splitlines()
+            self.out.write_text("\n".join(lines[:-1]) + "\n" + lines[-1][: len(lines[-1]) // 2], encoding="utf-8")   # the last result was cut in half
+            self.assertEqual(len(srv.requests), 2)
+            self.run_runner(srv, "--problems", "py_01,py_02", "--samples", "1")
+            self.assertEqual(len(srv.requests), 3, "only the request whose line was torn is asked again")
+            meta, rows = self.rows()
+            self.assertEqual([r["problem"] for r in rows], ["py_01_parse_duration", "py_02_roman"])
+            self.assertEqual(sum(1 for line in self.out.read_text().splitlines() if '"type": "result"' in line), 2, "no torn line is left in the file")
+
     def test_max_problems_and_lang_filters(self):
         with FakeOpenAI("prose") as srv:
             self.run_runner(srv, "--lang", "js", "--max-problems", "3")

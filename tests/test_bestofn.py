@@ -135,5 +135,56 @@ class Selection(unittest.TestCase):
         self.assertEqual(bestofn.ci(9, 40), "9/40 = 22% (12-38%)")
 
 
+class Resume(unittest.TestCase):
+    """A run killed in the middle of a write leaves a torn last line; resuming must neither trust it nor glue the next record to it."""
+
+    def test_repair_tail_cuts_only_an_incomplete_last_line(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "r.jsonl"
+            p.write_bytes(b'{"a": 1}\n{"b": 2}\n{"c": ')
+            self.assertEqual(qbench.repair_tail(p), 6)
+            self.assertEqual(p.read_bytes(), b'{"a": 1}\n{"b": 2}\n')
+            self.assertEqual(qbench.repair_tail(p), 0, "a file that ends in a newline is left alone")
+            p.write_bytes(b'{"a": 1')
+            self.assertEqual(qbench.repair_tail(p), 7, "a file whose only line is torn becomes empty")
+            self.assertEqual(p.read_bytes(), b"")
+            self.assertEqual(qbench.repair_tail(Path(tmp) / "missing.jsonl"), 0)
+
+    def test_read_jsonl_drops_a_torn_last_line_but_not_damage_in_the_middle(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            p = Path(tmp) / "r.jsonl"
+            p.write_text('{"a": 1}\n{"b": 2}\n{"c"', encoding="utf-8")
+            self.assertEqual(qbench.read_jsonl(p), [{"a": 1}, {"b": 2}])
+            p.write_text('{"a": 1}\n{"b"\n{"c": 3}\n', encoding="utf-8")
+            with self.assertRaises(json.JSONDecodeError):
+                qbench.read_jsonl(p)
+
+    def test_read_results_and_load_scored_survive_a_torn_tail(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            r = Path(tmp) / "S.jsonl"
+            r.write_text(json.dumps({"type": "meta", "arm": "S"}) + "\n" + json.dumps({"type": "result", "problem": "p", "sample": 0, "pass": True}) + '\n{"type": "res', encoding="utf-8")
+            meta, rows = qbench.read_results(r)
+            self.assertEqual((meta["arm"], len(rows)), ("S", 1))
+            s = Path(tmp) / "S.scored.jsonl"
+            s.write_text(json.dumps({"type": "scored", "problem": "p", "sample": 0, "visible_pass": True, "hidden_pass": True}) + '\n{"type": "sco', encoding="utf-8")
+            self.assertEqual(list(bestofn.load_scored(s)), [("p", 0)])
+
+    def test_score_file_repairs_its_output_resumes_and_honours_the_pause(self):
+        from unittest import mock
+        pid = "py_02_roman"
+        with tempfile.TemporaryDirectory() as tmp:
+            src, out = Path(tmp) / "S.jsonl", Path(tmp) / "S.scored.jsonl"
+            rows = [{"type": "meta", "arm": "S"}] + [{"type": "result", "problem": pid, "sample": i, "pass": False, "kind": "test_fail", "code": "x = 1"} for i in range(3)]
+            src.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+            out.write_text(json.dumps({"type": "scored", "problem": pid, "sample": 0, "visible_pass": False, "hidden_pass": False}) + '\n{"type": "scored", "pro', encoding="utf-8")
+            fake = lambda p, row, parts, python=None, node=None: {"type": "scored", "problem": row["problem"], "sample": row["sample"], "visible_pass": True, "hidden_pass": False}  # noqa: E731
+            with mock.patch.object(bestofn, "score_row", fake), mock.patch.object(bestofn.split, "write_parts", lambda *_: {pid: {}}), mock.patch.object(bestofn.time, "sleep") as sleep:
+                done = bestofn.score_file(src, out, workers=1, pause=0.25)
+            self.assertEqual(sorted(k[1] for k in done), [0, 1, 2])
+            self.assertEqual(sleep.call_count, 2, "only the two answers that were not scored yet are scored (and paused after)")
+            sleep.assert_called_with(0.25)
+            self.assertEqual([json.loads(l)["sample"] for l in out.read_text(encoding="utf-8").splitlines()], [0, 1, 2], "the torn line is gone, nothing is doubled")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -374,15 +374,40 @@ class ArmSummary:
     total_wall_s: float = 0.0
 
 
+def repair_tail(path: Path) -> int:
+    """Cut a half-written last line off a JSONL file that a killed run left behind (a line is complete only with its newline, and the
+    runner writes one line per flush). Returns the number of bytes removed; a file that ends in a newline is untouched."""
+    if not path.exists():
+        return 0
+    data = path.read_bytes()
+    if not data or data.endswith(b"\n"):
+        return 0
+    keep = data.rfind(b"\n") + 1
+    with path.open("r+b") as f:
+        f.truncate(keep)
+    return len(data) - keep
+
+
+def read_jsonl(path: Path) -> list[dict[str, Any]]:
+    """All records of a JSONL file. A last line that does not parse is a torn write of a killed run and is dropped; an unparsable line
+    anywhere else is real damage and raises."""
+    lines = [ln for ln in path.read_text(encoding="utf-8").splitlines() if ln.strip()]
+    out: list[dict[str, Any]] = []
+    for i, line in enumerate(lines):
+        try:
+            out.append(json.loads(line))
+        except json.JSONDecodeError:
+            if i != len(lines) - 1:
+                raise
+    return out
+
+
 def read_results(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """The meta line and the result rows. When a (problem, sample) appears more than once (an `api_error` that a rerun retried),
     only the last record counts; the earlier ones stay in the file as the audit trail."""
     meta: dict[str, Any] = {}
     latest: dict[tuple[str, int], dict[str, Any]] = {}
-    for line in path.read_text(encoding="utf-8").splitlines():
-        if not line.strip():
-            continue
-        d = json.loads(line)
+    for d in read_jsonl(path):
         if d.get("type") == "meta":
             meta = d
         elif d.get("type") == "result":

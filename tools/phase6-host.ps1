@@ -1,6 +1,6 @@
 # Phase 6 (issue #23): best-of-N candidates on the host. Started by a scheduled task whose trigger cannot fire on its own
 # (schtasks /Create /SC ONCE /SD 01/01/2030 /ST 00:00), run with `schtasks /Run`, and deleted when the job is done.
-#   powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\arthu\llm\phase6\phase6-host.ps1 -Arms A3,S10 -Tag bon
+#   powershell -NoProfile -ExecutionPolicy Bypass -File C:\Users\arthu\llm\phase6\phase6-host.ps1 -Arms S10 -Tag bon
 # Log: C:\Users\arthu\llm\phase6\phase6-<Tag>.log (ends with an `exit=` line). Results: C:\Users\arthu\llm\phase6\results-<Tag>\
 # Stop cleanly between two requests by creating C:\Users\arthu\llm\phase6\results-<Tag>\STOP (a rerun resumes the file).
 # Host rules: waits until no benchmark holds the GPU (sweep-c.log `exit=`) and no llama process runs; the grid driver unloads Ollama,

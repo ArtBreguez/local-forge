@@ -174,6 +174,9 @@ def main(argv: list[str] | None = None) -> int:
     a.out.parent.mkdir(parents=True, exist_ok=True)
     probs = select_problems(a)
     todo = [(p, s) for s in range(a.samples) for p in probs]
+    cut = qbench.repair_tail(a.out)
+    if cut:
+        print(f"[{a.arm}] dropped {cut} bytes of a half-written last line in {a.out} (the run was killed during a write)", flush=True)
     seen = done_keys(a.out)
     todo = [(p, s) for p, s in todo if (p.id, s) not in seen]
     if not a.out.exists() or a.out.stat().st_size == 0:
