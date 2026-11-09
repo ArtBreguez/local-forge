@@ -353,6 +353,12 @@ class Phase5Report(unittest.TestCase):
         self.assertIn("| O30 | O |", text)                     # paired against phase 4's O
         self.assertIn("| O30-tool | O30 |", text)              # and the tool arm against O30
 
+    def test_passes_per_task_over_every_run(self):
+        p4, p5 = self.make()
+        text = report.build_report(p5, phase4=p4)
+        self.assertIn("## Passes per task over every run of every arm", text)
+        self.assertIn("| b | 1/2 | 1/1 | 0/1 | 2/4 |", text)     # b: O run 2 passed, O30 passed, O30-tool timed out
+
     def test_speed_columns(self):
         rows = [p5_row("a", "O30-ngram", 1, True, 100, gen_tok_s=11.0, pp_tok_s=150.0, draft_n=100, draft_accepted=60, completion_tokens=900, model_seconds=100.0),
                 p5_row("b", "O30-ngram", 1, False, 100, gen_tok_s=13.0, pp_tok_s=170.0, draft_n=100, draft_accepted=80, completion_tokens=900, model_seconds=100.0)]

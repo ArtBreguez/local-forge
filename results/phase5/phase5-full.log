@@ -1,0 +1,263 @@
+2026-11-09T08:55:52 wrapper start stages=O30@1;O30-ngram@1;O30-tool@1;O30@2;O30-ngram@2;O30-tool@2 tag=full tasks= budget=390 limit=0
+2026-11-09T08:55:52 scheduled task llm-phase5 state=Running triggers=2030-01-01T00:00:00
+2026-11-09T08:55:52 host is free
+2026-11-09T08:55:53 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T08:56:27 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T08:56:27 RUN O30 py-todo-tags run 1 (stage 1/6, 1 min in)
+08:56:27 start py-todo-tags arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+09:26:28 done  py-todo-tags arm=O30 run=1: success=False reason=timeout tests=8/13 wall=1800.0s steps=26
+2026-11-09T09:26:28 RUN O30 py-todo-tags run 1 runner rc=0
+2026-11-09T09:26:28 RUN O30 js-lru run 1 (stage 1/6, 31 min in)
+09:26:28 start js-lru arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+09:43:19 done  js-lru arm=O30 run=1: success=False reason=tests_failed tests=5/9 wall=1010.6s steps=37
+2026-11-09T09:43:19 RUN O30 js-lru run 1 runner rc=0
+2026-11-09T09:43:19 RUN O30 py-wrap run 1 (stage 1/6, 47 min in)
+09:43:19 start py-wrap arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+09:45:59 done  py-wrap arm=O30 run=1: success=False reason=tests_failed tests=7/9 wall=159.2s steps=5
+2026-11-09T09:45:59 RUN O30 py-wrap run 1 runner rc=0
+2026-11-09T09:45:59 RUN O30 py-fix-paginate run 1 (stage 1/6, 50 min in)
+09:45:59 start py-fix-paginate arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+09:48:55 done  py-fix-paginate arm=O30 run=1: success=True reason=ok tests=10/10 wall=175.2s steps=8
+2026-11-09T09:48:55 RUN O30 py-fix-paginate run 1 runner rc=0
+2026-11-09T09:48:55 RUN O30 js-fix-csv run 1 (stage 1/6, 53 min in)
+09:48:56 start js-fix-csv arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+10:18:56 done  js-fix-csv arm=O30 run=1: success=False reason=timeout tests=2/9 wall=1800.0s steps=17
+2026-11-09T10:18:56 RUN O30 js-fix-csv run 1 runner rc=0
+2026-11-09T10:18:56 RUN O30 js-queue run 1 (stage 1/6, 83 min in)
+10:18:57 start js-queue arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+10:41:53 done  js-queue arm=O30 run=1: success=True reason=ok tests=10/10 wall=1374.8s steps=52
+2026-11-09T10:41:53 RUN O30 js-queue run 1 runner rc=0
+2026-11-09T10:41:53 RUN O30 py-discount run 1 (stage 1/6, 106 min in)
+10:41:53 start py-discount arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+10:46:29 done  py-discount arm=O30 run=1: success=True reason=ok tests=11/11 wall=275.2s steps=9
+2026-11-09T10:46:29 RUN O30 py-discount run 1 runner rc=0
+2026-11-09T10:46:29 RUN O30 js-duration run 1 (stage 1/6, 111 min in)
+10:46:30 start js-duration arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:16:04 done  js-duration arm=O30 run=1: success=False reason=tests_failed tests=3/11 wall=1773.0s steps=28
+2026-11-09T11:16:04 RUN O30 js-duration run 1 runner rc=0
+2026-11-09T11:16:04 RUN O30 py-intervals run 1 (stage 1/6, 140 min in)
+11:16:04 start py-intervals arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:18:36 done  py-intervals arm=O30 run=1: success=True reason=ok tests=9/9 wall=152.1s steps=5
+2026-11-09T11:18:36 RUN O30 py-intervals run 1 runner rc=0
+2026-11-09T11:18:36 RUN O30 js-slugify run 1 (stage 1/6, 143 min in)
+11:18:37 start js-slugify arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:20:54 done  js-slugify arm=O30 run=1: success=False reason=tests_failed tests=7/8 wall=136.1s steps=5
+2026-11-09T11:20:54 RUN O30 js-slugify run 1 runner rc=0
+2026-11-09T11:20:54 RUN O30 js-router-wildcard run 1 (stage 1/6, 145 min in)
+11:20:54 start js-router-wildcard arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:29:12 done  js-router-wildcard arm=O30 run=1: success=True reason=ok tests=10/10 wall=497.3s steps=15
+2026-11-09T11:29:12 RUN O30 js-router-wildcard run 1 runner rc=0
+2026-11-09T11:29:12 RUN O30 py-refactor-split run 1 (stage 1/6, 153 min in)
+11:29:12 start py-refactor-split arm=O30 run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:32:55 done  py-refactor-split arm=O30 run=1: success=True reason=ok tests=12/12 wall=222.2s steps=8
+2026-11-09T11:32:55 RUN O30 py-refactor-split run 1 runner rc=0
+2026-11-09T11:32:58 server stopped; llama-server processes on the host now, any owner: 0
+2026-11-09T11:32:58 server A+specngrammod: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600 --spec ngram-mod
+2026-11-09T11:33:26 server A+specngrammod up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=ngram-mod source=tuned
+2026-11-09T11:33:26 RUN O30-ngram py-todo-tags run 1 (stage 2/6, 158 min in)
+11:33:26 start py-todo-tags arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:43:55 done  py-todo-tags arm=O30-ngram run=1: success=False reason=tests_failed tests=11/13 wall=627.8s steps=22
+2026-11-09T11:43:55 RUN O30-ngram py-todo-tags run 1 runner rc=0
+2026-11-09T11:43:55 RUN O30-ngram js-lru run 1 (stage 2/6, 168 min in)
+11:43:55 start js-lru arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+11:47:12 done  js-lru arm=O30-ngram run=1: success=False reason=tests_failed tests=8/9 wall=197.2s steps=4
+2026-11-09T11:47:12 RUN O30-ngram js-lru run 1 runner rc=0
+2026-11-09T11:47:12 RUN O30-ngram py-wrap run 1 (stage 2/6, 171 min in)
+11:47:13 start py-wrap arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+12:17:13 done  py-wrap arm=O30-ngram run=1: success=False reason=timeout tests=3/9 wall=1800.0s steps=51
+2026-11-09T12:17:13 RUN O30-ngram py-wrap run 1 runner rc=0
+2026-11-09T12:17:13 RUN O30-ngram py-fix-paginate run 1 (stage 2/6, 201 min in)
+12:17:13 start py-fix-paginate arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+12:19:56 done  py-fix-paginate arm=O30-ngram run=1: success=True reason=ok tests=10/10 wall=162.4s steps=7
+2026-11-09T12:19:56 RUN O30-ngram py-fix-paginate run 1 runner rc=0
+2026-11-09T12:19:56 RUN O30-ngram js-fix-csv run 1 (stage 2/6, 204 min in)
+12:19:57 start js-fix-csv arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+12:49:57 done  js-fix-csv arm=O30-ngram run=1: success=False reason=timeout tests=5/9 wall=1800.0s steps=52
+2026-11-09T12:49:57 RUN O30-ngram js-fix-csv run 1 runner rc=0
+2026-11-09T12:49:57 RUN O30-ngram js-queue run 1 (stage 2/6, 234 min in)
+12:49:58 start js-queue arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+12:57:01 done  js-queue arm=O30-ngram run=1: success=True reason=ok tests=10/10 wall=423.3s steps=18
+2026-11-09T12:57:01 RUN O30-ngram js-queue run 1 runner rc=0
+2026-11-09T12:57:01 RUN O30-ngram py-discount run 1 (stage 2/6, 241 min in)
+12:57:02 start py-discount arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:16:35 done  py-discount arm=O30-ngram run=1: success=False reason=tests_failed tests=6/11 wall=1172.8s steps=46
+2026-11-09T13:16:35 RUN O30-ngram py-discount run 1 runner rc=0
+2026-11-09T13:16:35 RUN O30-ngram js-duration run 1 (stage 2/6, 261 min in)
+13:16:36 start js-duration arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:34:59 done  js-duration arm=O30-ngram run=1: success=False reason=tests_failed tests=8/11 wall=1102.6s steps=34
+2026-11-09T13:34:59 RUN O30-ngram js-duration run 1 runner rc=0
+2026-11-09T13:34:59 RUN O30-ngram py-intervals run 1 (stage 2/6, 279 min in)
+13:34:59 start py-intervals arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:36:48 done  py-intervals arm=O30-ngram run=1: success=True reason=ok tests=9/9 wall=108.1s steps=4
+2026-11-09T13:36:48 RUN O30-ngram py-intervals run 1 runner rc=0
+2026-11-09T13:36:48 RUN O30-ngram js-slugify run 1 (stage 2/6, 281 min in)
+13:36:48 start js-slugify arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:39:15 done  js-slugify arm=O30-ngram run=1: success=True reason=ok tests=8/8 wall=146.1s steps=5
+2026-11-09T13:39:15 RUN O30-ngram js-slugify run 1 runner rc=0
+2026-11-09T13:39:15 RUN O30-ngram js-router-wildcard run 1 (stage 2/6, 283 min in)
+13:39:15 start js-router-wildcard arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:50:10 done  js-router-wildcard arm=O30-ngram run=1: success=True reason=ok tests=10/10 wall=654.4s steps=23
+2026-11-09T13:50:10 RUN O30-ngram js-router-wildcard run 1 runner rc=0
+2026-11-09T13:50:10 RUN O30-ngram py-refactor-split run 1 (stage 2/6, 294 min in)
+13:50:11 start py-refactor-split arm=O30-ngram run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+13:54:03 done  py-refactor-split arm=O30-ngram run=1: success=True reason=ok tests=12/12 wall=232.2s steps=8
+2026-11-09T13:54:03 RUN O30-ngram py-refactor-split run 1 runner rc=0
+2026-11-09T13:54:06 server stopped; llama-server processes on the host now, any owner: 0
+2026-11-09T13:54:07 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T13:54:43 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T13:54:43 RUN O30-tool py-todo-tags run 1 (stage 3/6, 299 min in)
+13:54:43 start py-todo-tags arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+14:11:38 done  py-todo-tags arm=O30-tool run=1: success=False reason=tests_failed tests=11/13 wall=1014.6s steps=23
+2026-11-09T14:11:38 RUN O30-tool py-todo-tags run 1 runner rc=0
+2026-11-09T14:11:38 RUN O30-tool js-lru run 1 (stage 3/6, 316 min in)
+14:11:39 start js-lru arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+14:15:50 done  js-lru arm=O30-tool run=1: success=True reason=ok tests=9/9 wall=251.2s steps=4
+2026-11-09T14:15:50 RUN O30-tool js-lru run 1 runner rc=0
+2026-11-09T14:15:50 RUN O30-tool py-wrap run 1 (stage 3/6, 320 min in)
+14:15:50 start py-wrap arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+14:21:56 done  py-wrap arm=O30-tool run=1: success=True reason=ok tests=9/9 wall=365.2s steps=8
+2026-11-09T14:21:56 RUN O30-tool py-wrap run 1 runner rc=0
+2026-11-09T14:21:56 RUN O30-tool py-fix-paginate run 1 (stage 3/6, 326 min in)
+14:21:56 start py-fix-paginate arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+14:25:11 done  py-fix-paginate arm=O30-tool run=1: success=True reason=ok tests=10/10 wall=194.2s steps=6
+2026-11-09T14:25:11 RUN O30-tool py-fix-paginate run 1 runner rc=0
+2026-11-09T14:25:11 RUN O30-tool js-fix-csv run 1 (stage 3/6, 329 min in)
+14:25:11 start js-fix-csv arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+14:55:12 done  js-fix-csv arm=O30-tool run=1: success=False reason=timeout tests=5/9 wall=1800.0s steps=17
+2026-11-09T14:55:12 RUN O30-tool js-fix-csv run 1 runner rc=0
+2026-11-09T14:55:12 RUN O30-tool js-queue run 1 (stage 3/6, 359 min in)
+14:55:12 start js-queue arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+15:03:37 done  js-queue arm=O30-tool run=1: success=True reason=ok tests=10/10 wall=504.3s steps=20
+2026-11-09T15:03:37 RUN O30-tool js-queue run 1 runner rc=0
+2026-11-09T15:03:37 RUN O30-tool py-discount run 1 (stage 3/6, 368 min in)
+15:03:37 start py-discount arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+15:21:16 done  py-discount arm=O30-tool run=1: success=True reason=ok tests=11/11 wall=1058.6s steps=30
+2026-11-09T15:21:16 RUN O30-tool py-discount run 1 runner rc=0
+2026-11-09T15:21:16 RUN O30-tool js-duration run 1 (stage 3/6, 385 min in)
+15:21:17 start js-duration arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+15:51:18 done  js-duration arm=O30-tool run=1: success=False reason=timeout tests=5/11 wall=1800.0s steps=28
+2026-11-09T15:51:18 RUN O30-tool js-duration run 1 runner rc=0
+2026-11-09T15:51:21 server stopped; llama-server processes on the host now, any owner: 0
+2026-11-09T15:51:21 NOT RUN (budget or stop file): 40 runs: O30-tool:py-intervals:1, O30-tool:js-slugify:1, O30-tool:js-router-wildcard:1, O30-tool:py-refactor-split:1, O30:py-discount:2, O30:js-slugify:2, O30:js-lru:2, O30:js-queue:2, O30:py-intervals:2, O30:py-todo-tags:2, O30:py-wrap:2, O30:js-duration:2, O30:js-router-wildcard:2, O30:py-fix-paginate:2, O30:js-fix-csv:2, O30:py-refactor-split:2, O30-ngram:py-discount:2, O30-ngram:js-slugify:2, O30-ngram:js-lru:2, O30-ngram:js-queue:2, O30-ngram:py-intervals:2, O30-ngram:py-todo-tags:2, O30-ngram:py-wrap:2, O30-ngram:js-duration:2, O30-ngram:js-router-wildcard:2, O30-ngram:py-fix-paginate:2, O30-ngram:js-fix-csv:2, O30-ngram:py-refactor-split:2, O30-tool:py-discount:2, O30-tool:js-slugify:2, O30-tool:js-lru:2, O30-tool:js-queue:2, O30-tool:py-intervals:2, O30-tool:py-todo-tags:2, O30-tool:py-wrap:2, O30-tool:js-duration:2, O30-tool:js-router-wildcard:2, O30-tool:py-fix-paginate:2, O30-tool:js-fix-csv:2, O30-tool:py-refactor-split:2
+exit=0 2026-11-09T15:51:21
+2026-11-09T15:51:48 second launch: finishing the O30-tool first runs that the budget skipped
+2026-11-09T15:51:48 wrapper start stages=O30-tool@1 tag=full tasks= budget=0 limit=0
+2026-11-09T15:51:49 scheduled task llm-phase5 state=Ready triggers=2030-01-01T00:00:00
+2026-11-09T15:51:49 scheduled task llm-phase5b state=Running triggers=2030-01-01T00:00:00
+2026-11-09T15:51:49 host is free
+2026-11-09T15:51:49 server A: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-09T15:52:25 server A up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-09T15:52:25 RUN O30-tool py-todo-tags run 1 (stage 1/1, 1 min in)
+skip py-todo-tags O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:26 RUN O30-tool py-todo-tags run 1 runner rc=0
+2026-11-09T15:52:26 RUN O30-tool js-lru run 1 (stage 1/1, 1 min in)
+skip js-lru O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:26 RUN O30-tool js-lru run 1 runner rc=0
+2026-11-09T15:52:26 RUN O30-tool py-wrap run 1 (stage 1/1, 1 min in)
+skip py-wrap O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:26 RUN O30-tool py-wrap run 1 runner rc=0
+2026-11-09T15:52:26 RUN O30-tool py-fix-paginate run 1 (stage 1/1, 1 min in)
+skip py-fix-paginate O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:27 RUN O30-tool py-fix-paginate run 1 runner rc=0
+2026-11-09T15:52:27 RUN O30-tool js-fix-csv run 1 (stage 1/1, 1 min in)
+skip js-fix-csv O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:27 RUN O30-tool js-fix-csv run 1 runner rc=0
+2026-11-09T15:52:27 RUN O30-tool js-queue run 1 (stage 1/1, 1 min in)
+skip js-queue O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:27 RUN O30-tool js-queue run 1 runner rc=0
+2026-11-09T15:52:27 RUN O30-tool py-discount run 1 (stage 1/1, 1 min in)
+skip py-discount O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:28 RUN O30-tool py-discount run 1 runner rc=0
+2026-11-09T15:52:28 RUN O30-tool js-duration run 1 (stage 1/1, 1 min in)
+skip js-duration O30-tool run 1: already in C:\Users\arthu\llm\phase5\results-full\O30-tool.jsonl
+2026-11-09T15:52:28 RUN O30-tool js-duration run 1 runner rc=0
+2026-11-09T15:52:28 RUN O30-tool py-intervals run 1 (stage 1/1, 1 min in)
+15:52:28 start py-intervals arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+15:55:54 done  py-intervals arm=O30-tool run=1: success=True reason=ok tests=9/9 wall=205.5s steps=4
+2026-11-09T15:55:54 RUN O30-tool py-intervals run 1 runner rc=0
+2026-11-09T15:55:54 RUN O30-tool js-slugify run 1 (stage 1/1, 4 min in)
+15:55:55 start js-slugify arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+15:59:15 done  js-slugify arm=O30-tool run=1: success=True reason=ok tests=8/8 wall=200.2s steps=5
+2026-11-09T15:59:15 RUN O30-tool js-slugify run 1 runner rc=0
+2026-11-09T15:59:15 RUN O30-tool js-router-wildcard run 1 (stage 1/1, 7 min in)
+15:59:16 start js-router-wildcard arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+16:05:37 done  js-router-wildcard arm=O30-tool run=1: success=True reason=ok tests=10/10 wall=381.3s steps=13
+2026-11-09T16:05:37 RUN O30-tool js-router-wildcard run 1 runner rc=0
+2026-11-09T16:05:37 RUN O30-tool py-refactor-split run 1 (stage 1/1, 14 min in)
+16:05:38 start py-refactor-split arm=O30-tool run=1
+C:\Users\arthu\llm\forge\repo\03-agent\harness\runner.py:84: DeprecationWarning: onerror argument is deprecated, use onexc instead
+  shutil.rmtree(path, onerror=onerr, ignore_errors=False) if path.exists() else None
+16:10:24 done  py-refactor-split arm=O30-tool run=1: success=True reason=ok tests=12/12 wall=286.2s steps=8
+2026-11-09T16:10:24 RUN O30-tool py-refactor-split run 1 runner rc=0
+2026-11-09T16:10:28 server stopped; llama-server processes on the host now, any owner: 0
+exit=0 2026-11-09T16:10:28

@@ -275,6 +275,13 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
         for a in arms:
             cells.append(cell(firsts[a].get(t)))
         out.append(f"| {t} | {kinds.get(t, '')} | " + " | ".join(cells) + " |")
+    if len(arms) > 1:
+        out += ["", "## Passes per task over every run of every arm (k of n runs; a task that passes in all of them or in none is not noise)", "",
+                "| task | " + " | ".join(arms) + " | all arms |", "|---|" + "---|" * (len(arms) + 1)]
+        for t in tasks:
+            per = {a: [bool(r["success"]) for r in runs[a] if r["task"] == t] for a in arms}
+            tot_k, tot_n = sum(sum(v) for v in per.values()), sum(len(v) for v in per.values())
+            out.append(f"| {t} | " + " | ".join(f"{sum(v)}/{len(v)}" if v else "-" for v in per.values()) + f" | {tot_k}/{tot_n} |")
     out += ["", "## Stability (tasks with two runs)", ""]
     for a in arms:
         multi, same = stability(runs[a])
