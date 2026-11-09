@@ -35,6 +35,13 @@ MODELS = [
     ("qwen3-coder-30b-a3b", "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "Qwen3-Coder-30B-A3B-Instruct-UD-IQ3_XXS.gguf", "L4"),
     ("qwen35-35b-a3b", "unsloth/Qwen3.5-35B-A3B-GGUF", "Qwen3.5-35B-A3B-UD-IQ3_XXS.gguf", "L4"),
     ("qwen35-27b", "unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf", "L40S"),
+    # heretic (abliterated, uncensored) versions of the bigger models, same quant sizes as above where possible
+    ("qwen35-35b-a3b-heretic", "mradermacher/Qwen3.5-35B-A3B-heretic-i1-GGUF", "Qwen3.5-35B-A3B-heretic.i1-IQ3_XXS.gguf", "L4"),
+    ("qwen35-35b-a3b-heretic-v2", "mradermacher/Qwen3.5-35B-A3B-heretic-v2-i1-GGUF", "Qwen3.5-35B-A3B-heretic-v2.i1-IQ3_XXS.gguf", "L4"),
+    ("codeforge-27b-heretic-iq3", "mradermacher/Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic-i1-GGUF",
+     "Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-IQ3_XXS.gguf", "L40S"),
+    ("codeforge-27b-heretic-q4", "mradermacher/Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic-i1-GGUF",
+     "Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-Q4_K_M.gguf", "L40S"),
 ]
 ARMS = {
     "greedy": ["--temperature", "0", "--seed", "1234", "--samples", "1"],
