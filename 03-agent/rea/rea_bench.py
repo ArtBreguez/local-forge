@@ -271,11 +271,9 @@ def run_arm_o(task: dict[str, Any], files: dict[str, str], a: argparse.Namespace
 def done_keys(path: Path) -> set[tuple[str, str, int]]:
     keys = set()
     if path.is_file():
-        for line in path.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                r = json.loads(line)
-                if r.get("type") == "run":
-                    keys.add((r["task"], r["arm"], r["run"]))
+        for r in qbench.read_jsonl(path):        # a last line torn by a killed run is dropped, not a crash on resume
+            if r.get("type") == "run":
+                keys.add((r["task"], r["arm"], r["run"]))
     return keys
 
 
@@ -294,6 +292,7 @@ def cmd_run(a: argparse.Namespace) -> int:
     order = list(range(len(tasks)))
     random.Random(a.shuffle_seed).shuffle(order)
     a.out.parent.mkdir(parents=True, exist_ok=True)
+    qbench.repair_tail(a.out)               # cut a torn last line so that the next record starts on a line of its own
     seen = done_keys(a.out)
     rea = reacli.Rea(json.loads(a.rea_cmd) if a.rea_cmd else None, None, a.rea_timeout, a.rea_root)
     if not a.out.exists() or a.out.stat().st_size == 0:
@@ -330,11 +329,9 @@ def qbench_sha(path: Path) -> str:
 def load_runs(paths: list[Path]) -> dict[str, list[dict[str, Any]]]:
     arms: dict[str, list[dict[str, Any]]] = {}
     for p in paths:
-        for line in p.read_text(encoding="utf-8").splitlines():
-            if line.strip():
-                r = json.loads(line)
-                if r.get("type") == "run":
-                    arms.setdefault(r["arm"], []).append(r)
+        for r in qbench.read_jsonl(p):
+            if r.get("type") == "run":
+                arms.setdefault(r["arm"], []).append(r)
     return arms
 
 

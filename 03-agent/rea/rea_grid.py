@@ -4,7 +4,7 @@
     python rea_grid.py --arms R,O --out C:\\Users\\arthu\\llm\\phase6\\results-rea --repo C:\\Users\\arthu\\llm\\forge\\repo --log phase6-rea.log
 
 The server is started through the planner exactly as in phase 3/4 (config A: tuned layers, 16K, thinking off); only its own process tree is
-killed. While the arms run, a sampler appends free memory and pages/sec to `<out>/mem.log` every 30 s (Windows `typeperf`), because
+killed. While the arms run, a sampler appends free RAM, pages/sec, page faults/sec, pagefile use and the working sets of llama-server, java and the VM to `<out>/mem.log` every 30 s (WMI), because
 REA's Ghidra (a JVM) runs next to the model server on a 16 GB machine. Stop between tasks with a file named STOP in the output directory.
 The log ends with an `exit=<code> <timestamp>` line, which the other host jobs read as "finished".
 """
@@ -25,16 +25,23 @@ import qgrid  # noqa: E402
 IS_WINDOWS = os.name == "nt"
 
 
+MEM_PS = ('$m = Get-CimInstance Win32_PerfFormattedData_PerfOS_Memory; $pf = Get-CimInstance Win32_PageFileUsage; '
+          'function W($n) { $p = Get-Process $n -ErrorAction SilentlyContinue; if ($p) { [int](($p | Measure-Object WorkingSet64 -Sum).Sum / 1MB) } else { 0 } }; '
+          '"avail_mb=$($m.AvailableMBytes) pages_s=$($m.PagesPersec) faults_s=$($m.PageFaultsPersec) pagefile_used_mb=$($pf.CurrentUsage) '
+          'llama_ws_mb=$(W \'llama-server\') java_ws_mb=$(W \'java\') vm_ws_mb=$(W \'VirtualBoxVM\')"')
+
+
 def sample_memory(path: Path, stop: threading.Event, every: float = 30.0) -> None:
+    """One line per sample: free RAM, pages/sec, page faults/sec, pagefile use, working sets of llama-server, java (Ghidra) and the VM. WMI, not
+    typeperf: the host is pt-BR and its performance counters have localized names."""
     while not stop.is_set():
         line = f"{time.strftime('%Y-%m-%dT%H:%M:%S')} "
         try:
-            r = subprocess.run(["typeperf", r"\Memory\Pages/sec", r"\Memory\Available MBytes", r"\Memory\Page Faults/sec", "-sc", "1"],
-                               capture_output=True, text=True, timeout=30)
-            rows = [x for x in r.stdout.splitlines() if x.startswith('"') and "(PDH-CSV" not in x]
-            line += rows[0].replace('"', "") if rows else "no sample"
+            r = subprocess.run(["powershell", "-NoProfile", "-Command", MEM_PS], capture_output=True, text=True, timeout=60)
+            out = r.stdout.strip().splitlines()
+            line += out[-1] if out and "avail_mb" in out[-1] else "no sample"
         except (OSError, subprocess.SubprocessError):
-            line += "typeperf failed"
+            line += "sampler failed"
         with path.open("a", encoding="utf-8", newline="\n") as f:
             f.write(line + "\n")
         stop.wait(every)

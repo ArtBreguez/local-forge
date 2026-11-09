@@ -350,5 +350,19 @@ class Report(unittest.TestCase):
         self.assertIn("| constant | 1/3 | 2/3 |", text)
 
 
+class Resume(unittest.TestCase):
+    def test_a_run_killed_mid_write_resumes_and_reports(self):
+        ok = {"type": "run", "arm": "R", "task": "a", "run": 1, "success": True}
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "R.jsonl"
+            out.write_text(json.dumps({"type": "meta", "arm": "R"}) + "\n" + json.dumps(ok) + "\n" + '{"type": "run", "arm": "R", "task": "b", "ru', encoding="utf-8")
+            self.assertEqual(rea_bench.done_keys(out), {("a", "R", 1)}, "the torn record is not trusted: task b runs again")
+            self.assertEqual(list(rea_bench.load_runs([out])), ["R"])
+            rea_bench.qbench.repair_tail(out)
+            with out.open("a", encoding="utf-8") as f:
+                f.write(json.dumps({**ok, "task": "b"}) + "\n")
+            self.assertEqual(rea_bench.done_keys(out), {("a", "R", 1), ("b", "R", 1)}, "the next record starts on a line of its own")
+
+
 if __name__ == "__main__":
     unittest.main()
