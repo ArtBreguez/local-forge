@@ -364,6 +364,22 @@ class StrobfModel(unittest.TestCase):
         self.assertFalse(scoring.score(t.wrong, t.truth))
 
 
+class PktsumModel(unittest.TestCase):
+    def test_every_question_kind_and_both_byte_orders_occur(self):
+        tasks = families.generate("pktsum", 140, 6)
+        self.assertEqual({t.params["ask"] for t in tasks}, {"start", "tail", "endian", "len_offset", "len_start"})
+        self.assertEqual({t.params["endian"] for t in tasks if t.params["W"] == 2}, {"little", "big"})
+
+    def test_harness_packets_exercise_the_range_and_the_byte_order(self):
+        for t in families.generate("pktsum", 70, 6):
+            verdicts = t.check[1].split()
+            self.assertIn("1", verdicts, "a valid packet")
+            self.assertIn("0", verdicts, "a corrupted covered byte")
+            self.assertIn("-1", verdicts, "malformed packets")
+            if t.params["W"] == 2:
+                self.assertGreaterEqual(verdicts.count("0"), 3, "covered flips and the swapped checksum bytes all fail")
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
