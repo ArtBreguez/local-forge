@@ -300,6 +300,8 @@ def run_tests(p: Problem, code: str, *, timeout: float = 30.0, python: str | Non
         if p.lang == "js":      # the nearest package.json decides CommonJS vs ES module: a stray {"type": "module"} in a parent directory
             (Path(tmp) / "package.json").write_text('{"private": true, "type": "commonjs"}\n', encoding="utf-8")   # (the host has one in C:\\Users\\arthu) would break every require()
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8", NODE_NO_WARNINGS="1")
+        if os.environ.get("QBENCH_TZ"):     # answers that parse "YYYY-MM-DD" as UTC and read it back locally pass or fail by the machine's timezone;
+            env["TZ"] = os.environ["QBENCH_TZ"]     # rescoring the host's answers elsewhere must use the host's zone (phase 3 ran at UTC-3)
         if p.lang == "py":
             try:
                 compile(code, "solution.py", "exec")

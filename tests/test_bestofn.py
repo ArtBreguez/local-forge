@@ -186,5 +186,24 @@ class Resume(unittest.TestCase):
             self.assertEqual([json.loads(l)["sample"] for l in out.read_text(encoding="utf-8").splitlines()], [0, 1, 2], "the torn line is gone, nothing is doubled")
 
 
+    @unittest.skipUnless(HAVE_NODE, "node is needed")
+    def test_qbench_tz_runs_the_tests_in_the_given_zone(self):
+        """phase 3 found js_08_age_on failing on the UTC-3 host for an answer that passes at UTC: the answer parses 'YYYY-MM-DD' as UTC and reads it back in local time."""
+        import os
+        from unittest import mock
+        p = BY_ID["js_08_age_on"]
+        code = ("function ageOn(birth, on) {\n  const b = new Date(birth), o = new Date(on);\n  let age = o.getFullYear() - b.getFullYear();\n"
+                "  if (o.getMonth() < b.getMonth() || (o.getMonth() === b.getMonth() && o.getDate() < b.getDate())) age--;\n  return age;\n}\nmodule.exports = { ageOn };\n")
+        with tempfile.TemporaryDirectory() as tmp:
+            parts = split.write_parts(QUALITY, Path(tmp))
+            half = parts["js_08_age_on"]["visible"]
+            with mock.patch.dict(os.environ, {"QBENCH_TZ": "UTC"}):
+                utc = qbench.run_tests(p, code, tests_file=half)
+            with mock.patch.dict(os.environ, {"QBENCH_TZ": "America/Sao_Paulo"}):
+                brt = qbench.run_tests(p, code, tests_file=half)
+        self.assertTrue(utc.tests_total and brt.tests_total)
+        self.assertNotEqual((utc.passed, utc.detail), (brt.passed, brt.detail), "the timezone must reach the node process")
+
+
 if __name__ == "__main__":
     unittest.main()

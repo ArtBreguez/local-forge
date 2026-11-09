@@ -10,6 +10,7 @@ reported for every arm, both computed from the stored code of the answers:
 * **full**   - the answer passes every test of the problem, visible and hidden, which is phase 3's definition (comparable to its pass@1).
 
     python bestofn.py score  A.jsonl      --out A.scored.jsonl         # run both halves on every stored answer (resumable)
+                                          # add --tz America/Sao_Paulo for answers made on the UTC-3 host: some answers pass or fail by timezone
     python bestofn.py report --greedy A.jsonl --samples S10.jsonl --scored S10.scored.jsonl --greedy-scored A.scored.jsonl --ns 5,10
     python bestofn.py models --dir results/phase6/modal --ref heretic-9b --meta models.json
 
@@ -20,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import statistics
 import sys
 import tempfile
@@ -265,6 +267,7 @@ def main(argv: list[str] | None = None) -> int:
     sc.add_argument("--pause", type=float, default=0.0, help="seconds to sleep after every scored answer (per worker)")
     sc.add_argument("--python", default=None)
     sc.add_argument("--node", default=None)
+    sc.add_argument("--tz", default=None, help="timezone the tests run in (e.g. America/Sao_Paulo for answers generated and scored on the UTC-3 host)")
     rp = sub.add_parser("report", help="pass rates and time of best-of-N against pass@1")
     rp.add_argument("--greedy", type=Path, required=True)
     rp.add_argument("--samples", type=Path, required=True)
@@ -278,6 +281,8 @@ def main(argv: list[str] | None = None) -> int:
     md.add_argument("--ns", default="5,10")
     a = ap.parse_args(argv)
     if a.cmd == "score":
+        if a.tz:
+            os.environ["QBENCH_TZ"] = a.tz      # read by qbench.run_tests
         done = score_file(a.src, a.out, a.workers, a.python, a.node, a.pause)
         print(f"{len(done)} scored answers in {a.out}")
         return 0
