@@ -225,6 +225,38 @@ class StructsModel(unittest.TestCase):
         self.assertEqual((outer.offsets["sub"], outer.offsets["t"], outer.size), (2, 8, 12))
 
 
+class CrcReference(unittest.TestCase):
+    """The Python reference the CRC harness is compared with, anchored to independent implementations and published check values."""
+    def test_known_check_values(self):
+        import binascii
+        import zlib
+
+        from rea_bench import f_crc
+        v = b"123456789"
+        by_name = {n: (w, p, i, r, x) for n, w, p, i, r, x in f_crc.STANDARD}
+        self.assertEqual(f_crc.crc_ref(v, *by_name["crc32"]), zlib.crc32(v))
+        self.assertEqual(f_crc.crc_ref(b"\x00\xff hello", *by_name["crc32"]), zlib.crc32(b"\x00\xff hello"))
+        self.assertEqual(f_crc.crc_ref(v, *by_name["crc16-xmodem"]), binascii.crc_hqx(v, 0))
+        self.assertEqual(f_crc.crc_ref(v, *by_name["crc16-ccitt-false"]), binascii.crc_hqx(v, 0xFFFF))
+        for name, check in (("crc32c", 0xE3069283), ("crc32-mpeg2", 0x0376E6E7), ("crc16-arc", 0xBB3D), ("crc16-modbus", 0x4B37),
+                            ("crc16-ccitt-false", 0x29B1), ("crc16-xmodem", 0x31C3)):
+            self.assertEqual(f_crc.crc_ref(v, *by_name[name]), check, name)
+
+    def test_reflect(self):
+        from rea_bench import f_crc
+        self.assertEqual(f_crc.reflect(0x04C11DB7, 32), 0xEDB88320)
+        self.assertEqual(f_crc.reflect(0x8005, 16), 0xA001)
+        self.assertEqual(f_crc.reflect(0x1021, 16), 0x8408)
+
+    def test_literal_in_source_is_the_reflected_one(self):
+        from rea_bench import f_crc
+        for t in families.generate("crc", 24, 9):
+            p = t.params
+            want = f"0x{p['lit']:0{p['width'] // 4}x}u"
+            self.assertIn(want, t.body)
+            self.assertEqual(p["lit"], f_crc.reflect(p["poly"], p["width"]) if p["refl"] else p["poly"])
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
