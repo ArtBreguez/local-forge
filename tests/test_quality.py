@@ -455,6 +455,16 @@ class Runner(unittest.TestCase):
             self.assertEqual(sorted({r["seed"] for r in rows}), [1234, 1235, 1236])
             self.assertEqual({r["temperature"] for r in rows}, {0.6})
 
+    def test_a_stop_file_stops_between_requests_and_a_rerun_resumes(self):
+        stop = Path(self.tmp.name) / "STOP"
+        with FakeOpenAI("bad") as srv:
+            stop.write_text("x")
+            self.assertEqual(self.run_runner(srv, "--problems", "py_01", "--samples", "3", "--stop-file", str(stop)), 0)
+            self.assertEqual(self.rows()[1], [])                      # stopped before the first request
+            stop.unlink()
+            self.run_runner(srv, "--problems", "py_01", "--samples", "3", "--stop-file", str(stop))
+            self.assertEqual([r["sample"] for r in self.rows()[1]], [0, 1, 2])
+
     def test_max_problems_and_lang_filters(self):
         with FakeOpenAI("prose") as srv:
             self.run_runner(srv, "--lang", "js", "--max-problems", "3")
@@ -532,7 +542,7 @@ class Report(unittest.TestCase):
 class Grid(unittest.TestCase):
     def test_arms_cover_the_issue_and_are_fully_specified(self):
         arms = qgrid.load_arms()
-        self.assertEqual([k for k in arms if "-" not in k], ["A", "B", "C", "D", "E", "A2"])
+        self.assertEqual([k for k in arms if "-" not in k], ["A", "B", "C", "D", "E", "A2", "S10"])
         self.assertEqual([k for k in arms if k.startswith("P-")], ["P-v1", "P-v2", "P-v3"])
         a, b, c, d, e = (arms[x] for x in "ABCDE")
         for key in ("serve", "thinking", "temperature", "samples", "think_budget"):
@@ -550,9 +560,14 @@ class Grid(unittest.TestCase):
         self.assertEqual(d["serve"], ["--ctx", "32768", "--ubatch", "256"])
         self.assertEqual(e["serve"], ["--spec", "ngram-mod"])
         self.assertEqual((arms["A-t0.6"]["temperature"], arms["A-t0.6"]["samples"]), (0.6, 3))
+        s10 = arms["S10"]        # phase 6 best-of-N candidates: config A, 10 samples at 0.7, seeds 6000-6009
+        self.assertEqual((s10["serve"], s10["thinking"], s10["temperature"], s10["samples"], s10["seed"]), (a["serve"], "off", 0.7, 10, 6000))
+        rc10 = qgrid.runner_command(s10, 8081, "py", Path("out"), None)
+        self.assertEqual((rc10[rc10.index("--seed") + 1], rc10[rc10.index("--samples") + 1]), ("6000", "10"))
+        self.assertIn("--stop-file", rc10)
         for arm in arms.values():
             self.assertIn(arm["thinking"], ("on", "off"))
-            self.assertEqual(arm["temperature"] if arm["id"] != "A-t0.6" else 0.0, 0.0)
+            self.assertEqual(arm["temperature"] if arm["id"] not in ("A-t0.6", "S10") else 0.0, 0.0)
 
     def test_every_forge_flag_an_arm_uses_exists(self):
         import subprocess

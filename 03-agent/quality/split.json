@@ -1,0 +1,1075 @@
+{
+ "rule": "test functions in file order; indices 0, 2, 4, ... are visible, 1, 3, 5, ... are hidden",
+ "problems": {
+  "js_01_camel_to_snake": {
+   "lang": "js",
+   "n_tests": 5,
+   "tests": [
+    "simple words",
+    "acronyms",
+    "digits",
+    "already snake or odd characters",
+    "non-strings throw TypeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3
+   ]
+  },
+  "js_02_deep_equal": {
+   "lang": "js",
+   "n_tests": 8,
+   "tests": [
+    "primitives",
+    "arrays",
+    "arrays and objects are different",
+    "objects",
+    "undefined-valued keys are not missing keys",
+    "null and objects",
+    "dates",
+    "functions"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_03_chunk": {
+   "lang": "js",
+   "n_tests": 6,
+   "tests": [
+    "splits with a remainder",
+    "edge sizes",
+    "keeps element types",
+    "does not modify the input and returns fresh arrays",
+    "bad size",
+    "bad array"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "js_04_group_by": {
+   "lang": "js",
+   "n_tests": 8,
+   "tests": [
+    "groups in first-seen key order",
+    "passes the index as the second argument",
+    "keys are compared like Map keys",
+    "groups objects by property",
+    "empty input and falsy keys",
+    "key function is called once per item",
+    "does not modify the input",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_05_parse_query": {
+   "lang": "js",
+   "n_tests": 9,
+   "tests": [
+    "basic pairs",
+    "repeated keys become arrays",
+    "missing values and empty pairs",
+    "split at the first equals sign",
+    "empty keys are skipped",
+    "decoding",
+    "malformed percent-encoding throws URIError",
+    "keys that exist on Object.prototype are ordinary keys",
+    "non-strings throw TypeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_06_format_bytes": {
+   "lang": "js",
+   "n_tests": 8,
+   "tests": [
+    "bytes",
+    "kilobytes",
+    "trailing .0 is dropped",
+    "larger units",
+    "rounding up to the next unit",
+    "terabytes are the last unit",
+    "non-numbers and non-finite numbers throw TypeError",
+    "negative and fractional numbers throw RangeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_07_add_days": {
+   "lang": "js",
+   "n_tests": 9,
+   "tests": [
+    "simple additions",
+    "year boundaries",
+    "long spans and leap years",
+    "daylight-saving transitions do not matter",
+    "years below 1000 keep four digits",
+    "results outside 0001..9999 throw RangeError",
+    "invalid dates throw RangeError",
+    "wrong shape throws RangeError",
+    "bad argument types throw TypeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_08_age_on": {
+   "lang": "js",
+   "n_tests": 7,
+   "tests": [
+    "ordinary birthdays",
+    "same day and first year",
+    "leap-day births in common years",
+    "leap-day births in leap years",
+    "leap-day as the date being asked about",
+    "on before birth throws RangeError",
+    "invalid dates throw RangeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "js_09_luhn": {
+   "lang": "js",
+   "n_tests": 8,
+   "tests": [
+    "well-known valid test numbers",
+    "wrong check digit",
+    "single transposition is detected",
+    "separators",
+    "length limits",
+    "non-digit characters",
+    "empty and separator-only input",
+    "non-strings are false, never an exception"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_10_flatten": {
+   "lang": "js",
+   "n_tests": 9,
+   "tests": [
+    "default depth is one",
+    "explicit depths",
+    "depth 0 is a shallow copy",
+    "empty nested arrays vanish",
+    "only arrays are flattened",
+    "does not modify the input",
+    "does not use Array.prototype.flat",
+    "deep nesting",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_11_memoize": {
+   "lang": "js",
+   "n_tests": 10,
+   "tests": [
+    "caches by first argument",
+    "falsy and undefined results are cached",
+    "falsy keys work",
+    "keys compare like Map keys",
+    "default key is only the first argument",
+    "custom key function sees all arguments",
+    "errors are not cached",
+    "this and all arguments are forwarded",
+    "clear empties the cache",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "js_12_retry": {
+   "lang": "js",
+   "n_tests": 10,
+   "tests": [
+    "resolves on first success without further calls",
+    "retries until success and passes attempt numbers",
+    "rejects with the last error after all attempts",
+    "a single attempt",
+    "synchronous throws count as failures",
+    "falsy results are successes",
+    "attempts are sequential, never overlapping",
+    "invalid attempts reject with RangeError and never call fn",
+    "fn must be a function",
+    "returns a promise even for invalid input"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "js_13_render": {
+   "lang": "js",
+   "n_tests": 10,
+   "tests": [
+    "simple substitution",
+    "whitespace inside the braces",
+    "nested paths and arrays",
+    "falsy values are rendered, null and undefined are empty",
+    "missing paths are empty",
+    "only own properties are read",
+    "invalid placeholders are left alone",
+    "values are inserted literally",
+    "numbers and objects are converted with String()",
+    "template must be a string"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "js_14_emitter": {
+   "lang": "js",
+   "n_tests": 15,
+   "tests": [
+    "listeners run in registration order with arguments",
+    "emit returns false without listeners",
+    "this is the emitter",
+    "on and once are chainable",
+    "once runs only once",
+    "same function registered twice runs twice",
+    "off removes all registrations including once",
+    "off of a once listener by its original function",
+    "off leaves other listeners and other events alone",
+    "removing a listener during emit does not skip the next one",
+    "a listener removed by an earlier listener still runs in the current emit",
+    "a listener added during emit runs from the next emit",
+    "re-emitting from a once listener does not call it again",
+    "any value can be an event name",
+    "listener must be a function"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9,
+    11,
+    13
+   ]
+  },
+  "js_15_lower_bound": {
+   "lang": "js",
+   "n_tests": 9,
+   "tests": [
+    "examples",
+    "below, between, above",
+    "runs of duplicates",
+    "negative and fractional values",
+    "agrees with a linear scan on every position",
+    "reads only a logarithmic number of elements",
+    "large array",
+    "does not modify the array",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_16_common_prefix": {
+   "lang": "js",
+   "n_tests": 6,
+   "tests": [
+    "ordinary words",
+    "degenerate inputs",
+    "case-sensitive",
+    "surrogate pairs are never split",
+    "results are always well-formed strings",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "js_17_topo_sort": {
+   "lang": "js",
+   "n_tests": 9,
+   "tests": [
+    "chains",
+    "smallest ready name goes first at every step",
+    "names that only appear as dependencies are tasks too",
+    "duplicate dependencies count once",
+    "independent tasks come out sorted",
+    "empty graph",
+    "cycles throw an error mentioning the cycle",
+    "input is not modified",
+    "a longer realistic graph"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "js_18_expand_ranges": {
+   "lang": "js",
+   "n_tests": 10,
+   "tests": [
+    "examples",
+    "single numbers and one-element ranges",
+    "numbers sort numerically, not as text",
+    "whitespace around parts",
+    "leading zeros",
+    "empty specs",
+    "results are numbers",
+    "descending ranges throw RangeError",
+    "malformed parts throw SyntaxError",
+    "non-strings throw TypeError"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "js_19_format_table": {
+   "lang": "js",
+   "n_tests": 10,
+   "tests": [
+    "the documented example",
+    "three columns",
+    "no trailing spaces on any line",
+    "ragged rows",
+    "null and undefined are empty",
+    "single column and single row",
+    "empty input",
+    "non-string cells",
+    "width is measured with length",
+    "bad arguments"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "js_20_token_bucket": {
+   "lang": "js",
+   "n_tests": 11,
+   "tests": [
+    "starts full and drains",
+    "refills over time",
+    "fractions of a token accumulate across calls",
+    "the bucket never holds more than capacity",
+    "a refused request consumes nothing",
+    "requests larger than capacity are refused",
+    "taking several tokens at once",
+    "time is only read through now()",
+    "limiters are independent",
+    "invalid configuration",
+    "invalid token counts"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_01_parse_duration": {
+   "lang": "py",
+   "n_tests": 5,
+   "tests": [
+    "ParseDurationTests.test_single_units",
+    "ParseDurationTests.test_combined",
+    "ParseDurationTests.test_large_values_are_not_normalised",
+    "ParseDurationTests.test_value_errors",
+    "ParseDurationTests.test_type_errors"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3
+   ]
+  },
+  "py_02_roman": {
+   "lang": "py",
+   "n_tests": 4,
+   "tests": [
+    "RomanTests.test_valid",
+    "RomanTests.test_non_canonical_rejected",
+    "RomanTests.test_bad_characters",
+    "RomanTests.test_type"
+   ],
+   "visible": [
+    0,
+    2
+   ],
+   "hidden": [
+    1,
+    3
+   ]
+  },
+  "py_03_iso_week": {
+   "lang": "py",
+   "n_tests": 5,
+   "tests": [
+    "IsoWeekTests.test_year_boundaries",
+    "IsoWeekTests.test_ordinary_days",
+    "IsoWeekTests.test_bad_shape",
+    "IsoWeekTests.test_not_a_real_date",
+    "IsoWeekTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3
+   ]
+  },
+  "py_04_add_months": {
+   "lang": "py",
+   "n_tests": 6,
+   "tests": [
+    "AddMonthsTests.test_simple",
+    "AddMonthsTests.test_year_rollover",
+    "AddMonthsTests.test_clamping",
+    "AddMonthsTests.test_range",
+    "AddMonthsTests.test_invalid_date",
+    "AddMonthsTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_05_business_days": {
+   "lang": "py",
+   "n_tests": 12,
+   "tests": [
+    "BusinessDaysTests.test_plain_weeks",
+    "BusinessDaysTests.test_weekend_only",
+    "BusinessDaysTests.test_empty_range",
+    "BusinessDaysTests.test_end_is_exclusive_start_is_inclusive",
+    "BusinessDaysTests.test_full_year",
+    "BusinessDaysTests.test_holidays",
+    "BusinessDaysTests.test_weekend_holiday_not_double_subtracted",
+    "BusinessDaysTests.test_duplicate_and_outside_holidays",
+    "BusinessDaysTests.test_holiday_on_end_date_ignored",
+    "BusinessDaysTests.test_holiday_on_start_date_counts",
+    "BusinessDaysTests.test_generator_holidays",
+    "BusinessDaysTests.test_errors"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8,
+    10
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9,
+    11
+   ]
+  },
+  "py_06_csv_line": {
+   "lang": "py",
+   "n_tests": 7,
+   "tests": [
+    "CsvLineTests.test_plain",
+    "CsvLineTests.test_empty_fields",
+    "CsvLineTests.test_quoted",
+    "CsvLineTests.test_escaped_quotes",
+    "CsvLineTests.test_quote_inside_unquoted_field_is_literal",
+    "CsvLineTests.test_errors",
+    "CsvLineTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_07_balanced": {
+   "lang": "py",
+   "n_tests": 6,
+   "tests": [
+    "BalancedTests.test_plain",
+    "BalancedTests.test_unbalanced",
+    "BalancedTests.test_strings_hide_brackets",
+    "BalancedTests.test_escapes",
+    "BalancedTests.test_unterminated_string",
+    "BalancedTests.test_single_quotes_are_ordinary"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_08_merge_intervals": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "MergeIntervalsTests.test_basic",
+    "MergeIntervalsTests.test_touching_intervals_merge",
+    "MergeIntervalsTests.test_disjoint_stay_separate",
+    "MergeIntervalsTests.test_unsorted_input",
+    "MergeIntervalsTests.test_nested_interval_does_not_shrink_the_end",
+    "MergeIntervalsTests.test_zero_length",
+    "MergeIntervalsTests.test_floats_and_negatives",
+    "MergeIntervalsTests.test_tuples_in_lists_out",
+    "MergeIntervalsTests.test_input_not_modified",
+    "MergeIntervalsTests.test_invalid"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_09_lru_cache": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "LRUCacheTests.test_basic_get_put",
+    "LRUCacheTests.test_eviction_order",
+    "LRUCacheTests.test_get_refreshes_recency",
+    "LRUCacheTests.test_put_existing_updates_value_and_recency_without_evicting",
+    "LRUCacheTests.test_contains_does_not_refresh",
+    "LRUCacheTests.test_missing_get_does_not_change_anything",
+    "LRUCacheTests.test_falsy_values_are_stored",
+    "LRUCacheTests.test_capacity_one",
+    "LRUCacheTests.test_long_sequence",
+    "LRUCacheTests.test_bad_capacity"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_10_semver_compare": {
+   "lang": "py",
+   "n_tests": 8,
+   "tests": [
+    "SemverTests.test_core_numbers",
+    "SemverTests.test_prerelease_is_lower_than_release",
+    "SemverTests.test_spec_example_chain",
+    "SemverTests.test_numeric_identifiers_compare_numerically",
+    "SemverTests.test_numeric_below_alphanumeric",
+    "SemverTests.test_ascii_order_not_case_insensitive",
+    "SemverTests.test_build_metadata_ignored",
+    "SemverTests.test_invalid_versions"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "py_11_wrap_text": {
+   "lang": "py",
+   "n_tests": 9,
+   "tests": [
+    "WrapTextTests.test_basic",
+    "WrapTextTests.test_exact_fit_is_allowed",
+    "WrapTextTests.test_long_word_on_its_own_line",
+    "WrapTextTests.test_whitespace_runs_collapse",
+    "WrapTextTests.test_empty",
+    "WrapTextTests.test_width_one",
+    "WrapTextTests.test_no_line_is_over_width_unless_single_word",
+    "WrapTextTests.test_greedy_not_balanced",
+    "WrapTextTests.test_bad_width"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "py_12_validate_username": {
+   "lang": "py",
+   "n_tests": 7,
+   "tests": [
+    "UsernameTests.test_valid_and_normalised",
+    "UsernameTests.test_length",
+    "UsernameTests.test_length_counts_after_stripping",
+    "UsernameTests.test_start_and_end",
+    "UsernameTests.test_consecutive_specials",
+    "UsernameTests.test_characters",
+    "UsernameTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_13_flatten_dict": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "FlattenTests.test_example",
+    "FlattenTests.test_flat_input",
+    "FlattenTests.test_custom_separator",
+    "FlattenTests.test_empty_containers_are_kept",
+    "FlattenTests.test_leaves_are_not_expanded",
+    "FlattenTests.test_non_string_keys",
+    "FlattenTests.test_list_of_lists",
+    "FlattenTests.test_deep",
+    "FlattenTests.test_input_not_modified",
+    "FlattenTests.test_top_level_must_be_dict"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_14_run_length": {
+   "lang": "py",
+   "n_tests": 6,
+   "tests": [
+    "RunLengthTests.test_encode",
+    "RunLengthTests.test_encode_rejects_digits",
+    "RunLengthTests.test_decode",
+    "RunLengthTests.test_decode_rejects_malformed",
+    "RunLengthTests.test_round_trip",
+    "RunLengthTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_15_rotated_search": {
+   "lang": "py",
+   "n_tests": 7,
+   "tests": [
+    "RotatedSearchTests.test_reads_only_a_logarithmic_number_of_elements",
+    "RotatedSearchTests.test_examples",
+    "RotatedSearchTests.test_tiny",
+    "RotatedSearchTests.test_every_rotation_every_value",
+    "RotatedSearchTests.test_not_rotated",
+    "RotatedSearchTests.test_large",
+    "RotatedSearchTests.test_input_not_modified"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_16_top_words": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "TopWordsTests.test_basic",
+    "TopWordsTests.test_tie_break_alphabetical",
+    "TopWordsTests.test_case_insensitive",
+    "TopWordsTests.test_apostrophes",
+    "TopWordsTests.test_digits_and_punctuation_separate",
+    "TopWordsTests.test_k_larger_than_distinct",
+    "TopWordsTests.test_k_zero_and_empty",
+    "TopWordsTests.test_returns_tuples",
+    "TopWordsTests.test_non_ascii_letters_separate",
+    "TopWordsTests.test_errors"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_17_allocate_cents": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "AllocateTests.test_examples",
+    "AllocateTests.test_exact_division",
+    "AllocateTests.test_largest_remainder_not_first_index",
+    "AllocateTests.test_ties_go_to_lower_index",
+    "AllocateTests.test_zero_total",
+    "AllocateTests.test_single_recipient",
+    "AllocateTests.test_big_numbers_exact",
+    "AllocateTests.test_always_sums_to_total",
+    "AllocateTests.test_errors",
+    "AllocateTests.test_input_not_modified"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  },
+  "py_18_spiral": {
+   "lang": "py",
+   "n_tests": 9,
+   "tests": [
+    "SpiralTests.test_square",
+    "SpiralTests.test_wide",
+    "SpiralTests.test_tall",
+    "SpiralTests.test_single_row_and_column",
+    "SpiralTests.test_odd_inner_cases",
+    "SpiralTests.test_empty",
+    "SpiralTests.test_every_element_once",
+    "SpiralTests.test_ragged_rejected",
+    "SpiralTests.test_input_not_modified"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7
+   ]
+  },
+  "py_19_time_12h": {
+   "lang": "py",
+   "n_tests": 7,
+   "tests": [
+    "To24hTests.test_midnight_and_noon",
+    "To24hTests.test_morning",
+    "To24hTests.test_afternoon",
+    "To24hTests.test_whitespace",
+    "To24hTests.test_all_valid_hours",
+    "To24hTests.test_invalid",
+    "To24hTests.test_type"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6
+   ],
+   "hidden": [
+    1,
+    3,
+    5
+   ]
+  },
+  "py_20_maze_steps": {
+   "lang": "py",
+   "n_tests": 10,
+   "tests": [
+    "MazeTests.test_example",
+    "MazeTests.test_straight_line",
+    "MazeTests.test_detour",
+    "MazeTests.test_unreachable",
+    "MazeTests.test_walls_block_diagonals",
+    "MazeTests.test_shortest_not_first_found",
+    "MazeTests.test_start_in_the_middle",
+    "MazeTests.test_open_field",
+    "MazeTests.test_validation",
+    "MazeTests.test_input_not_modified"
+   ],
+   "visible": [
+    0,
+    2,
+    4,
+    6,
+    8
+   ],
+   "hidden": [
+    1,
+    3,
+    5,
+    7,
+    9
+   ]
+  }
+ }
+}

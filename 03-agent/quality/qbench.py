@@ -285,8 +285,10 @@ def _parse_node(rc: int | None, out: str, err: str) -> tuple[int | None, int | N
     return total, failed, detail[:400]
 
 
-def run_tests(p: Problem, code: str, *, timeout: float = 30.0, python: str | None = None, node: str | None = None) -> TestOutcome:
-    """Write `code` + the hidden tests into a temp dir and run them."""
+def run_tests(p: Problem, code: str, *, timeout: float = 30.0, python: str | None = None, node: str | None = None,
+              tests_file: Path | None = None) -> TestOutcome:
+    """Write `code` + the hidden tests into a temp dir and run them. `tests_file` runs another test file (phase 6: the visible or the
+    hidden half of the tests, see split.py) instead of the problem's full file."""
     t0 = time.monotonic()
     normalized = False
     if p.lang == "js":
@@ -294,7 +296,7 @@ def run_tests(p: Problem, code: str, *, timeout: float = 30.0, python: str | Non
     with tempfile.TemporaryDirectory(prefix="qbench-") as tmp:
         solution = Path(tmp) / f"solution.{p.ext}"
         solution.write_text(code, encoding="utf-8", newline="\n")
-        shutil.copyfile(p.tests_path, Path(tmp) / f"test_hidden.{p.ext}")
+        shutil.copyfile(tests_file or p.tests_path, Path(tmp) / f"test_hidden.{p.ext}")
         if p.lang == "js":      # the nearest package.json decides CommonJS vs ES module: a stray {"type": "module"} in a parent directory
             (Path(tmp) / "package.json").write_text('{"private": true, "type": "commonjs"}\n', encoding="utf-8")   # (the host has one in C:\\Users\\arthu) would break every require()
         env = dict(os.environ, PYTHONDONTWRITEBYTECODE="1", PYTHONIOENCODING="utf-8", NODE_NO_WARNINGS="1")

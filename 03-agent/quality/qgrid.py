@@ -86,7 +86,9 @@ def runner_command(arm: dict[str, Any], port: int, python: str, out_dir: Path, n
            "--out", str(out_dir / f"{arm['id']}.jsonl"), "--thinking", arm["thinking"],
            "--think-budget", str(arm["reasoning_budget"] + REASONING_MARGIN if arm.get("reasoning_budget") else arm["think_budget"]),
            "--temperature", str(arm["temperature"]), "--samples", str(arm["samples"]), "--serve-json", str(out_dir / f"{arm['id']}.serve.json"),
-           "--note", arm["title"], "--prompt-variant", arm.get("prompt_variant", qbench.DEFAULT_VARIANT)]
+           "--note", arm["title"], "--prompt-variant", arm.get("prompt_variant", qbench.DEFAULT_VARIANT), "--stop-file", str(out_dir / "STOP")]
+    if "seed" in arm:
+        cmd += ["--seed", str(arm["seed"])]
     if arm.get("reasoning_budget_message"):
         cmd += ["--budget-message", arm["reasoning_budget_message"]]
     if node:

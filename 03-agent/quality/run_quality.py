@@ -164,6 +164,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     ap.add_argument("--python", default=None, help="interpreter for the Python tests (default: this one)")
     ap.add_argument("--node", default=None, help="node executable (default: PATH, $QBENCH_NODE, C:\\Program Files\\nodejs)")
     ap.add_argument("--serve-json", type=Path, help="the JSON `forge serve` printed (command line, config); stored in the meta line")
+    ap.add_argument("--stop-file", type=Path, help="stop cleanly (between two requests) as soon as this file exists; a rerun resumes")
     ap.add_argument("--note", default="")
     return ap.parse_args(argv)
 
@@ -187,6 +188,9 @@ def main(argv: list[str] | None = None) -> int:
     print(f"[{a.arm}] {len(todo)} requests to do ({len(seen)} already in {a.out})", flush=True)
     t_start = time.monotonic()
     for i, (p, s) in enumerate(todo, 1):
+        if a.stop_file and a.stop_file.exists():
+            print(f"[{a.arm}] stop file {a.stop_file} found: stopping before request {i}/{len(todo)} ({p.id} s{s})", flush=True)
+            return 0
         rec = run_problem(p, a, s)
         with a.out.open("a", encoding="utf-8", newline="\n") as f:
             f.write(json.dumps(rec) + "\n")

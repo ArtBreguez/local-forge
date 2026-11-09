@@ -11,6 +11,7 @@
     {"id": "P-v1", "title": "prompt probe: A with prompt variant v1 (run on a few Python problems only)", "serve": [], "thinking": "off", "prompt_variant": "v1"},
     {"id": "P-v2", "title": "prompt probe: A with prompt variant v2 (adds: Indent with 4 spaces per level)", "serve": [], "thinking": "off", "prompt_variant": "v2"},
     {"id": "P-v3", "title": "prompt probe: A with prompt variant v3 (adds an example answer with 4-space layout to the system message); v3 became the default for all arms", "serve": [], "thinking": "off", "prompt_variant": "v3"},
-    {"id": "A-t0.6", "title": "A, 3 samples per problem at temperature 0.6 (pass@3 estimate)", "serve": [], "thinking": "off", "temperature": 0.6, "samples": 3}
+    {"id": "A-t0.6", "title": "A, 3 samples per problem at temperature 0.6 (pass@3 estimate)", "serve": [], "thinking": "off", "temperature": 0.6, "samples": 3},
+    {"id": "S10", "title": "phase 6: A with 10 samples per problem at temperature 0.7, seeds 6000-6009 (best-of-N candidates; sample-major order, so the first 5 rounds are a complete N=5)", "serve": [], "thinking": "off", "temperature": 0.7, "samples": 10, "seed": 6000}
   ]
 }
