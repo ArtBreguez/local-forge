@@ -67,10 +67,14 @@ def opencode_config(base_url: str, ctx: int = 16384, out: int = 4096, mcp: dict[
 
 
 def test_tool_mcp(t: taskbench.Task, repo: Path, a: argparse.Namespace, log: Path) -> dict[str, Any]:
-    """The `mcp` block of OpenCode's config for arm O30-tool: one local server, started by OpenCode inside its own process tree."""
+    """The `mcp` block of OpenCode's config for arm O30-tool: one local server, started by OpenCode inside its own process tree.
+    The schema is v2.2.5's (documented at opencode.ai/docs/mcp-servers, and what `opencode mcp add --global forge -- <command...>` writes):
+    `mcp.servers.<name>` with `type` and `command`; the v1 form `mcp.<name>` is not read (`opencode mcp list` stays empty). `codemode: false`
+    is the documented switch that puts the tool in the model's native tool list as `forge_run_tests`: by default (Code Mode) v2 hides MCP
+    tools behind its `execute` tool, where the model would have to write JavaScript (`tools.forge.run_tests()`) to reach them."""
     argv = [a.python or sys.executable, str(MCP_SERVER), "--repo", str(repo), "--test-cmd", json.dumps(taskbench.expand(t.test_cmd, a.python, a.node)),
             "--lang", t.lang, "--log", str(log)]
-    return {"forge": {"type": "local", "command": argv, "enabled": True}}
+    return {"servers": {"forge": {"type": "local", "command": argv, "codemode": False}}}
 
 
 def rmtree(path: Path) -> None:

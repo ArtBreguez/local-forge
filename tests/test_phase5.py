@@ -132,10 +132,10 @@ cfg = json.load(open(os.path.join(os.environ["XDG_CONFIG_HOME"], "opencode", "op
 base = cfg["provider"]["forge"]["options"]["baseURL"]
 body = {{"model": "x", "stream": True, "tools": [{{"type": "function"}}], "messages": [{{"role": "user", "content": "hi"}}]}}
 urllib.request.urlopen(urllib.request.Request(base + "/chat/completions", data=json.dumps(body).encode(), headers={{"Content-Type": "application/json"}})).read()
-srv = cfg.get("mcp", {{}}).get("forge")
+srv = cfg.get("mcp", {{}}).get("servers", {{}}).get("forge")
 seen = {{"mcp_configured": bool(srv)}}
 if srv:
-    assert srv["type"] == "local" and srv["enabled"] is True and isinstance(srv["command"], list)
+    assert srv["type"] == "local" and isinstance(srv["command"], list)
     p = subprocess.Popen(srv["command"], stdin=subprocess.PIPE, stdout=subprocess.PIPE)      # OpenCode starts it in the agent's directory
     def rpc(m):
         p.stdin.write((json.dumps(m) + "\n").encode()); p.stdin.flush()
@@ -202,8 +202,11 @@ class McpConfig(unittest.TestCase):
         t = BY_ID["py-wrap"]
         a = type("A", (), dict(python="C:\\Python312\\python.exe", node=None))()
         block = runner.test_tool_mcp(t, Path("R"), a, Path("W/calls.jsonl"))
-        s = block["forge"]
-        self.assertEqual((s["type"], s["enabled"]), ("local", True))
+        self.assertEqual(list(block), ["servers"])               # v2.2.5: mcp.servers.<name>, as `opencode mcp add` writes it
+        s = block["servers"]["forge"]
+        self.assertEqual(sorted(s), ["codemode", "command", "type"])
+        self.assertEqual(s["type"], "local")
+        self.assertIs(s["codemode"], False)                       # a native tool for the model, not JavaScript behind `execute`
         cmd = s["command"]
         self.assertEqual(cmd[0], "C:\\Python312\\python.exe")
         self.assertEqual(Path(cmd[1]).name, "testtool_mcp.py")
