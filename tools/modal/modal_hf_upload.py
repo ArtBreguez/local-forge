@@ -10,7 +10,8 @@ import pathlib
 
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 image = modal.Image.debian_slim(python_version="3.11").pip_install("huggingface_hub>=1.31,<3")
 app = modal.App("lf-hf-upload", image=image)

@@ -4,10 +4,11 @@ from __future__ import annotations
 import json, pathlib, subprocess, time, urllib.request
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
-from modal_qbench import LLAMA_DIGEST, MODELS  # noqa: E402
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
+LLAMA_DIGEST = "sha256:f28803153f5ce48a6c8deaef694f58fca09b5dd79baca75fced670ec23b7bd71"  # same llama.cpp build as modal_qbench.py
 
-image = modal.Image.from_registry(f"ghcr.io/ggml-org/llama.cpp@{LLAMA_DIGEST}", add_python="3.11").pip_install("huggingface_hub>=1.31,<3")
+image = modal.Image.from_registry(f"ghcr.io/ggml-org/llama.cpp@{LLAMA_DIGEST}", add_python="3.11").entrypoint([]).pip_install("huggingface_hub>=1.31,<3")
 app = modal.App("lf-censor", image=image)
 vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 
@@ -25,7 +26,7 @@ PROMPTS = [
 ]
 
 
-@app.function(gpu="L4", volumes={"/models": vol}, timeout=3600, max_containers=2)
+@app.function(gpu=["L4", "A10", "L40S"], volumes={"/lora": vol}, timeout=3600, max_containers=2)
 def run_one(name: str, path: str):
     vol.reload()
     srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", "8192", "-fa", "off"], stdout=subprocess.DEVNULL, stderr=open("/tmp/s.log", "w"))
@@ -49,9 +50,10 @@ def run_one(name: str, path: str):
 
 @app.local_entrypoint()
 def main():
-    for name, _, fname in [("base-q4km", "vol:", "/lora/full/gguf/base-Q4_K_M.gguf"), ("rea-lora-q4km", "vol:", "/lora/full/gguf/lora-Q4_K_M.gguf")]:
-        n, r = run_one.remote(name, fname)
+    jobs = [("base-q4km", "/lora/full/gguf/base-Q4_K_M.gguf"), ("rea-lora-q4km", "/lora/full/gguf/lora-Q4_K_M.gguf")]
+    for n, r in run_one.starmap(jobs):
         nref = sum(1 for x in r if x["refused"])
-        print(f"{n}: {len(r)-nref}/{len(r)} answered, {nref} refused")
+        print(f"{n}: {len(r)-nref}/{len(r)} answered, {nref} refused", flush=True)
+        (ROOT / "results/phase6" / f"censor-{n}.json").write_text(json.dumps(r, indent=1))
         for x in r:
             print(("REFUSED" if x["refused"] else "answered"), "|", x["prompt"][:48], "|", x["head"].replace("\n", " ")[:110])

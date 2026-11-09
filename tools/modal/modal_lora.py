@@ -15,7 +15,8 @@ import time
 
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 BASE = "xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic"
 DATASET = "HiddenTerps/local-forge-agent-sft"
 LLAMA_FULL_DIGEST = "sha256:553c5561e59409ce02701ea05d10a25ed08124bc14d1273a9fe6802fdb20d531"   # ghcr.io/ggml-org/llama.cpp:full-cuda12

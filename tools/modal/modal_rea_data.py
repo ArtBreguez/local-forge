@@ -19,7 +19,8 @@ import time
 
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)

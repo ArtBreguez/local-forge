@@ -21,7 +21,8 @@ import time
 
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 # ghcr no longer publishes per-build CUDA tags (b12207 has none); pinned by digest, version printed in the meta line
 LLAMA_TAG = "server-cuda12"
 LLAMA_DIGEST = "sha256:f28803153f5ce48a6c8deaef694f58fca09b5dd79baca75fced670ec23b7bd71"

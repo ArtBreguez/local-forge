@@ -21,7 +21,8 @@ import time
 
 import modal
 
-ROOT = pathlib.Path(__file__).resolve().parents[2]
+_HERE = pathlib.Path(__file__).resolve()
+ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 import sys; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
