@@ -33,12 +33,19 @@ def load_arms(directory: Path) -> tuple[dict[str, tuple[dict, list[dict]]], dict
     return t0, sampled
 
 
+def answered(rows: list[dict]) -> list[dict]:
+    """Rows of the temperature-0 first sample that got an answer from the server. An `api_error` (the server failed, e.g. Vulkan out of
+    memory) says nothing about the model, so it is left out of every statistic and counted in its own column; pairing then uses
+    the problems both arms have."""
+    return [r for r in rows if r.get("sample", 0) == 0 and r.get("kind") != "api_error"]
+
+
 def pass_map(rows: list[dict]) -> dict[str, bool]:
-    return {r["problem"]: bool(r["pass"]) for r in rows if r.get("sample", 0) == 0}
+    return {r["problem"]: bool(r["pass"]) for r in answered(rows)}
 
 
 def fraction_map(rows: list[dict]) -> dict[str, float]:
-    return {r["problem"]: float(r.get("test_fraction", 1.0 if r["pass"] else 0.0)) for r in rows if r.get("sample", 0) == 0}
+    return {r["problem"]: float(r.get("test_fraction", 1.0 if r["pass"] else 0.0)) for r in answered(rows)}
 
 
 def sign_counts(base: dict[str, float], other: dict[str, float]) -> tuple[int, int]:
@@ -61,11 +68,11 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         return "no results found\n"
     out: list[str] = []
     base_pass = pass_map(t0[baseline][1]) if baseline in t0 else None
-    base_text = {r["problem"]: r.get("response") for r in t0[baseline][1] if r.get("sample", 0) == 0} if baseline in t0 else {}
-    out.append("| Arm | thinking | n | pass | rate | Wilson 95% CI | only A / only arm | McNemar p | vs A | same text as A | median tok/s | median tokens | cap hits | thinking budget used up | failures (kind: count) |")
-    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    base_text = {r["problem"]: r.get("response") for r in answered(t0[baseline][1])} if baseline in t0 else {}
+    out.append("| Arm | thinking | n | pass | rate | Wilson 95% CI | only A / only arm | McNemar p | vs A | same text as A | median tok/s | median tokens | cap hits | thinking budget used up | server errors left out | failures (kind: count) |")
+    out.append("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
     for arm, (meta, rows) in t0.items():
-        rows0 = [r for r in rows if r.get("sample", 0) == 0]
+        rows0 = answered(rows)
         s = qbench.summarize(arm, rows0)
         lo, hi = qbench.wilson(s.passed, s.n)
         cmp_cols = ["—", "—", "baseline" if arm == baseline else "—"]
@@ -84,7 +91,7 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         tok = f"{s.median_tok_s:.2f}" if s.median_tok_s else "n/a"
         toks = f"{s.median_tokens:.0f}" if s.median_tokens is not None else "n/a"
         out.append(f"| {arm} | {'on' if meta.get('thinking') else 'off'} | {s.n} | {s.passed} | {pct(s.passed / s.n)} | {pct(lo)}–{pct(hi)} | "
-                   f"{cmp_cols[0]} | {cmp_cols[1]} | {cmp_cols[2]} | {same} | {tok} | {toks} | {s.cap_hits} | {sum(1 for r in rows0 if r.get('budget_exhausted'))} | {kinds} |")
+                   f"{cmp_cols[0]} | {cmp_cols[1]} | {cmp_cols[2]} | {same} | {tok} | {toks} | {s.cap_hits} | {sum(1 for r in rows0 if r.get('budget_exhausted'))} | {sum(1 for r in rows if r.get('sample', 0) == 0 and r.get('kind') == 'api_error')} | {kinds} |")
     out.append("")
 
     out.append("Graded view: the share of each problem's hidden tests that passed (a syntax error, a timeout or no code counts as 0), averaged over the problems.")
@@ -112,7 +119,7 @@ def build_report(directory: Path, baseline: str = "A") -> str:
     out.append("| Arm | " + " | ".join(g for g, _ in groups) + " |")
     out.append("|---|" + "---|" * len(groups))
     for arm, (_, rows) in t0.items():
-        rows0 = [r for r in rows if r.get("sample", 0) == 0]
+        rows0 = answered(rows)
         cells = []
         for _, pred in groups:
             sel = [r for r in rows0 if pred(r)]
@@ -120,7 +127,7 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         out.append(f"| {arm} | " + " | ".join(cells) + " |")
     out.append("")
 
-    out.append("Per problem (P pass, . fail, C = fail with the token cap hit):")
+    out.append("Per problem (P pass, . fail, C = fail with the token cap hit, x = server error, left out of the statistics):")
     out.append("")
     arms = list(t0)
     out.append("| problem | " + " | ".join(arms) + " |")
@@ -131,7 +138,7 @@ def build_report(directory: Path, baseline: str = "A") -> str:
         cells = []
         for arm in arms:
             r = by_arm[arm].get(pid)
-            cells.append("-" if r is None else "P" if r["pass"] else ("C" if r.get("cap_hit") else "."))
+            cells.append("-" if r is None else "x" if r.get("kind") == "api_error" else "P" if r["pass"] else ("C" if r.get("cap_hit") else "."))
         out.append(f"| {pid} | " + " | ".join(cells) + " |")
     out.append("")
 

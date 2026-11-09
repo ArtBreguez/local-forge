@@ -373,8 +373,10 @@ class ArmSummary:
 
 
 def read_results(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """The meta line and the result rows. When a (problem, sample) appears more than once (an `api_error` that a rerun retried),
+    only the last record counts; the earlier ones stay in the file as the audit trail."""
     meta: dict[str, Any] = {}
-    rows: list[dict[str, Any]] = []
+    latest: dict[tuple[str, int], dict[str, Any]] = {}
     for line in path.read_text(encoding="utf-8").splitlines():
         if not line.strip():
             continue
@@ -382,8 +384,10 @@ def read_results(path: Path) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         if d.get("type") == "meta":
             meta = d
         elif d.get("type") == "result":
-            rows.append(d)
-    return meta, rows
+            key = (d["problem"], d.get("sample", 0))
+            latest.pop(key, None)            # re-insert so that the order follows the last attempt
+            latest[key] = d
+    return meta, list(latest.values())
 
 
 def summarize(arm: str, rows: list[dict[str, Any]]) -> ArmSummary:

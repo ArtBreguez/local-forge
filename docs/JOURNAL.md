@@ -246,3 +246,53 @@ Test on a binary with known source (`tools/rea-target/checksum.c`, built on the 
 | `return (int)(acc & 0x7FFFFFFF)` | `return uVar2 & 0x7fffffff` |
 
 Every operation, constant and branch of the original is recovered; only names are lost (the binary has symbols for the function name, not for locals). Issue #11 is done; next is wiring REA's MCP server into the local agent (#12).
+
+## 2026-11-09 — phase 3: do the speed settings change the answers? (issue #6)
+
+**Instrument.** `03-agent/quality/`: 40 function-level problems (20 Python, 20 JavaScript) written for this repo, hidden tests run with `python -m unittest` / `node --test`, a reference and a broken solution for every problem (`tests/test_quality.py`, 53 tests, also run on the host with Python 3.12 and Node 20), a runner, a report and a host driver. Greedy decoding, one sample, identical prompts for every arm. A reviewer that saw only the prompts and tests found seven spots where a correct answer could fail unfairly or a stated requirement was not enforced (a null-prototype result, `.length` on arrays, tab and double-space inputs, leading zeros, a missing `+` sign case, two "O(log n)" problems that a linear scan passed); all fixed before any arm ran. Raw results: `results/phase3/` (`report.md` is `qreport.py` output); the one-line summary is that **the model passes 9 of 40 problems and no tested setting changes that detectably, except that thinking makes it worse**.
+
+**Things that changed the design (each found by running it on the real host):**
+- `C:\Users\arthu\package.json` has `"type": "module"`. The temp dir is below it, so every `.js` file loaded as an ES module and every JavaScript problem failed with `require is not defined`; it surfaced only when the harness tests ran on the host. The runner now writes a `package.json` with `"type": "commonjs"` next to the solution (regression test: a parent directory with `"type": "module"`).
+- **Thinking is a template switch.** The model's chat template (read from the GGUF) ends the generation prompt with `<think>\n` unless `chat_template_kwargs.enable_thinking` is `false`, so with no kwarg it thinks; there is no `/think` tag. The runner sends the kwarg on every request (`false` for A, C, D, E; `true` for B).
+- **A plain token cap does not work for thinking.** Smoke run, `max_tokens` 2,560: the first two problems both ran to the cap (~270 s each) with the model still reasoning and no answer (`results/phase3/smoke/B.jsonl`); at temperature 0 the reasoning loops ("I'll just use ... That's not right." repeated). Arm B therefore uses llama-server's own thinking budget: `--reasoning-budget 1024`, set as the environment variable `LLAMA_ARG_THINK_BUDGET` (`forge serve` passes the environment on), with a message injected when it runs out so that the runner can count how often.
+- **Python indentation.** In the first runs this model often wrote a whole Python function with one-space or no indentation (`IndentationError`), and its reasoning drafts have the same habit. Probe on `py_01`-`py_05`/`py_08` (A config, `results/phase3/probe/`), rule fixed beforehand = fewer syntax errors: v1 (first wording) 4 of 8 Python answers with a syntax error, v2 (+ "Indent with 4 spaces per level") 3 of 5 against 2 of 5 for v1, v3 (+ a short example answer in the system message) 1 of 8. v3 is used for all arms. Pass count on the probe did not change (1 of 8): the syntax errors became logic errors.
+- `forge serve` gained `--kv`, `--fa` and `--ubatch` (a forced setting bypasses the tuned entry; `tests/test_serve.py`), so that C and D can be started through the planner at all.
+
+**Arms** (each a fresh `forge serve`; `results/phase3/<arm>.serve.json` has the printed config and the exact command, shared flags `-m <model> --host 127.0.0.1 --port 8081 -t 6 -tb 6 -np 1 --fit off`):
+
+| arm | change against A | planner / tuned | llama-server flags that differ |
+|---|---|---|---|
+| A | forge's tuned config, thinking off | tuned, 16 layers | `-ngl 16 -c 16384 -fa off -ctk f16 -ctv f16 -ub 256 --spec-type none` |
+| B | thinking on, 1,024-token thinking budget | tuned, 16 layers | as A, env `LLAMA_ARG_THINK_BUDGET=1024` |
+| C | `forge serve --kv q8_0 --fa on --ubatch 256` | planned, **18 layers** | `-ngl 18 -fa on -ctk q8_0 -ctv q8_0 -ub 256` |
+| D | `forge serve --ctx 32768 --ubatch 256` | planned, **11 layers** | `-ngl 11 -c 32768 -ub 256` |
+| E | `forge serve --spec ngram-mod` | tuned, 16 layers | as A with `--spec-type ngram-mod` |
+| A2 | A repeated unchanged (noise floor) | tuned, 16 layers | as A |
+
+**Results** (`python 03-agent/quality/qreport.py results/phase3`; arm vs A on the problems both have; server errors left out of every statistic):
+
+| arm | pass (Wilson 95%) | only A / only arm, McNemar p | share of hidden tests passed; A higher / arm higher, sign p | same text as A | median tok/s | median tokens | token cap hit / thinking budget used up | decision |
+|---|---|---|---|---|---|---|---|---|
+| A | 9/40 = 22% (12-38%) | | 62.2% | | 8.6 (9.7, see below) | 248 | 3 / - | baseline |
+| B thinking | 7/37 = 19% (9-34%) | 4 / 3, p = 1.00 | 35.9%; 21 / 7, **p = 0.013** | 0/37 | 9.7 | 1,357 | 6 / 27 of 37 | **reject** |
+| C q8_0 + FA | 10/40 = 25% (14-40%) | 1 / 2, p = 1.00 | 63.7%; 5 / 9, p = 0.42 | 13/40 | 9.9 | 246 | 2 / - | undecided |
+| D 32K | 10/40 = 25% (14-40%) | 0 / 1, p = 1.00 | 66.7%; 1 / 7, p = 0.07 | 21/40 | 8.2 | 244 | 1 / - | undecided |
+| E ngram-mod | 9/40 = 22% (12-38%) | 0 / 0, p = 1.00 | 62.2%; 0 / 0 | 37/40 | 9.7 | 248 | 3 / - | undecided |
+| A2 repeat of A | 25 of 40 answered | 0 / 0 | | **25/25** | 9.7 | 266 | | |
+
+Decisions follow the rule in `docs/PROTOCOL.md` (written while the grid ran, before any arm but A was looked at):
+- **B reject.** Significantly worse on the graded test (p = 0.013) and it costs 5.5x the tokens (median 1,357 vs 248; 85 min of requests against 24-36 for the other arms). The loss is a Python formatting failure: 18 of its 20 Python answers are `IndentationError`s (A: 2), so thinking makes the model copy its flat-indented draft. On JavaScript, where indentation cannot fail, B is 5/17 against 3/20 (66% against 60% of tests): no detectable gain from thinking either. Three B answers are missing (server error, below).
+- **C undecided.** Same score within noise, generation 9.9 vs 9.7 tok/s (+2%, under the 10% benefit threshold), and the tuning measured it slower at depth 8,192 (7.87 vs 9.13 tok/s). Nothing here argues for switching.
+- **D undecided.** The score is the same or slightly better (graded +4.5 points, p = 0.07; 7 problems better, 1 worse), but the benefit of 32K, a longer context, is not exercised by 300-token prompts, and it costs 5 layers and 16% speed (8.2 vs 9.7 tok/s). The decision belongs to phase 4: use it only for tasks that need more than 16K.
+- **E undecided.** Not one problem changed outcome and 37 of 40 answers are word-for-word the same (the 3 that differ score the same), so `ngram-mod` did not cost correctness here; but it did not buy speed either (9.7 vs 9.7 tok/s). Phase 2 found its gain on code *rewrites* (up to 17.5 tok/s); these problems write new code. Keep it opt-in and test it where the agent edits existing code.
+
+**What 40 problems can say.** A passes only 9, so the paired tests can detect a loss only if most of A's passes flip (6 only-A flips and no others gives p = 0.03); "within noise" for C, D and E means "no large effect", not "equal". The graded view is more sensitive and is why B stands out. The benchmark does not test long contexts (all prompts are about 300 tokens), so D's 32K is only checked for side effects of the different layer split. Greedy decoding is repeatable here: A2, after a server restart, gave exactly A's text on all 25 problems it answered (and 5 of 5 in the prompt probe). Different settings do change the text (C 13 of 40 identical to A, D 21 of 40, E 37 of 40) without a detectable change in score.
+
+**What went wrong during the run (so the numbers are read with it in mind):**
+- Old one-shot tasks (`llm-agent`, `llm-bench-b`, `llm-bench-c`, `llm-ghidra`) kept an unfired 23:59 trigger from earlier `schtasks /Create /SC ONCE /ST 23:59` + manual `/Run`, and started themselves at 23:59:00, while A2 was running (it had started at 23:44). From 00:12:41 A2's llama-server stopped answering (`urlopen error [WinError 10061]`, connection refused) for the last 15 problems. Whether it crashed under those jobs or was killed I do not know. So A2 has 25 answers, all identical to A's, and its speed (9.7 tok/s, stable over the 25) is the baseline I use. Added to the protocol: list the `llm-*` triggers before a long host run, and delete or disable a one-shot task's trigger after running it by hand.
+- Arm B had 3 server errors, `js_02`-`js_04` at 20:56, one to three minutes after its server started: `vk::Device::allocateMemory: ErrorOutOfDeviceMemory` (HTTP 500, retried twice each). The server then answered the other 37 normally; the cause is unknown. I did not rerun them because the GPU was by then in use by the jobs above, so B is compared on 37 problems; the runner keeps the error rows in `B.jsonl` and `qreport.py` leaves them out.
+- Arm A's median 8.6 tok/s is low: its first 20 requests (7.8 median) overlap the time I polled the host with a PowerShell call every minute, its last 20 (9.1) do not. I switched to `scp`-only polling after that and use A2's 9.7 as the speed baseline. This is a correlation, not a proven cause. Likewise three requests in the smoke and probe runs fell to 2.7-4.4 tok/s exactly while unit tests ran in the Linux VM, which shares the CPU with the host.
+- On a host shared with other jobs I killed processes I did not own, twice. The grid driver stopped each arm by killing its process tree and then, as a safety net, every `llama-server.exe` by name; at the end of A2 that also killed Ollama's runner for the other jobs (it restarted a second later), and a cleanup script I ran afterwards killed the restarted one before I had checked who owned it. Ollama starts a new runner on its next request, so I expect little damage, but their sweeps may show a failed request around 00:19. The driver (`qgrid.py`) now kills only its own tree, and the count it logs after each arm is "any owner".
+- Everything the grid started was stopped after every arm (`llama-server processes left: 0` in `results/phase3/phase3-full.log` for A-E; A2's line reads 1: Ollama's runner for the other jobs). I loaded no Ollama model.
+
+Next: phase 4 starts from arm A (the tuned config, thinking off, prompt style with an example) and takes `ngram-mod` and 32K as per-task options to test on real edits, not as defaults.

@@ -495,6 +495,31 @@ class Report(unittest.TestCase):
             self.assertRegex(text, r"\| C \| off \|.*\| 31/40 \|")           # arm C differs on the 9 js_0x problems
             self.assertIn("| 5 |", text)                                                   # B's cap hits
 
+    def test_a_retried_api_error_is_replaced_by_the_later_record(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = Path(d) / "B.jsonl"
+            rows = [{"type": "meta", "arm": "B"},
+                    {"type": "result", "problem": "p1", "sample": 0, "pass": False, "kind": "api_error"},
+                    {"type": "result", "problem": "p2", "sample": 0, "pass": True, "kind": None},
+                    {"type": "result", "problem": "p1", "sample": 0, "pass": True, "kind": None}]
+            f.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+            meta, got = qbench.read_results(f)
+            self.assertEqual([(r["problem"], r["pass"]) for r in got], [("p2", True), ("p1", True)])
+
+    def test_server_errors_are_left_out_and_counted(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            ids = [p.id for p in PROBLEMS]
+            self.make(d, "A", lambda pid, s: pid in ids[:20])                 # 20/40
+            self.make(d, "B", lambda pid, s: pid in ids[:20])
+            rows = [json.loads(line) for line in (d / "B.jsonl").read_text().splitlines()]
+            for r in rows[1:4]:
+                r.update({"pass": False, "kind": "api_error", "test_fraction": 0.0})
+            (d / "B.jsonl").write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+            text = qreport.build_report(d, "A")
+            self.assertRegex(text, r"\| B \| off \| 37 \| 17 \| 46% \|.*\| 3 \| test_fail: 20 \|")     # n = 37, three server errors listed, not failures
+            self.assertIn("x = server error", text)
+
     def test_pass_at_k_section(self):
         with tempfile.TemporaryDirectory() as d:
             d = Path(d)

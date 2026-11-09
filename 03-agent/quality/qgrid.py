@@ -127,16 +127,6 @@ def running(image: str) -> int:
         return -1
 
 
-def kill_image(image: str) -> None:
-    try:
-        if IS_WINDOWS:
-            subprocess.run(["taskkill", "/F", "/IM", f"{image}.exe"], capture_output=True, timeout=60)
-        else:
-            subprocess.run(["pkill", "-9", "-x", image], capture_output=True, timeout=30)
-    except (OSError, subprocess.SubprocessError):
-        pass
-
-
 def http_ok(url: str, timeout: float = 3.0) -> bool:
     try:
         with urllib.request.urlopen(url, timeout=timeout) as r:  # noqa: S310 - local URL
@@ -213,11 +203,10 @@ def run_arm(arm: dict[str, Any], a: argparse.Namespace, env: dict[str, str]) -> 
                 rc = subprocess.run(rcmd, env=env, stdin=subprocess.DEVNULL).returncode
             log(f"ARM {arm['id']} runner rc={rc}")
         finally:
-            kill_tree(proc)
-            kill_image("llama-server")
+            kill_tree(proc)           # forge serve and its llama-server child; never by image name: the host also runs other jobs' servers
             time.sleep(3)
             left = running("llama-server")
-            log(f"ARM {arm['id']} stopped; llama-server processes left: {left}")
+            log(f"ARM {arm['id']} stopped; llama-server processes on the host now, any owner: {left}")
     return rc
 
 
