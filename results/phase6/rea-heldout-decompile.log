@@ -1,0 +1,14 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-FUpcRDJIo9QmtOq65rZg2i
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_rea_data.py
+├── ✓ Uploaded PythonPackage:modal_rea
+├── ✓ Uploaded PythonPackage:modal_qbench
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/rea-bench
+├── ✓ Created Function decompile_task.
+└── ✓ Created Function sample_answers.
+60 tasks -> /tmp/tmpkqszveyr
+decompiled 60 ok, 0 errors -> /home/arthur/work/local-forge/results/phase6/rea-data
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-FUpcRDJIo9QmtOq65rZg2i

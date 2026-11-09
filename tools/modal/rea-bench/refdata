@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+"""refdata <binary> [address ...]: show the bytes behind data references (Ghidra's DAT_/s_/PTR_ labels).
+
+With no address arguments, reads Ghidra pseudocode on stdin and resolves every DAT_xxxxxxxx it mentions. Ghidra loads a PIE
+ELF at 0x100000, so 0x102068 in the pseudocode is file virtual address 0x2068. Prints hex and the ASCII up to the first NUL,
+which is what a reverse engineer would look at next in Ghidra's listing view.
+
+    refdata ./target 0x102068
+    decomp ./target 0x101255 | refdata ./target
+"""
+import re
+import subprocess
+import sys
+
+N = 64
+
+
+def is_pie(path: str) -> bool:
+    out = subprocess.run(["readelf", "-h", path], capture_output=True, text=True).stdout
+    return "DYN" in out
+
+
+def dump(path: str, addr: int) -> str:
+    va = addr - 0x100000 if is_pie(path) and addr >= 0x100000 else addr
+    out = subprocess.run(["objdump", "-s", f"--start-address={va:#x}", f"--stop-address={va + N:#x}", path],
+                         capture_output=True, text=True).stdout
+    raw = bytearray()
+    for line in out.splitlines():
+        m = re.match(r"^\s*[0-9a-f]+\s+((?:[0-9a-f]{2,8}\s){1,4})", line)
+        if m:
+            raw += bytes.fromhex("".join(m.group(1).split()))
+    if not raw:
+        return f"{addr:#x}: (not in a file-backed section)"
+    text = raw.split(b"\0", 1)[0]
+    printable = text.decode("latin-1") if text and all(32 <= c < 127 for c in text) else None
+    hexs = " ".join(f"{b:02x}" for b in raw[:32])
+    return f"{addr:#x}: {hexs}" + (f'  | ascii up to NUL: "{printable}"' if printable else "")
+
+
+def main():
+    path = sys.argv[1]
+    addrs = [int(a, 16) for a in sys.argv[2:]]
+    if not addrs:
+        addrs = sorted({int(m, 16) for m in re.findall(r"(?:DAT|PTR|s_\w*?)_([0-9a-fA-F]{6,16})", sys.stdin.read())})
+    for a in addrs:
+        print(dump(path, a))
+
+
+if __name__ == "__main__":
+    main()

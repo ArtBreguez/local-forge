@@ -1,0 +1,15 @@
+{
+  "_note": "Ground truth for tools/rea-bench/targets.c, written before any model saw the binaries. Each task names a function in the stripped binary by its address-independent description; the harness gives the model the decompiled pseudocode (Ghidra via REA) and the question. Scoring: 'exact' = answer must contain the string (case-insensitive, whitespace-insensitive); 'any' = at least one of the strings.",
+  "tasks": [
+    {"id": "t1-hash-family", "function": "tag_a", "question": "Which well-known hash algorithm is this function based on? Name it.", "score": "any", "accept": ["fnv", "fowler"]},
+    {"id": "t1b-hash-twist", "function": "tag_a", "question": "The function ends with a constant XOR. Give the constant in hex.", "score": "any", "accept": ["5bd1e995"]},
+    {"id": "t2-xor-key", "function": "tag_b", "question": "This is a repeating-key XOR. Recover the key as an ASCII string.", "score": "exact", "accept": ["m4gn0lia"]},
+    {"id": "t3-magic", "function": "tag_c", "question": "What 4-byte magic value must the header start with? Give it in hex or as the ASCII it spells.", "score": "any", "accept": ["4c465247", "grfl"]},
+    {"id": "t3b-maxver", "function": "tag_c", "question": "What is the highest version number accepted?", "score": "exact", "accept": ["3"]},
+    {"id": "t4-password", "function": "tag_d", "question": "Which input string makes this function return 1?", "score": "exact", "accept": ["orchid-7781"]},
+    {"id": "t5-lcg", "function": "tag_e", "question": "This is a linear congruential generator. Give the multiplier and the number of rounds.", "score": "all", "accept": ["1103515245", "17"]},
+    {"id": "t6-skip", "function": "tag_f", "question": "The checksum skips bytes with one specific value. Which value (hex or the ASCII character)?", "score": "any", "accept": ["0x20", "space", "' '"]},
+    {"id": "t7-format", "function": "tag_g", "question": "What text format does this parse, and which key does it count?", "score": "all", "accept": ["port", "="]},
+    {"id": "t8-alphabet", "function": "tag_h", "question": "Which encoding uses this 32-character alphabet? Give the alphabet string or the encoding name.", "score": "any", "accept": ["ybndrfg8ejkmcpqxot1uwisza345h769", "z-base-32", "zbase32", "z base 32"]}
+  ]
+}

@@ -1,0 +1,13 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-RGtmSrmotGR6SoqVNoKIZz
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_rea.py
+├── ✓ Uploaded PythonPackage:modal_qbench
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/rea-bench
+├── ✓ Created Function run_l4.
+└── ✓ Created Function run_l40s.
+heretic-9b: heldout 32/60  recipe 9/10  agent 4/10  invalid 0  NVIDIA A10 2328s
+codeforge-27b-heretic-iq3: heldout 40/60  recipe 9/10  agent 7/10  invalid 0  NVIDIA A100-SXM4-80GB 2179s
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-RGtmSrmotGR6SoqVNoKIZz

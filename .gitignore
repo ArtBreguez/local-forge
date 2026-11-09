@@ -2,3 +2,4 @@ ocdata/
 node_modules/
 __pycache__/
 *.pyc
+results/phase6/rea-data/*.jsonl

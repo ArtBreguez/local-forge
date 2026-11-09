@@ -1,0 +1,19 @@
+{
+ "model": "qwen35-35b-a3b-heretic",
+ "repo": "mradermacher/Qwen3.5-35B-A3B-heretic-i1-GGUF",
+ "file": "Qwen3.5-35B-A3B-heretic.i1-IQ3_XXS.gguf",
+ "gpu": "NVIDIA A10",
+ "wall_s": 1328,
+ "ghidra": "12.1.4",
+ "rea": "rea-agents@6.8.0",
+ "pseudocode_chars": {
+  "tag_a": 336,
+  "tag_b": 279,
+  "tag_c": 270,
+  "tag_d": 366,
+  "tag_e": 202,
+  "tag_f": 365,
+  "tag_g": 673,
+  "tag_h": 255
+ }
+}

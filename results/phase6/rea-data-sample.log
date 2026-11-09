@@ -1,0 +1,39 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-pI5qowkCUbU5xMNwlVhR4N
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_rea_data.py
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/rea-bench
+├── ✓ Uploaded PythonPackage:modal_qbench
+├── ✓ Uploaded PythonPackage:modal_rea
+├── ✓ Created Function decompile_task.
+└── ✓ Created Function sample_answers.
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+WARNING: Logs may not be continuous
+codeforge-27b-heretic-q4 {'tasks': 1200, 'answers': 4800, 'correct': 3694, 'solved_tasks': 1005}
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-pI5qowkCUbU5xMNwlVhR4N

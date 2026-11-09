@@ -1,0 +1,12 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-DxzgpcxqNcV9hr9GEHIrZn
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_rea.py
+├── ✓ Uploaded PythonPackage:modal_qbench
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/rea-bench
+├── ✓ Created Function run_l4.
+└── ✓ Created Function run_l40s.
+heretic-9b: recipe 7/10  agent 0/10  invalid 0  NVIDIA L40S 886s
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-DxzgpcxqNcV9hr9GEHIrZn

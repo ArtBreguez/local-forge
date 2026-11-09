@@ -1,0 +1,15 @@
+✓ Initialized. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-SNONJ0f0YUNmLZVR2WGdWE
+✓ Created objects.
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/modal_rea.py
+├── ✓ Uploaded /home/arthur/work/local-forge/tools/rea-bench
+├── ✓ Uploaded PythonPackage:modal_qbench
+├── ✓ Created Function run_l4.
+└── ✓ Created Function run_l40s.
+heretic-9b: recipe 8/10  agent 0/10  invalid 0  NVIDIA A10 1477s
+qwen35-35b-a3b-heretic: recipe 8/10  agent 2/10  invalid 0  NVIDIA A10 1328s
+codeforge-27b-heretic-iq3: recipe 8/10  agent 6/10  invalid 0  NVIDIA L40S 1203s
+codeforge-27b-heretic-q4: recipe 9/10  agent 3/10  invalid 0  NVIDIA A100-SXM4-40GB 1866s
+Stopping app - local entrypoint completed.
+✓ App completed. View run at 
+https://modal.com/apps/machinerevolution85/main/ap-SNONJ0f0YUNmLZVR2WGdWE
