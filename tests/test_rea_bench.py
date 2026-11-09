@@ -50,6 +50,19 @@ def run_harness(src: str, opt: str, extra=(), cc: str = "gcc") -> subprocess.Com
         return subprocess.run([str(exe)], capture_output=True, text=True, timeout=30)
 
 
+def build_binary(src: str, opt: str, out: pathlib.Path, extra=()) -> None:
+    r = subprocess.run(["gcc", opt, "-fno-lto", *extra, "-o", str(out), "-x", "c", "-"], input=src, capture_output=True, text=True, timeout=60)
+    assert r.returncode == 0, r.stderr
+
+
+def global_text_symbols(src: str, opt: str) -> set:
+    with tempfile.TemporaryDirectory() as d:
+        exe = pathlib.Path(d, "t.sym")
+        build_binary(src, opt, exe)
+        nm = subprocess.run(["nm", str(exe)], capture_output=True, text=True).stdout
+    return {line.split()[2] for line in nm.splitlines() if len(line.split()) == 3 and line.split()[1] == "T"}
+
+
 def _ubsan_works() -> bool:
     r = subprocess.run(["gcc", "-fsanitize=undefined", "-fno-sanitize-recover=all", "-o", "/dev/null", "-x", "c", "-"],
                        input="int main(void){return 0;}", capture_output=True, text=True)
@@ -206,6 +219,12 @@ class FamilyChecks:
                 self.assertEqual(r.stdout, want, f"{t.id} ({t.variant}) {opt} {extra}")
             proven += 1
         self.assertGreater(proven, 0, "at least some variants have a harness")
+
+    def test_proc_is_a_global_text_symbol(self):
+        """modal_rea_data.py finds the function with `nm t.sym | grep ' T proc$'`; check that for the stub-main build."""
+        for t in self.tasks:
+            for opt in ("-O0", "-O2"):
+                self.assertIn("proc", global_text_symbols(t.source(), opt), f"{t.id} {opt}")
 
     def test_scorer_accepts_canonical_and_rejects_wrong(self):
         for t in self.tasks:
@@ -396,6 +415,40 @@ class BoundsModel(unittest.TestCase):
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "loop_iterations"}, {"up_lt", "up_le", "down_gt", "down_ge"})
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "index_limit"}, set(range(6)))
         self.assertEqual({t.params["form"] for t in tasks if t.variant == "range_chain"}, set(range(5)))
+
+
+class MultiModel(unittest.TestCase):
+    """The helper must stay a separate, uncloned function that proc really calls, at every optimisation level (gcc)."""
+    OBJDUMP = shutil.which("objdump")
+
+    def calls_in(self, disasm: str, fn: str) -> set:
+        section, on = [], False
+        for line in disasm.splitlines():
+            if line.endswith(f"<{fn}>:"):
+                on = True
+            elif on and line.endswith(">:"):
+                break
+            elif on:
+                section.append(line)
+        return {m for l in section for m in __import__("re").findall(r"(?:call|jmp)\s+[0-9a-f]+ <([^>+]+)>", l)}
+
+    @unittest.skipUnless(OBJDUMP, "objdump is not installed")
+    def test_helpers_are_called_not_inlined_or_cloned(self):
+        tasks = [t for s in (21, 22) for t in families.generate("multi", 5, s)]
+        for t in tasks:
+            for opt in core.OPTS:
+                with tempfile.TemporaryDirectory() as d:
+                    exe = pathlib.Path(d, "t.sym")
+                    build_binary(t.source(), opt, exe)
+                    syms = global_text_symbols(t.source(), opt)
+                    dis = subprocess.run([self.OBJDUMP, "-d", "--no-show-raw-insn", str(exe)], capture_output=True, text=True).stdout
+                for h in t.helpers:
+                    self.assertIn(h, syms, f"{t.id} {opt}: {h} must be a global symbol")
+                callees = self.calls_in(dis, "proc")
+                self.assertIn(t.helpers[0], callees, f"{t.id} {opt}: proc must call {t.helpers[0]}, calls {callees}")
+                if len(t.helpers) > 1:
+                    self.assertIn(t.helpers[1], self.calls_in(dis, t.helpers[0]), f"{t.id} {opt}: helper must call helper2")
+                self.assertFalse([c for c in callees if "constprop" in c or "isra" in c or "part" in c], callees)
 
 
 class AntidebugModel(unittest.TestCase):
