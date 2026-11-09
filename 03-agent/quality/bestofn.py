@@ -181,6 +181,18 @@ def host_table(problem_ids: list[str], greedy, samples, vis, gvis, ns: list[int]
     return "\n".join(lines)
 
 
+def n_versus_n(problem_ids: list[str], greedy, samples, vis, gvis, ns: list[int]) -> str:
+    """Each N against the next larger one on the same problems (exact McNemar, hidden half and full tests): is the extra sampling worth it?"""
+    per = {n: evaluate(problem_ids, greedy, samples, vis, gvis, n) for n in ns}
+    out = []
+    for lo, hi in zip(ns, ns[1:]):
+        for label, key in (("hidden half", "bon_hidden"), ("full tests", "bon_full")):
+            only_lo = sum(1 for pid in problem_ids if per[lo][pid][key] and not per[hi][pid][key])
+            only_hi = sum(1 for pid in problem_ids if per[hi][pid][key] and not per[lo][pid][key])
+            out.append(f"best-of-{lo} vs best-of-{hi}, {label}: only best-of-{lo} {only_lo}, only best-of-{hi} {only_hi}, McNemar p = {qbench.mcnemar_exact(only_lo, only_hi):.3f}")
+    return "\n".join(out)
+
+
 def candidate_stats(problem_ids: list[str], samples, vis) -> str:
     rows = [(pid, s, r) for pid in problem_ids for s, r in samples.get(pid, {}).items()]
     n = len(rows)
@@ -381,6 +393,8 @@ def main(argv: list[str] | None = None) -> int:
         print(candidate_stats(problem_ids, samples, vis), "\n")
         if ns:
             print(by_lang(problem_ids, evaluate(problem_ids, greedy, samples, vis, gvis, ns[-1])))
+        if len(ns) > 1:
+            print("\n" + n_versus_n(problem_ids, greedy, samples, vis, gvis, ns))
         return 0
     meta = json.loads(a.meta.read_text(encoding="utf-8")) if a.meta else {}
     print(model_table(a.dir, a.ref, meta, parse_ns(a.ns)))

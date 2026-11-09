@@ -125,6 +125,19 @@ class Selection(unittest.TestCase):
         self.assertIn("best-of-1", table)
         self.assertIn("2/4 = 50%", table)
 
+    def test_n_versus_n_counts_what_the_extra_candidates_win(self):
+        ids = ["a", "b", "c"]
+        greedy = {k: row(k, 0, False, 40) for k in ids}
+        gvis = {(k, 0): score(k, 0, False, False) for k in ids}
+        # a: the 2nd candidate is good (N=2 wins it); b: the 2nd passes visible only (N=2 takes a wrong answer); c: no help at all
+        samples = {"a": {0: row("a", 0, False, 10), 1: row("a", 1, True, 10)}, "b": {0: row("b", 0, False, 10), 1: row("b", 1, False, 10)},
+                   "c": {0: row("c", 0, False, 10), 1: row("c", 1, False, 10)}}
+        vis = {("a", 0): score("a", 0, False, False), ("a", 1): score("a", 1, True, True), ("b", 0): score("b", 0, False, False),
+               ("b", 1): score("b", 1, True, False), ("c", 0): score("c", 0, False, False), ("c", 1): score("c", 1, False, False)}
+        text = bestofn.n_versus_n(ids, greedy, samples, vis, gvis, [1, 2])
+        self.assertIn("best-of-1 vs best-of-2, hidden half: only best-of-1 0, only best-of-2 1, McNemar p = 1.000", text)
+        self.assertIn("full tests: only best-of-1 0, only best-of-2 1", text)
+
     def test_complete_rounds_ignores_server_errors_and_stops_at_the_first_gap(self):
         ids = ["a", "b"]
         rows = [row("a", 0, True, 1), row("b", 0, True, 1), row("a", 1, True, 1), row("b", 1, False, 1, kind="api_error"), row("a", 2, True, 1)]
