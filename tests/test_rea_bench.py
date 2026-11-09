@@ -147,6 +147,8 @@ class Views(unittest.TestCase):
         self.assertIn("general.architecture = qwen35", text)
         self.assertIn("qwen35.block_count = 33", text)
         self.assertLessEqual(len(text), reacli.MAX_CHARS + 80)
+        self.assertIn("tensors: ", text, "the chat template is cut, so the totals at the end are not lost")
+        self.assertLess(len(text), 4000)
 
     def test_decompile_view_is_the_pseudocode(self):
         nr = reacli.normalized((ROOT / "results" / "rea" / "decompile-forge_checksum.json").read_text(encoding="utf-8"))

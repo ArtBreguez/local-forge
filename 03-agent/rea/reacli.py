@@ -113,7 +113,8 @@ def view_model(nr: Any) -> str:
         if m.get("element_count") is not None:
             lines.append(f"{m.get('key')} = <{m.get('type')} array, {m.get('element_count')} elements>")
         else:
-            lines.append(f"{m.get('key')} = {m.get('value')}")
+            value = str(m.get("value"))
+            lines.append(f"{m.get('key')} = {value if len(value) <= 160 else value[:160] + '... [' + str(len(value)) + ' characters]'}")
     totals = nr.get("totals") or {}
     lines.append(f"tensors: {len(nr.get('tensors') or [])}, parameters: {totals.get('parameter_count')}")
     return _cap("\n".join(lines), MAX_CHARS)
