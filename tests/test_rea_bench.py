@@ -257,6 +257,50 @@ class CrcReference(unittest.TestCase):
             self.assertEqual(p["lit"], f_crc.reflect(p["poly"], p["width"]) if p["refl"] else p["poly"])
 
 
+class CipherReference(unittest.TestCase):
+    """Python references behind the cipher harness, checked against published vectors and round trips."""
+    def test_rc4_vector(self):
+        from rea_bench import f_cipher
+        self.assertEqual(f_cipher.rc4(b"Key", b"Plaintext").hex(), "bbf316e8d940af0ad3")
+
+    def test_chacha20_rfc7539_block(self):
+        from rea_bench import f_cipher
+        key = [int.from_bytes(bytes(range(i, i + 4)), "little") for i in range(0, 32, 4)]
+        nonce = [int.from_bytes(bytes.fromhex(h), "little") for h in ("00000009", "0000004a", "00000000")]   # bytes 00 00 00 09 / 00 00 00 4a / 0
+        out = f_cipher.chacha_block(key, 1, nonce, 20)
+        self.assertEqual([f"{w:08x}" for w in out[:4]], ["e4e7f110", "15593bd1", "1fdd0f50", "c47120a3"])
+        self.assertEqual(f"{out[15]:08x}", "4e3c50a2")
+
+    def test_salsa_core_zero_and_difference_from_chacha(self):
+        from rea_bench import f_cipher
+        self.assertEqual(f_cipher.salsa_core([0] * 16, 20), [0] * 16)
+        key = list(range(1, 9))
+        self.assertNotEqual(f_cipher.salsa_block(key, 1, [2, 3], 20), f_cipher.chacha_block(key, 1, [2, 3, 4], 20))
+
+    def test_tea_xtea_zero_key_vectors_and_round_trip(self):
+        from rea_bench import f_cipher
+        z = [0, 0, 0, 0]
+        self.assertEqual(f_cipher.tea((0, 0), z, 32), (0x41EA3A0A, 0x94BAA940))
+        self.assertEqual(f_cipher.xtea((0, 0), z, 32), (0xDEE9D4D8, 0xF7131ED9))
+        key = [0x01234567, 0x89ABCDEF, 0xFEDCBA98, 0x76543210]
+        for fn in (f_cipher.tea, f_cipher.xtea):
+            for rounds in (16, 32, 48):
+                enc = fn((0xDEADBEEF, 0x0BADF00D), key, rounds)
+                self.assertEqual(fn(enc, key, rounds, decrypt=True), (0xDEADBEEF, 0x0BADF00D))
+
+    def test_name_rejection_rules(self):
+        from rea_bench import f_cipher
+        tea = f_cipher._truth("tea", [["32", "0x20"]], "enc")
+        xtea = f_cipher._truth("xtea", [["32", "0x20"]], "dec")
+        s = scoring.score
+        self.assertTrue(s("TEA (Tiny Encryption Algorithm), encrypts, 32 iterations", tea))
+        self.assertFalse(s("XTEA, encrypts, 32", tea))
+        self.assertFalse(s("TEA, decrypts, 32", tea))
+        self.assertTrue(s("XTEA (eXtended TEA): it decrypts, 32 rounds", xtea))
+        self.assertFalse(s("TEA, decrypts, 32", xtea))
+        self.assertFalse(s("XTEA, encrypts, 32", xtea))
+
+
 for _fam in families.modules():
     if _fam != "legacy":
         globals()[f"Family_{_fam}"] = type(f"Family_{_fam}", (FamilyChecks, unittest.TestCase), {"family": _fam})
