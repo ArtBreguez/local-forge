@@ -237,8 +237,10 @@ class Llm:
         self.prompt_tokens = self.completion_tokens = self.calls = 0
         self.seconds = 0.0
 
-    def chat(self, system: str, user: str, timeout: float) -> tuple[str, dict[str, Any]]:
-        body = {"model": self.model, "temperature": self.temperature, "seed": self.seed, "max_tokens": self.max_tokens, "stream": False,
+    def chat(self, system: str, user: str, timeout: float, temperature: float | None = None, seed: int | None = None,
+             max_tokens: int | None = None) -> tuple[str, dict[str, Any]]:
+        body = {"model": self.model, "temperature": self.temperature if temperature is None else temperature,
+                "seed": self.seed if seed is None else seed, "max_tokens": max_tokens or self.max_tokens, "stream": False,
                 "cache_prompt": True, "chat_template_kwargs": {"enable_thinking": self.thinking},
                 "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}]}
         req = urllib.request.Request(self.url, data=json.dumps(body).encode("utf-8"), headers={"Content-Type": "application/json"})
@@ -299,7 +301,7 @@ def build_prompt(task: str, repo: Path, protect: set[str], failing: TestResult |
     if mode == "review":
         parts.append("RESULT\nThe visible tests pass. Hidden tests check the requirements of the task text more strictly. Compare the files with the task "
                      "text point by point. If any requirement is not implemented yet, reply with the FILE blocks that implement it. If everything "
-                     "is implemented, reply with exactly: DONE")
+                     "is implemented, reply with exactly: DONE. No analysis, no explanation: only DONE or FILE blocks.")
     elif failing is not None and failing.blocks:
         total = failing.total if failing.total is not None else "?"
         names = [n for n, _ in failing.blocks]
@@ -309,6 +311,9 @@ def build_prompt(task: str, repo: Path, protect: set[str], failing: TestResult |
         parts.append("RESULT\nThe visible tests pass, but the task is not necessarily finished: do what the task text asks.")
     if history:
         parts.append("EARLIER ROUNDS\n" + "\n".join(history[-3:]))
+    if history and mode != "review" and any("did not fix" in h or "nothing was written" in h or "no FILE block" in h for h in history[-2:]):
+        parts.append("Your last reply changed nothing or did not fix the failure. Read the failing output again, work out what the code returns "
+                     "and what the test expects, and change the code accordingly.")
     parts.append("Reply with the FILE blocks of the next change.")
     return "\n\n".join(parts)
 
@@ -416,7 +421,7 @@ class Run:
                     notes.append(f"{rel}: NOT written, it does not parse: {jerr}")
                     continue
             if before == text:
-                notes.append(f"{rel}: identical to the current file (no change)")
+                notes.append(f"{rel}: identical to the current file (no change), so the failure was not fixed")
                 continue
             self.written.add(rel)
             self.stats["edits"] += 1
@@ -445,7 +450,7 @@ class Run:
             if self.llm.calls >= a.max_calls:
                 self.stop_reason = "call budget used up"
                 break
-            if self.left() < 90:
+            if self.left() < 150:        # a rewrite of a file takes up to ~4 minutes at 9 tok/s: do not start one that cannot finish
                 self.stop_reason = "deadline"
                 break
             if no_progress >= a.retries:
@@ -455,8 +460,13 @@ class Run:
                 mode = "fix"
             prompt = build_prompt(self.task, self.repo, self.protect, None if mode == "review" else res,
                                   failure_files(res, self.repo, self.protect), self.history, mode)
+            # greedy decoding repeats itself: after a round without progress the same prompt would give the same reply, so a stuck
+            # loop retries with a little temperature (and another seed); the first attempt of every step stays greedy
+            temp = a.temperature if no_progress == 0 else min(0.8, a.retry_temperature * no_progress)
             try:
-                reply, meta = self.llm.chat(SYSTEM, prompt, self.left() - 20)
+                reply, meta = self.llm.chat(SYSTEM, prompt, self.left() - 20, temp, a.seed + rounds,
+                                            a.review_max_tokens if mode == "review" else None)
+                meta["temperature"] = temp
             except (urllib.error.URLError, OSError, ValueError, TimeoutError) as e:
                 self.stop_reason = f"model error: {type(e).__name__}: {str(e)[:120]}"
                 break
@@ -541,7 +551,9 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--reviews", type=int, default=1, help="comparisons with the task text once the visible tests pass")
     ap.add_argument("--deadline-s", type=float, default=840.0, help="stop starting new requests when this many seconds are used")
     ap.add_argument("--max-tokens", type=int, default=2200)
+    ap.add_argument("--review-max-tokens", type=int, default=1100, help="a review that rambles instead of answering is cut here")
     ap.add_argument("--temperature", type=float, default=0.0)
+    ap.add_argument("--retry-temperature", type=float, default=0.3, help="temperature added per round without progress (0: stay greedy)")
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--no-repair", action="store_true", help="skip the deterministic Python indentation repair (arm T-norepair)")
     a = ap.parse_args(argv)

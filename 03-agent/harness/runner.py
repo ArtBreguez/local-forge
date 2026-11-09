@@ -96,13 +96,13 @@ def agent_env(a: argparse.Namespace) -> dict[str, str]:
 
 
 def start_agent(arm: dict[str, Any], t: taskbench.Task, work: Path, repo: Path, a: argparse.Namespace, mt: metermod.Meter | None,
-                log: Any) -> tuple[proctree.ProcTree, Path | None]:
+                log: Any, run_idx: int = 1) -> tuple[proctree.ProcTree, Path | None]:
     env = agent_env(a)
     if arm["kind"] == "orchestrator":
         result = work / "orch-result.json"
         argv = [a.python or sys.executable, "-u", str(ORCH), "--endpoint", a.endpoint, "--repo", str(repo), "--task-file", str(work / "prompt.md"),
                 "--test-cmd", json.dumps(taskbench.expand(t.test_cmd, a.python, a.node)), "--lang", t.lang, "--result", str(result),
-                "--deadline-s", str(max(60.0, a.time_limit - a.grace_s)), "--max-calls", str(a.max_calls)]
+                "--deadline-s", str(max(60.0, a.time_limit - a.grace_s)), "--max-calls", str(a.max_calls), "--seed", str(run_idx)]
         for p in t.visible_tests:
             argv += ["--protect", p]
         if arm.get("no_repair"):
@@ -146,7 +146,7 @@ def run_one(t: taskbench.Task, arm_id: str, run_idx: int, a: argparse.Namespace,
     try:
         with open(log_path, "wb") as log:
             try:
-                tree, result_path = start_agent(arm, t, base, repo, a, mt, log)
+                tree, result_path = start_agent(arm, t, base, repo, a, mt, log, run_idx)
             except OSError as e:             # e.g. the OpenCode executable is missing: a recorded failure, not a crashed grid
                 tree, start_error = None, f"{type(e).__name__}: {e}"[:300]
             if tree is None:
