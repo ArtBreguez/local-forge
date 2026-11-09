@@ -1,0 +1,1 @@
+The test `escaped quotes` in `test/csv.test.js` fails. Find the bug in `src/csv.js` and fix it, without changing the documented behaviour of `parseCsvLine` (see the comment above it) and without breaking the tests that pass. Run the tests with `node --test`. More tests that you cannot see check the same function. Do not modify anything under `test/`.

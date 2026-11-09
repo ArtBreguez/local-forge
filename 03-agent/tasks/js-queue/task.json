@@ -1,0 +1,6 @@
+{"id": "js-queue", "lang": "js", "kind": "two-file", "difficulty": "medium",
+ "title": "priorities in the task queue and its report (two files)",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/queue.test.js", "test/report.test.js"],
+ "hidden_tests": ["test/priority.hidden.test.js"],
+ "start_state": "failing"}

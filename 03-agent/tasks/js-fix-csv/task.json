@@ -1,0 +1,6 @@
+{"id": "js-fix-csv", "lang": "js", "kind": "bugfix", "difficulty": "medium",
+ "title": "bug fix: doubled quotes inside a quoted CSV field",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/csv.test.js"],
+ "hidden_tests": ["test/csv.hidden.test.js"],
+ "start_state": "failing"}

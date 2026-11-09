@@ -1,0 +1,6 @@
+{"id": "py-discount", "lang": "py", "kind": "two-file", "difficulty": "medium",
+ "title": "per-line discounts in the cart and on the receipt (two files)",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_cart.py", "tests/test_receipt.py"],
+ "hidden_tests": ["tests/test_discount_hidden.py"],
+ "start_state": "failing"}

@@ -1,0 +1,1 @@
+Implement `parseDuration` in `src/duration.js` (read the comment at the top of that file for the specification). The visible tests are in `test/duration.test.js`; more tests that you cannot see check the same behaviour. Do not modify anything under `test/`.

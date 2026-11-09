@@ -1,0 +1,6 @@
+{"id": "js-lru", "lang": "js", "kind": "function", "difficulty": "medium",
+ "title": "LRU cache class",
+ "test_cmd": ["{node}", "--test"],
+ "visible_tests": ["test/lru.test.js"],
+ "hidden_tests": ["test/lru.hidden.test.js"],
+ "start_state": "failing"}

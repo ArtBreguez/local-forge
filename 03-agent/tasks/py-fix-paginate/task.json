@@ -1,0 +1,6 @@
+{"id": "py-fix-paginate", "lang": "py", "kind": "bugfix", "difficulty": "easy",
+ "title": "bug fix: the last partial page is missing",
+ "test_cmd": ["{python}", "-m", "unittest"],
+ "visible_tests": ["tests/__init__.py", "tests/test_pager.py"],
+ "hidden_tests": ["tests/test_pager_hidden.py"],
+ "start_state": "failing"}
