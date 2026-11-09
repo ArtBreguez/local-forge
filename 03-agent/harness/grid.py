@@ -2,10 +2,12 @@
 """Run the phase 4 grid on the machine that holds the model (the Windows host): servers, arms, tasks, runs. Stdlib only.
 
     python grid.py --stages "O+T@1;T-norepair@1;O+T@2;T-ngram@1" --out-dir C:\\...\\results --work-dir C:\\...\\work --repo C:\\...\\forge\\repo
+    python grid.py --stages "O30@1;O30-ngram@1;O30-tool@1;O30@2" ...          # phase 5: the 30-minute arms, each under its own limit
 
 A stage is `arm+arm@run` (all tasks, in a fixed shuffled order, one arm after the other for each task, so the arms see the same
 machine state). `forge serve` is started once per distinct server configuration (config A, or A + `--spec ngram-mod`) and killed by
-its own PID tree when the configuration changes and at the end; the runner starts one agent at a time. Ends with an `exit=<code>` line,
+its own PID tree when the configuration changes and at the end, so a stage whose arms differ in server flags restarts it for every task;
+put such arms in separate stages. The runner starts one agent at a time. Ends with an `exit=<code>` line,
 which is also what the other host jobs read as "the GPU is free". A run already in `<out-dir>/<arm>.jsonl` is skipped, so the same
 command resumes after a kill. `--budget-min` stops launching new runs after that many minutes; `--stop-file` stops the same way when the
 file appears (a gentle brake: the running agent finishes).
@@ -107,8 +109,9 @@ class Server:
 
 def runner_cmd(a: argparse.Namespace, arm: str, task: str, run: int) -> list[str]:
     cmd = [a.python, str(HERE / "runner.py"), "--arm", arm, "--tasks", task, "--runs", str(run), "--endpoint", f"http://127.0.0.1:{a.port}/v1",
-           "--out-dir", str(a.out_dir), "--work-dir", str(a.work_dir), "--time-limit", str(a.time_limit), "--python", a.python,
-           "--shuffle-seed", "0", "--note", a.note]
+           "--out-dir", str(a.out_dir), "--work-dir", str(a.work_dir), "--python", a.python, "--shuffle-seed", "0", "--note", a.note]
+    if a.time_limit is not None:             # otherwise each arm runs under its own limit (O: 900 s, the O30 arms: 1800 s)
+        cmd += ["--time-limit", str(a.time_limit)]
     if a.node:
         cmd += ["--node", a.node]
     if a.opencode:
@@ -132,7 +135,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--oc-cache-seed", default=None)
     ap.add_argument("--port", type=int, default=8081)
     ap.add_argument("--health-timeout", type=float, default=600.0)
-    ap.add_argument("--time-limit", type=float, default=runner.DEFAULT_LIMIT_S)
+    ap.add_argument("--time-limit", type=float, default=None, help="seconds per run for every arm (default: the arm's own limit)")
     ap.add_argument("--shuffle-seed", type=int, default=4)
     ap.add_argument("--budget-min", type=float, default=0.0, help="stop launching runs after this many minutes (0: no limit)")
     ap.add_argument("--stop-file", type=Path, default=None)

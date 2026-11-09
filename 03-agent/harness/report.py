@@ -1,8 +1,14 @@
 #!/usr/bin/env python3
-"""Phase 4 report: success per arm with Wilson 95% intervals, the paired comparison of two arms (exact McNemar), median minutes per
+"""Phase 4/5 report: success per arm with Wilson 95% intervals, the paired comparison of two arms (exact McNemar), median minutes per
 task, the usable / not usable verdict of docs/PROTOCOL.md. Reads `<dir>/<arm>.jsonl` written by runner.py.
 
     python report.py results/phase4 > results/phase4/report.md
+    python report.py results/phase5 --phase4 results/phase4 > results/phase5/report.md
+
+Phase 5 adds what a 30-minute arm needs: each arm is judged under its own limit *and* re-scored under the protocol's 15 minutes (a pass that
+took more than 900 s does not count there), the passes that arrive after minute 15 are listed, the tasks that timed out in phase 4 get
+their own table, and the speed of an arm (the server's own generation tok/s, speculative draft acceptance) is reported next to its success.
+`--phase4 DIR` brings the O rows of phase 4 in as the baseline `O`.
 """
 from __future__ import annotations
 
@@ -17,7 +23,8 @@ import qbench  # noqa: E402
 
 USABLE_RATE = 0.60
 USABLE_MEDIAN_MIN = 15.0
-ORDER = ["O", "T", "T-norepair", "T-ngram"]
+ORDER = ["O", "T", "T-norepair", "T-ngram", "O30", "O30-ngram", "O30-tool"]
+LIMIT15_S = 900.0
 
 
 def load_runs(directory: Path) -> tuple[dict[str, dict[str, Any]], dict[str, list[dict[str, Any]]]]:
@@ -62,7 +69,18 @@ def summarize(rows: list[dict[str, Any]], limit_s: float) -> dict[str, Any]:
     for r in first.values():
         reasons[r["reason"]] = reasons.get(r["reason"], 0) + 1
     rate = k / n if n else 0.0
-    return {"tasks": n, "successes": k, "rate": rate, "wilson": (lo, hi), "runs": len(rows), "median_min": med,
+    k15 = sum(1 for r in first.values() if r["success"] and r["wall_s"] <= LIMIT15_S)
+    lo15, hi15 = qbench.wilson(k15, n) if n else (0.0, 0.0)
+    med15 = qbench.median([min(r["wall_s"], LIMIT15_S) / 60 for r in rows])
+    eff = [r["completion_tokens"] / r["model_seconds"] for r in rows if r.get("completion_tokens") and r.get("model_seconds")]
+    drafted = sum(r.get("draft_n") or 0 for r in rows)
+    return {"limit_s": limit_s, "first_ok_15": k15, "first_after_15": k - k15, "wilson_15": (lo15, hi15), "rate_15": k15 / n if n else 0.0,
+            "median_min_15cap": med15, "median_min_first": qbench.median([min(r["wall_s"], limit_s) / 60 for r in first.values()]),
+            "usable_15": bool(n) and k15 / n >= USABLE_RATE and med15 is not None and med15 <= USABLE_MEDIAN_MIN,
+            "gen_tok_s_median": qbench.median([r["gen_tok_s"] for r in rows if r.get("gen_tok_s")]), "eff_tok_s_median": qbench.median(eff),
+            "pp_tok_s_median": qbench.median([r["pp_tok_s"] for r in rows if r.get("pp_tok_s")]),
+            "draft_rate": (sum(r.get("draft_accepted") or 0 for r in rows) / drafted) if drafted else None,
+            "tasks": n, "successes": k, "rate": rate, "wilson": (lo, hi), "runs": len(rows), "median_min": med,
             "median_min_success": qbench.median(mins_ok), "graded": sum(graded) / len(graded) if graded else None,
             "steps_median": qbench.median([r["steps"] for r in rows if r.get("steps") is not None]),
             "tool_calls_median": qbench.median([r["tool_calls"] for r in rows if r.get("tool_calls") is not None]),
@@ -104,15 +122,57 @@ def fmt_min(x: float | None) -> str:
     return "-" if x is None else f"{x:.1f}"
 
 
-def build_report(directory: Path, baseline: str = "O", limit_s: float | None = None) -> str:
+def arm_limit(rows: list[dict[str, Any]], meta: dict[str, Any], default: float = 900.0) -> float:
+    """The limit an arm ran under: the rows say it (`limit_s`), else the meta line, else the default."""
+    return float(max((r.get("limit_s") or 0 for r in rows), default=0) or meta.get("time_limit_s") or default)
+
+
+def cell(r: dict[str, Any] | None) -> str:
+    """One run in a table: `ok 7/7 3.1m` or `timeout 5/10 30.0m`."""
+    if r is None:
+        return "-"
+    return f"{'ok' if r['success'] else r['reason']} {r['tests_passed']}/{r['tests_total']} {r['wall_s'] / 60:.1f}m"
+
+
+def timeout_table(base_rows: list[dict[str, Any]], arms: dict[str, list[dict[str, Any]]]) -> list[str]:
+    """Every task that timed out in some run of the baseline (phase 4's O): what the baseline runs did and what each other arm did, by run,
+    so that "did it finish in 30 minutes, and at which minute" can be read off. A pass after minute 15 is marked `*`: time bought it."""
+    slow = sorted({r["task"] for r in base_rows if r.get("timed_out")})
+    if not slow:
+        return []
+    names = list(arms)
+    out = ["| task | " + " | ".join(["O phase 4 (15 min)"] + [f"{a} run {k}" for a in names for k in (1, 2)]) + " |",
+           "|---|" + "---|" * (1 + 2 * len(names))]
+    for t in slow:
+        base = "; ".join(f"run {r['run']}: {cell(r)}" for r in sorted(base_rows, key=lambda r: r["run"]) if r["task"] == t)
+        cells = []
+        for a in names:
+            for k in (1, 2):
+                r = next((x for x in arms[a] if x["task"] == t and x["run"] == k), None)
+                c = cell(r)
+                if r is not None and r["success"] and r["wall_s"] > LIMIT15_S:
+                    c += " *"
+                cells.append(c)
+        out.append(f"| {t} | {base} | " + " | ".join(cells) + " |")
+    out += ["", "`*` = passed, and only after minute 15."]
+    return out
+
+
+def build_report(directory: Path, baseline: str = "O", limit_s: float | None = None, phase4: Path | None = None) -> str:
     metas, runs = load_runs(directory)
+    if phase4 is not None:                       # phase 4's OpenCode rows, as the baseline arm "O"
+        m4, r4 = load_runs(phase4)
+        if "O" in r4:
+            runs["O"], metas["O"] = r4["O"], m4.get("O", {})
     if not runs:
         return "no runs\n"
     arms = [a for a in ORDER if a in runs] + [a for a in sorted(runs) if a not in ORDER]
-    limit = limit_s or next((m.get("time_limit_s") for m in metas.values() if m.get("time_limit_s")), 900.0)
-    sums = {a: summarize(runs[a], limit) for a in arms}
-    out = ["# Phase 4 report (generated by `03-agent/harness/report.py`)", "",
-           f"Time limit per run: {limit / 60:.0f} min. Success = every test passes, the visible test files are byte-identical, finished inside the limit.",
+    limits = {a: limit_s or arm_limit(runs[a], metas.get(a, {})) for a in arms}
+    sums = {a: summarize(runs[a], limits[a]) for a in arms}
+    title = "Phase 5" if any(a.startswith("O30") for a in arms) else "Phase 4"
+    out = [f"# {title} report (generated by `03-agent/harness/report.py`)", "",
+           "Time limit per run: " + ", ".join(f"{a} {limits[a] / 60:.0f} min" for a in arms) + ". Success = every test passes, the visible test files are "
+           "byte-identical, finished inside the arm's limit.",
            "Primary unit: the first run of each task (every arm has one); a second run, where it exists, is used only for the stability line.", "",
            "| arm | tasks | success | rate (Wilson 95%) | median min (all runs) | median min (successes) | timeouts | tests passed (mean share) | median steps | median tool calls | median completion tokens | usable? |",
            "|---|---|---|---|---|---|---|---|---|---|---|---|"]
@@ -131,16 +191,53 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
             "(at most the limit).", "", "## Why runs failed (first run of each task)", ""]
     for a in arms:
         out.append(f"- **{a}**: " + ", ".join(f"{k} {v}" for k, v in sorted(sums[a]["reasons"].items(), key=lambda kv: -kv[1])))
-    if baseline in runs:
-        out += ["", f"## Paired comparison against {baseline} (first run of each task, exact McNemar)", "",
-                "| arm | tasks in common | only arm | only " + baseline + " | both | neither | p |", "|---|---|---|---|---|---|---|"]
+    long_arms = [a for a in arms if limits[a] > LIMIT15_S]
+    if long_arms:
+        out += ["", "## Time: each arm at its own limit, and re-scored at the protocol's 15 minutes (first run of each task)", "",
+                "| arm | limit | success at its limit | success within 15 min | passes after minute 15 | median min, first runs | median min, all runs | "
+                "median min, all runs capped at 15 | usable at its limit? | usable at 15 min? |", "|---|---|---|---|---|---|---|---|---|---|"]
         for a in arms:
-            if a == baseline:
-                continue
-            pr = paired(runs[baseline], runs[a])
-            out.append(f"| {a} | {pr['n']} | {len(pr['only_b'])} | {len(pr['only_a'])} | {len(pr['both'])} | {pr['neither']} | {pr['p']:.3f} |")
+            x = sums[a]
+            out.append(f"| {a} | {limits[a] / 60:.0f} min | {x['successes']}/{x['tasks']} = {100 * x['rate']:.0f}% ({100 * x['wilson'][0]:.0f}-{100 * x['wilson'][1]:.0f}%) | "
+                       f"{x['first_ok_15']}/{x['tasks']} = {100 * x['rate_15']:.0f}% ({100 * x['wilson_15'][0]:.0f}-{100 * x['wilson_15'][1]:.0f}%) | "
+                       f"{x['first_after_15']} | {fmt_min(x['median_min_first'])} | {fmt_min(x['median_min'])} | {fmt_min(x['median_min_15cap'])} | "
+                       f"{'**yes**' if x['usable'] else 'no'} | {'**yes**' if x['usable_15'] else 'no'} |")
+        out += ["", "A pass counts at 15 minutes only if its run took 900 s or less; a run that ran longer counts as 15 minutes in the capped median. "
+                "The protocol's time criterion is the median per task <= 15 min, and a longer limit does not change it."]
+    pairs = [(baseline, a) for a in arms if a != baseline] if baseline in runs else []
+    if "O30" in runs:
+        pairs += [("O30", a) for a in ("O30-ngram", "O30-tool") if a in runs]
+    if pairs:
+        out += ["", "## Paired comparisons (first run of each task, exact McNemar)", "",
+                "| arm | against | tasks in common | only arm | only against | both | neither | p |", "|---|---|---|---|---|---|---|---|"]
+        for base, a in pairs:
+            pr = paired(runs[base], runs[a])
+            out.append(f"| {a} | {base} | {pr['n']} | {len(pr['only_b'])} | {len(pr['only_a'])} | {len(pr['both'])} | {pr['neither']} | {pr['p']:.3f} |")
             if pr["only_b"] or pr["only_a"]:
-                out.append(f"|  | only {a}: {', '.join(pr['only_b']) or '-'}; only {baseline}: {', '.join(pr['only_a']) or '-'} | | | | | |")
+                out.append(f"|  | only {a}: {', '.join(pr['only_b']) or '-'}; only {base}: {', '.join(pr['only_a']) or '-'} | | | | | | |")
+    if baseline in runs and long_arms:
+        tt = timeout_table(runs[baseline], {a: runs[a] for a in long_arms})
+        if tt:
+            out += ["", f"## Tasks that timed out at 15 minutes in {baseline} (any run): did they finish inside 30, and at which minute?", ""] + tt
+    spoken = [a for a in arms if sums[a]["gen_tok_s_median"] or sums[a]["eff_tok_s_median"]]
+    if spoken:
+        out += ["", "## Speed (per run, from llama-server's own timings; `effective` = completion tokens over the model seconds the proxy measured)", "",
+                "| arm | median generation tok/s | median prompt tok/s | median effective tok/s | draft acceptance | median model steps | median completion tokens | model minutes, all runs |",
+                "|---|---|---|---|---|---|---|---|"]
+        for a in spoken:
+            x = sums[a]
+            mins = sum(r.get("model_seconds") or 0 for r in runs[a]) / 60
+            dr = "-" if x["draft_rate"] is None else f"{100 * x['draft_rate']:.0f}%"
+            out.append(f"| {a} | {fmt_min(x['gen_tok_s_median'])} | {fmt_min(x['pp_tok_s_median'])} | {fmt_min(x['eff_tok_s_median'])} | {dr} | "
+                       f"{fmt_min(x['steps_median'])} | {fmt_min(x['completion_tokens_median'])} | {mins:.0f} |")
+    for a in arms:
+        used = [r["tool_runs"] for r in runs[a] if r.get("tool_runs") is not None]
+        if used:
+            called = [u for u in used if u["calls"]]
+            out += ["", f"## The test tool in {a}", "",
+                    f"- runs: {len(used)}; runs that called it at least once: {len(called)}; calls in all runs: {sum(u['calls'] for u in used)} "
+                    f"(median per run that used it: {fmt_min(qbench.median([u['calls'] for u in called]))}); "
+                    f"calls that reported all tests passing: {sum(u['passing'] for u in used)}; runs whose last call said all pass: {sum(1 for u in used if u['last_ok'])}."]
     out += ["", "## Per task (first run: `ok`, or the reason; tests passed/total; minutes)", ""]
     tasks = sorted({r["task"] for a in arms for r in runs[a]})
     out.append("| task | kind | " + " | ".join(arms) + " |")
@@ -150,8 +247,7 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
     for t in tasks:
         cells = []
         for a in arms:
-            r = firsts[a].get(t)
-            cells.append("-" if r is None else f"{'ok' if r['success'] else r['reason']} {r['tests_passed']}/{r['tests_total']} {r['wall_s'] / 60:.1f}m")
+            cells.append(cell(firsts[a].get(t)))
         out.append(f"| {t} | {kinds.get(t, '')} | " + " | ".join(cells) + " |")
     out += ["", "## Stability (tasks with two runs)", ""]
     for a in arms:
@@ -169,9 +265,13 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
 
 
 def main(argv: list[str] | None = None) -> int:
-    argv = sys.argv[1:] if argv is None else argv
-    directory = Path(argv[0]) if argv else Path("results/phase4")
-    sys.stdout.write(build_report(directory))
+    import argparse
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("directory", nargs="?", type=Path, default=Path("results/phase4"))
+    ap.add_argument("--phase4", type=Path, default=None, help="directory with phase 4's O.jsonl: its rows become the baseline arm O")
+    ap.add_argument("--baseline", default="O")
+    a = ap.parse_args(sys.argv[1:] if argv is None else argv)
+    sys.stdout.write(build_report(a.directory, baseline=a.baseline, phase4=a.phase4))
     return 0
 
 

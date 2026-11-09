@@ -669,10 +669,13 @@ class Grid(unittest.TestCase):
         self.assertEqual(cmd[cmd.index("--runs") + 1], "2")
         self.assertEqual(cmd[cmd.index("--endpoint") + 1], "http://127.0.0.1:8081/v1")
         self.assertEqual(cmd[cmd.index("--time-limit") + 1], "900.0")
+        ns.time_limit = None                    # no global limit: the runner uses the arm's own (phase 5)
+        self.assertNotIn("--time-limit", grid.runner_cmd(ns, "O30", "py-wrap", 1))
 
-    def test_only_t_ngram_changes_the_server(self):
+    def test_only_the_ngram_arms_change_the_server(self):
         self.assertEqual({a: v.get("serve", []) for a, v in runner.ARMS.items()},
-                         {"O": [], "T": [], "T-norepair": [], "T-ngram": ["--spec", "ngram-mod"]})
+                         {"O": [], "T": [], "T-norepair": [], "T-ngram": ["--spec", "ngram-mod"], "O30": [], "O30-ngram": ["--spec", "ngram-mod"],
+                          "O30-tool": []})
 
     def test_opencode_config_points_at_the_given_url_with_context_limit(self):
         c = runner.opencode_config("http://127.0.0.1:9/v1")
