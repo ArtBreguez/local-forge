@@ -223,19 +223,28 @@ def start_server(server: list[str], model: ModelInfo, cfg: Config, *, host: str,
 def serve(model_path: str, *, llama_dir: str | None = None, host: str = "127.0.0.1", port: int = 8080, ctx: int = planmod.CTX_TARGET,
           cache_dir: str | None = None, health_timeout: float = 300.0, server_prefix: list[str] | None = None,
           profile: dict[str, Any] | None = None, depth: int = autotune.DEFAULT_DEPTH, pp_floor: float = autotune.DEFAULT_PP_FLOOR,
-          spec: str | None = None, progress: Callable[[str], None] = print) -> tuple[Server, Selection]:
-    """Probe, select, launch. `server_prefix` replaces the executable lookup (tests use it for a fake server)."""
+          spec: str | None = None, kv: str | None = None, fa: bool | None = None, ubatch: int | None = None,
+          progress: Callable[[str], None] = print) -> tuple[Server, Selection]:
+    """Probe, select, launch. `server_prefix` replaces the executable lookup (tests use it for a fake server).
+
+    `kv`, `fa` and `ubatch` force that setting (for measuring one arm, e.g. q8_0 KV + flash attention). A forced setting
+    bypasses the tuned entry, because the tuning measured other settings; the planner then places the layers for what was asked.
+    """
     model = planmod.load_model(model_path)
     cache = autotune.Cache(cache_dir)
     server_exe = server_prefix or [util.find_tool("llama-server", llama_dir) or ""]
     if not server_exe[0]:
         raise RuntimeError("llama-server not found (use --llama-dir or $FORGE_LLAMA_DIR)")
     profile = profile or probemod.probe(llama_dir, str(Path(model_path).parent))
-    plans = planmod.build_all(profile, model, ctx=ctx, spec=spec)
+    forced = {k: v for k, v in (("kv", kv), ("fa", fa), ("ubatch", ubatch)) if v is not None}
+    plans = planmod.build_all(profile, model, ctx=ctx, spec=spec, **forced)
     name, _ = planmod.choose_plan(profile, plans)
     tuned = None
     bench = util.find_tool("llama-bench", llama_dir)
-    if bench:
+    if forced:
+        progress("select: forced " + " ".join(f"{k}={'on' if v is True else 'off' if v is False else v}" for k, v in forced.items())
+                 + ": the tuned entry is not used, the planner places the layers")
+    elif bench:
         entry = cache.find(profile["fingerprint"], model.fingerprint, autotune.detect_build([bench]), autotune.variant_of(plans[name], depth, pp_floor))
         if entry:
             tuned = autotune.TuneResult.from_dict(entry["result"])

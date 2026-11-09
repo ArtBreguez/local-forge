@@ -1,0 +1,298 @@
+2026-11-08T20:15:47 wrapper start arms=A,B,C,D,E,A2 tag=full maxProblems=0
+2026-11-08T20:15:47 host is free
+2026-11-08T20:15:48 ARM A start: default: forge's tuned config, thinking off
+2026-11-08T20:15:48 ARM A forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T20:16:24 ARM A server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T20:16:24 ARM A llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T20:16:24 ARM A runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm A --out C:\Users\arthu\llm\phase3\results-full\A.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\A.serve.json --note default: forge's tuned config, thinking off --prompt-variant v3 --node C:\Program Files\nodejs\node.exe
+[A] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\A.jsonl)
+[A] 1/40 js_01_camel_to_snake s0 FAIL syntax CAP tokens=512 tok/s=6.129 wall=88.98s eta=58min
+[A] 2/40 js_02_deep_equal s0 FAIL test_fail tokens=346 tok/s=8.015 wall=47.5s eta=43min
+[A] 3/40 js_03_chunk s0 FAIL test_fail tokens=133 tok/s=2.975 wall=57.78s eta=40min
+[A] 4/40 js_04_group_by s0 PASS tokens=138 tok/s=9.386 wall=21.73s eta=33min
+[A] 5/40 js_05_parse_query s0 FAIL test_fail tokens=292 tok/s=9.639 wall=36.61s eta=30min
+[A] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=266 tok/s=9.678 wall=32.42s eta=27min
+[A] 7/40 js_07_add_days s0 FAIL test_fail tokens=458 tok/s=9.608 wall=52.72s eta=27min
+[A] 8/40 js_08_age_on s0 FAIL test_fail tokens=326 tok/s=9.732 wall=38.86s eta=25min
+[A] 9/40 js_09_luhn s0 FAIL test_fail tokens=226 tok/s=9.375 wall=28.94s eta=23min
+[A] 10/40 js_10_flatten s0 FAIL syntax tokens=144 tok/s=7.506 wall=23.74s eta=22min
+[A] 11/40 js_11_memoize s0 PASS tokens=190 tok/s=5.403 wall=40.99s eta=21min
+[A] 12/40 js_12_retry s0 FAIL timeout tokens=183 tok/s=8.759 wall=26.34s eta=21min
+[A] 13/40 js_13_render s0 FAIL test_fail tokens=473 tok/s=4.689 wall=111.39s eta=22min
+[A] 14/40 js_14_emitter s0 FAIL test_fail tokens=450 tok/s=1.886 wall=248.45s eta=28min
+[A] 15/40 js_15_lower_bound s0 PASS tokens=130 tok/s=3.891 wall=49.41s eta=26min
+[A] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=170 tok/s=8.463 wall=29.31s eta=24min
+[A] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=575 tok/s=7.137 wall=87.14s eta=24min
+[A] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=227 tok/s=3.942 wall=68.3s eta=23min
+[A] 19/40 js_19_format_table s0 FAIL test_fail tokens=216 tok/s=7.366 wall=50.11s eta=22min
+[A] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=251 tok/s=9.647 wall=32.14s eta=20min
+[A] 21/40 py_01_parse_duration s0 FAIL test_fail tokens=317 tok/s=6.805 wall=54.11s eta=19min
+[A] 22/40 py_02_roman s0 FAIL syntax CAP tokens=512 tok/s=9.66 wall=57.81s eta=18min
+[A] 23/40 py_03_iso_week s0 FAIL test_fail CAP tokens=512 tok/s=9.001 wall=63.2s eta=17min
+[A] 24/40 py_04_add_months s0 FAIL test_fail tokens=287 tok/s=9.609 wall=34.64s eta=16min
+[A] 25/40 py_05_business_days s0 PASS tokens=203 tok/s=8.443 wall=29.2s eta=15min
+[A] 26/40 py_06_csv_line s0 FAIL test_fail tokens=319 tok/s=9.44 wall=39.84s eta=13min
+[A] 27/40 py_07_balanced s0 FAIL test_fail tokens=161 tok/s=4.971 wall=42.2s eta=12min
+[A] 28/40 py_08_merge_intervals s0 FAIL test_fail tokens=164 tok/s=8.016 wall=27.08s eta=11min
+[A] 29/40 py_09_lru_cache s0 FAIL syntax tokens=230 tok/s=9.307 wall=30.73s eta=10min
+[A] 30/40 py_10_semver_compare s0 FAIL test_fail tokens=978 tok/s=8.053 wall=132.39s eta=10min
+[A] 31/40 py_11_wrap_text s0 FAIL test_fail tokens=210 tok/s=5.803 wall=41.5s eta=9min
+[A] 32/40 py_12_validate_username s0 PASS tokens=244 tok/s=2.488 wall=108.14s eta=8min
+[A] 33/40 py_13_flatten_dict s0 FAIL test_fail tokens=151 tok/s=9.112 wall=20.83s eta=7min
+[A] 34/40 py_14_run_length s0 PASS tokens=350 tok/s=9.176 wall=43.12s eta=6min
+[A] 35/40 py_15_rotated_search s0 PASS tokens=169 tok/s=9.215 wall=24.47s eta=5min
+[A] 36/40 py_16_top_words s0 PASS tokens=216 tok/s=8.825 wall=29.16s eta=4min
+[A] 37/40 py_17_allocate_cents s0 PASS tokens=227 tok/s=9.677 wall=28.3s eta=3min
+[A] 38/40 py_18_spiral s0 FAIL test_fail tokens=316 tok/s=9.239 wall=38.89s eta=2min
+[A] 39/40 py_19_time_12h s0 FAIL test_fail tokens=422 tok/s=9.681 wall=49.66s eta=1min
+[A] 40/40 py_20_maze_steps s0 FAIL test_fail tokens=443 tok/s=7.593 wall=65.2s eta=0min
+[A] done in 36.2 min
+2026-11-08T20:52:39 ARM A runner rc=0
+2026-11-08T20:52:42 ARM A stopped; llama-server processes left: 0
+2026-11-08T20:52:42 ARM B start: A with thinking on, thinking budget 1024 tokens (the server ends the thinking when it is used up)
+2026-11-08T20:52:42 ARM B forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T20:52:42 ARM B server environment: {'LLAMA_ARG_THINK_BUDGET': '1024', 'LLAMA_ARG_THINK_BUDGET_MESSAGE': 'I have used my thinking budget, so I will stop thinking here and write the final answer now.'}
+2026-11-08T20:53:18 ARM B server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T20:53:18 ARM B llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T20:53:18 ARM B runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm B --out C:\Users\arthu\llm\phase3\results-full\B.jsonl --thinking on --think-budget 1152 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\B.serve.json --note A with thinking on, thinking budget 1024 tokens (the server ends the thinking when it is used up) --prompt-variant v3 --budget-message I have used my thinking budget, so I will stop thinking here and write the final answer now. --node C:\Program Files\nodejs\node.exe
+[B] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\B.jsonl)
+[B] 1/40 js_01_camel_to_snake s0 PASS tokens=1437 tok/s=8.515 wall=175.05s eta=114min
+[B] 2/40 js_02_deep_equal s0 FAIL api_error tokens=None tok/s=None wall=17.09s eta=61min
+[B] 3/40 js_03_chunk s0 FAIL api_error tokens=None tok/s=None wall=15.05s eta=43min
+[B] 4/40 js_04_group_by s0 FAIL api_error tokens=None tok/s=None wall=15.05s eta=33min
+[B] 5/40 js_05_parse_query s0 PASS tokens=1334 tok/s=9.623 wall=143.25s eta=43min
+[B] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=1363 tok/s=9.671 wall=145.81s eta=48min
+[B] 7/40 js_07_add_days s0 FAIL test_fail tokens=1515 tok/s=9.625 wall=162.44s eta=53min
+[B] 8/40 js_08_age_on s0 FAIL test_fail tokens=1374 tok/s=9.679 wall=146.66s eta=55min
+[B] 9/40 js_09_luhn s0 FAIL test_fail tokens=1270 tok/s=9.685 wall=135.81s eta=55min
+[B] 10/40 js_10_flatten s0 FAIL test_fail tokens=462 tok/s=9.742 wall=51.66s eta=50min
+[B] 11/40 js_11_memoize s0 PASS tokens=1141 tok/s=9.69 wall=121.77s eta=50min
+[B] 12/40 js_12_retry s0 FAIL test_fail tokens=987 tok/s=9.7 wall=105.47s eta=48min
+[B] 13/40 js_13_render s0 FAIL syntax CAP tokens=2048 tok/s=9.618 wall=217.69s eta=50min
+[B] 14/40 js_14_emitter s0 FAIL test_fail tokens=1384 tok/s=9.699 wall=147.42s eta=50min
+[B] 15/40 js_15_lower_bound s0 PASS tokens=327 tok/s=9.75 wall=37.55s eta=46min
+[B] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=1218 tok/s=9.676 wall=130.56s eta=44min
+[B] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=1532 tok/s=9.674 wall=163.08s eta=44min
+[B] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=1385 tok/s=9.693 wall=147.73s eta=42min
+[B] 19/40 js_19_format_table s0 PASS tokens=1365 tok/s=9.689 wall=145.28s eta=41min
+[B] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=1357 tok/s=9.688 wall=144.48s eta=40min
+[B] 21/40 py_01_parse_duration s0 FAIL syntax CAP tokens=1664 tok/s=9.67 wall=175.89s eta=38min
+[B] 22/40 py_02_roman s0 FAIL syntax tokens=1588 tok/s=9.682 wall=168.64s eta=37min
+[B] 23/40 py_03_iso_week s0 FAIL syntax tokens=538 tok/s=9.728 wall=60.16s eta=34min
+[B] 24/40 py_04_add_months s0 FAIL syntax CAP tokens=1792 tok/s=9.662 wall=190.08s eta=33min
+[B] 25/40 py_05_business_days s0 FAIL syntax tokens=817 tok/s=9.724 wall=88.47s eta=31min
+[B] 26/40 py_06_csv_line s0 FAIL syntax CAP tokens=2048 tok/s=9.658 wall=216.41s eta=29min
+[B] 27/40 py_07_balanced s0 FAIL syntax tokens=1395 tok/s=9.7 wall=148.38s eta=27min
+[B] 28/40 py_08_merge_intervals s0 FAIL syntax tokens=330 tok/s=9.749 wall=38.17s eta=25min
+[B] 29/40 py_09_lru_cache s0 FAIL syntax tokens=992 tok/s=9.689 wall=106.7s eta=23min
+[B] 30/40 py_10_semver_compare s0 FAIL syntax CAP tokens=2176 tok/s=9.645 wall=230.86s eta=21min
+[B] 31/40 py_11_wrap_text s0 FAIL syntax tokens=1257 tok/s=9.711 wall=133.92s eta=19min
+[B] 32/40 py_12_validate_username s0 FAIL syntax tokens=735 tok/s=9.733 wall=80.11s eta=17min
+[B] 33/40 py_13_flatten_dict s0 FAIL syntax tokens=1164 tok/s=9.702 wall=124.05s eta=15min
+[B] 34/40 py_14_run_length s0 FAIL syntax tokens=1365 tok/s=9.673 wall=145.92s eta=13min
+[B] 35/40 py_15_rotated_search s0 PASS tokens=1331 tok/s=9.699 wall=141.91s eta=11min
+[B] 36/40 py_16_top_words s0 PASS tokens=1203 tok/s=9.687 wall=127.97s eta=8min
+[B] 37/40 py_17_allocate_cents s0 FAIL syntax tokens=1273 tok/s=9.702 wall=135.66s eta=6min
+[B] 38/40 py_18_spiral s0 FAIL syntax tokens=472 tok/s=9.67 wall=53.42s eta=4min
+[B] 39/40 py_19_time_12h s0 FAIL syntax CAP tokens=1792 tok/s=9.661 wall=190.16s eta=2min
+[B] 40/40 py_20_maze_steps s0 FAIL syntax tokens=1467 tok/s=9.69 wall=156.02s eta=0min
+[B] done in 84.8 min
+2026-11-08T22:18:03 ARM B runner rc=0
+2026-11-08T22:18:07 ARM B stopped; llama-server processes left: 0
+2026-11-08T22:18:07 ARM C start: KV q8_0 + flash attention on, ubatch 256 (planner re-places the layers)
+2026-11-08T22:18:07 ARM C forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600 --kv q8_0 --fa on --ubatch 256
+2026-11-08T22:18:43 ARM C server up: ngl=18 ctx=16384 fa=True kv=q8_0 ub=256 spec=None source=plan
+2026-11-08T22:18:43 ARM C llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 18 -c 16384 -t 6 -tb 6 -fa on -ctk q8_0 -ctv q8_0 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T22:18:43 ARM C runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm C --out C:\Users\arthu\llm\phase3\results-full\C.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\C.serve.json --note KV q8_0 + flash attention on, ubatch 256 (planner re-places the layers) --prompt-variant v3 --node C:\Program Files\nodejs\node.exe
+[C] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\C.jsonl)
+[C] 1/40 js_01_camel_to_snake s0 FAIL syntax CAP tokens=512 tok/s=9.895 wall=59.22s eta=39min
+[C] 2/40 js_02_deep_equal s0 FAIL test_fail tokens=346 tok/s=9.875 wall=39.42s eta=31min
+[C] 3/40 js_03_chunk s0 FAIL test_fail tokens=124 tok/s=1.926 wall=73.55s eta=36min
+[C] 4/40 js_04_group_by s0 PASS tokens=138 tok/s=9.791 wall=20.08s eta=29min
+[C] 5/40 js_05_parse_query s0 FAIL test_fail tokens=397 tok/s=9.581 wall=46.31s eta=28min
+[C] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=236 tok/s=9.846 wall=28.67s eta=25min
+[C] 7/40 js_07_add_days s0 FAIL syntax tokens=538 tok/s=9.758 wall=59.47s eta=26min
+[C] 8/40 js_08_age_on s0 FAIL test_fail tokens=326 tok/s=9.887 wall=36.94s eta=24min
+[C] 9/40 js_09_luhn s0 FAIL test_fail tokens=228 tok/s=9.963 wall=26.78s eta=23min
+[C] 10/40 js_10_flatten s0 FAIL syntax tokens=144 tok/s=9.976 wall=17.84s eta=21min
+[C] 11/40 js_11_memoize s0 PASS tokens=190 tok/s=9.944 wall=22.52s eta=19min
+[C] 12/40 js_12_retry s0 FAIL timeout tokens=183 tok/s=9.935 wall=21.64s eta=19min
+[C] 13/40 js_13_render s0 PASS tokens=358 tok/s=9.885 wall=40.39s eta=18min
+[C] 14/40 js_14_emitter s0 FAIL test_fail tokens=399 tok/s=9.896 wall=44.31s eta=18min
+[C] 15/40 js_15_lower_bound s0 PASS tokens=130 tok/s=9.973 wall=16.52s eta=16min
+[C] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=170 tok/s=9.82 wall=21.22s eta=15min
+[C] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=483 tok/s=9.845 wall=53.06s eta=15min
+[C] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=227 tok/s=9.914 wall=27.03s eta=14min
+[C] 19/40 js_19_format_table s0 FAIL test_fail tokens=167 tok/s=9.944 wall=20.55s eta=13min
+[C] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=251 tok/s=9.875 wall=29.28s eta=12min
+[C] 21/40 py_01_parse_duration s0 FAIL syntax tokens=289 tok/s=9.762 wall=32.88s eta=12min
+[C] 22/40 py_02_roman s0 FAIL test_fail tokens=354 tok/s=9.967 wall=39.42s eta=11min
+[C] 23/40 py_03_iso_week s0 FAIL test_fail CAP tokens=512 tok/s=9.894 wall=55.88s eta=11min
+[C] 24/40 py_04_add_months s0 FAIL test_fail tokens=294 tok/s=9.882 wall=33.72s eta=10min
+[C] 25/40 py_05_business_days s0 PASS tokens=203 tok/s=9.787 wall=24.5s eta=9min
+[C] 26/40 py_06_csv_line s0 FAIL test_fail tokens=319 tok/s=9.95 wall=35.86s eta=9min
+[C] 27/40 py_07_balanced s0 FAIL test_fail tokens=208 tok/s=10.011 wall=24.69s eta=8min
+[C] 28/40 py_08_merge_intervals s0 FAIL test_fail tokens=146 tok/s=10.015 wall=18.31s eta=7min
+[C] 29/40 py_09_lru_cache s0 FAIL syntax tokens=242 tok/s=9.976 wall=27.97s eta=7min
+[C] 30/40 py_10_semver_compare s0 FAIL test_fail tokens=981 tok/s=9.691 wall=105.39s eta=6min
+[C] 31/40 py_11_wrap_text s0 FAIL test_fail tokens=240 tok/s=10.002 wall=27.77s eta=6min
+[C] 32/40 py_12_validate_username s0 PASS tokens=241 tok/s=9.995 wall=28.03s eta=5min
+[C] 33/40 py_13_flatten_dict s0 FAIL test_fail tokens=151 tok/s=9.861 wall=18.78s eta=4min
+[C] 34/40 py_14_run_length s0 PASS tokens=359 tok/s=9.915 wall=40.39s eta=4min
+[C] 35/40 py_15_rotated_search s0 PASS tokens=172 tok/s=9.969 wall=21.53s eta=3min
+[C] 36/40 py_16_top_words s0 PASS tokens=216 tok/s=9.985 wall=24.75s eta=2min
+[C] 37/40 py_17_allocate_cents s0 FAIL test_fail tokens=402 tok/s=9.73 wall=45.3s eta=2min
+[C] 38/40 py_18_spiral s0 FAIL test_fail tokens=314 tok/s=9.979 wall=35.39s eta=1min
+[C] 39/40 py_19_time_12h s0 FAIL test_fail tokens=492 tok/s=9.911 wall=53.64s eta=1min
+[C] 40/40 py_20_maze_steps s0 PASS tokens=440 tok/s=9.847 wall=48.59s eta=0min
+[C] done in 24.7 min
+2026-11-08T22:43:27 ARM C runner rc=0
+2026-11-08T22:43:30 ARM C stopped; llama-server processes left: 0
+2026-11-08T22:43:30 ARM D start: 32K context, ubatch 256 (planner re-places the layers)
+2026-11-08T22:43:30 ARM D forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600 --ctx 32768 --ubatch 256
+2026-11-08T22:44:26 ARM D server up: ngl=11 ctx=32768 fa=False kv=f16 ub=256 spec=None source=plan
+2026-11-08T22:44:26 ARM D llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 11 -c 32768 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T22:44:26 ARM D runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm D --out C:\Users\arthu\llm\phase3\results-full\D.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\D.serve.json --note 32K context, ubatch 256 (planner re-places the layers) --prompt-variant v3 --node C:\Program Files\nodejs\node.exe
+[D] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\D.jsonl)
+[D] 1/40 js_01_camel_to_snake s0 FAIL test_fail tokens=245 tok/s=2.52 wall=113.14s eta=74min
+[D] 2/40 js_02_deep_equal s0 FAIL test_fail tokens=346 tok/s=8.177 wall=48.66s eta=51min
+[D] 3/40 js_03_chunk s0 FAIL test_fail tokens=151 tok/s=8.069 wall=27.42s eta=39min
+[D] 4/40 js_04_group_by s0 PASS tokens=138 tok/s=7.984 wall=25.62s eta=32min
+[D] 5/40 js_05_parse_query s0 FAIL test_fail tokens=324 tok/s=7.841 wall=48.92s eta=31min
+[D] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=266 tok/s=8.204 wall=40.3s eta=29min
+[D] 7/40 js_07_add_days s0 FAIL test_fail tokens=469 tok/s=6.681 wall=81.39s eta=30min
+[D] 8/40 js_08_age_on s0 FAIL test_fail tokens=326 tok/s=8.278 wall=47.5s eta=29min
+[D] 9/40 js_09_luhn s0 FAIL test_fail tokens=228 tok/s=8.22 wall=34.31s eta=27min
+[D] 10/40 js_10_flatten s0 FAIL syntax tokens=144 tok/s=8.129 wall=25.53s eta=25min
+[D] 11/40 js_11_memoize s0 PASS tokens=190 tok/s=7.523 wall=31.52s eta=23min
+[D] 12/40 js_12_retry s0 FAIL timeout tokens=183 tok/s=7.627 wall=28.55s eta=23min
+[D] 13/40 js_13_render s0 FAIL test_fail tokens=495 tok/s=8.243 wall=66.64s eta=23min
+[D] 14/40 js_14_emitter s0 FAIL test_fail tokens=450 tok/s=7.984 wall=63.31s eta=22min
+[D] 15/40 js_15_lower_bound s0 PASS tokens=130 tok/s=8.244 wall=21.12s eta=21min
+[D] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=170 tok/s=8.301 wall=26.05s eta=19min
+[D] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=491 tok/s=8.136 wall=67.17s eta=19min
+[D] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=228 tok/s=8.241 wall=33.64s eta=18min
+[D] 19/40 js_19_format_table s0 FAIL test_fail tokens=216 tok/s=8.272 wall=32.19s eta=17min
+[D] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=251 tok/s=8.131 wall=36.72s eta=16min
+[D] 21/40 py_01_parse_duration s0 FAIL test_fail tokens=339 tok/s=8.282 wall=46.14s eta=15min
+[D] 22/40 py_02_roman s0 FAIL test_fail tokens=358 tok/s=8.303 wall=49.86s eta=14min
+[D] 23/40 py_03_iso_week s0 FAIL test_fail CAP tokens=512 tok/s=8.237 wall=68.62s eta=14min
+[D] 24/40 py_04_add_months s0 FAIL test_fail tokens=287 tok/s=8.29 wall=41.16s eta=13min
+[D] 25/40 py_05_business_days s0 PASS tokens=203 tok/s=8.222 wall=33.59s eta=12min
+[D] 26/40 py_06_csv_line s0 FAIL test_fail tokens=319 tok/s=8.164 wall=46.81s eta=11min
+[D] 27/40 py_07_balanced s0 FAIL test_fail tokens=167 tok/s=7.884 wall=27.78s eta=10min
+[D] 28/40 py_08_merge_intervals s0 FAIL test_fail tokens=164 tok/s=7.291 wall=31.78s eta=9min
+[D] 29/40 py_09_lru_cache s0 FAIL syntax tokens=230 tok/s=7.584 wall=37.62s eta=8min
+[D] 30/40 py_10_semver_compare s0 FAIL test_fail tokens=1005 tok/s=8.188 wall=129.2s eta=8min
+[D] 31/40 py_11_wrap_text s0 FAIL test_fail tokens=210 tok/s=8.286 wall=30.88s eta=7min
+[D] 32/40 py_12_validate_username s0 PASS tokens=244 tok/s=8.267 wall=35.64s eta=6min
+[D] 33/40 py_13_flatten_dict s0 FAIL test_fail tokens=151 tok/s=6.742 wall=28.78s eta=5min
+[D] 34/40 py_14_run_length s0 PASS tokens=350 tok/s=8.27 wall=48.31s eta=5min
+[D] 35/40 py_15_rotated_search s0 PASS tokens=172 tok/s=8.268 wall=27.97s eta=4min
+[D] 36/40 py_16_top_words s0 PASS tokens=213 tok/s=8.114 wall=33.23s eta=3min
+[D] 37/40 py_17_allocate_cents s0 PASS tokens=227 tok/s=7.642 wall=42.89s eta=2min
+[D] 38/40 py_18_spiral s0 FAIL test_fail tokens=316 tok/s=7.838 wall=48.8s eta=2min
+[D] 39/40 py_19_time_12h s0 FAIL test_fail tokens=557 tok/s=7.861 wall=77.81s eta=1min
+[D] 40/40 py_20_maze_steps s0 PASS tokens=435 tok/s=8.268 wall=58.39s eta=0min
+[D] done in 31.4 min
+2026-11-08T23:15:50 ARM D runner rc=0
+2026-11-08T23:15:53 ARM D stopped; llama-server processes left: 0
+2026-11-08T23:15:53 ARM E start: speculative decoding ngram-mod
+2026-11-08T23:15:53 ARM E forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600 --spec ngram-mod
+2026-11-08T23:16:31 ARM E server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=ngram-mod source=tuned
+2026-11-08T23:16:31 ARM E llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type ngram-mod
+2026-11-08T23:16:31 ARM E runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm E --out C:\Users\arthu\llm\phase3\results-full\E.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\E.serve.json --note speculative decoding ngram-mod --prompt-variant v3 --node C:\Program Files\nodejs\node.exe
+[E] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\E.jsonl)
+[E] 1/40 js_01_camel_to_snake s0 FAIL syntax CAP tokens=512 tok/s=9.563 wall=58.64s eta=38min
+[E] 2/40 js_02_deep_equal s0 FAIL test_fail tokens=346 tok/s=3.713 wall=104.44s eta=52min
+[E] 3/40 js_03_chunk s0 FAIL test_fail tokens=133 tok/s=9.742 wall=18.36s eta=37min
+[E] 4/40 js_04_group_by s0 PASS tokens=138 tok/s=9.678 wall=18.73s eta=30min
+[E] 5/40 js_05_parse_query s0 FAIL test_fail tokens=292 tok/s=9.704 wall=35.31s eta=28min
+[E] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=266 tok/s=9.661 wall=33.27s eta=26min
+[E] 7/40 js_07_add_days s0 FAIL test_fail tokens=458 tok/s=9.343 wall=54.27s eta=26min
+[E] 8/40 js_08_age_on s0 FAIL test_fail tokens=326 tok/s=9.669 wall=38.42s eta=24min
+[E] 9/40 js_09_luhn s0 FAIL test_fail tokens=226 tok/s=9.633 wall=28.08s eta=22min
+[E] 10/40 js_10_flatten s0 FAIL syntax tokens=144 tok/s=9.74 wall=18.91s eta=21min
+[E] 11/40 js_11_memoize s0 PASS tokens=190 tok/s=9.654 wall=23.69s eta=19min
+[E] 12/40 js_12_retry s0 FAIL timeout tokens=183 tok/s=9.556 wall=23.16s eta=19min
+[E] 13/40 js_13_render s0 FAIL test_fail tokens=473 tok/s=9.727 wall=54.28s eta=19min
+[E] 14/40 js_14_emitter s0 FAIL test_fail tokens=443 tok/s=9.376 wall=51.95s eta=18min
+[E] 15/40 js_15_lower_bound s0 PASS tokens=130 tok/s=9.724 wall=18.05s eta=17min
+[E] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=170 tok/s=9.745 wall=22.14s eta=16min
+[E] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=575 tok/s=9.597 wall=65.47s eta=16min
+[E] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=227 tok/s=9.712 wall=28.3s eta=15min
+[E] 19/40 js_19_format_table s0 FAIL test_fail tokens=216 tok/s=9.729 wall=26.64s eta=14min
+[E] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=251 tok/s=9.71 wall=31.5s eta=13min
+[E] 21/40 py_01_parse_duration s0 FAIL test_fail tokens=317 tok/s=8.854 wall=40.91s eta=12min
+[E] 22/40 py_02_roman s0 FAIL syntax CAP tokens=512 tok/s=9.726 wall=57.39s eta=12min
+[E] 23/40 py_03_iso_week s0 FAIL test_fail CAP tokens=512 tok/s=9.65 wall=58.56s eta=12min
+[E] 24/40 py_04_add_months s0 FAIL test_fail tokens=287 tok/s=9.728 wall=34.27s eta=11min
+[E] 25/40 py_05_business_days s0 PASS tokens=203 tok/s=9.757 wall=25.31s eta=10min
+[E] 26/40 py_06_csv_line s0 FAIL test_fail tokens=319 tok/s=9.742 wall=37.19s eta=9min
+[E] 27/40 py_07_balanced s0 FAIL test_fail tokens=161 tok/s=9.352 wall=21.84s eta=9min
+[E] 28/40 py_08_merge_intervals s0 FAIL test_fail tokens=164 tok/s=9.742 wall=21.22s eta=8min
+[E] 29/40 py_09_lru_cache s0 FAIL syntax tokens=230 tok/s=9.732 wall=28.0s eta=7min
+[E] 30/40 py_10_semver_compare s0 FAIL test_fail tokens=1019 tok/s=9.486 wall=112.61s eta=7min
+[E] 31/40 py_11_wrap_text s0 FAIL test_fail tokens=210 tok/s=9.766 wall=26.02s eta=6min
+[E] 32/40 py_12_validate_username s0 PASS tokens=244 tok/s=9.759 wall=29.66s eta=5min
+[E] 33/40 py_13_flatten_dict s0 FAIL test_fail tokens=151 tok/s=9.746 wall=19.64s eta=5min
+[E] 34/40 py_14_run_length s0 PASS tokens=347 tok/s=8.877 wall=43.95s eta=4min
+[E] 35/40 py_15_rotated_search s0 PASS tokens=169 tok/s=9.751 wall=22.67s eta=3min
+[E] 36/40 py_16_top_words s0 PASS tokens=216 tok/s=9.295 wall=27.55s eta=3min
+[E] 37/40 py_17_allocate_cents s0 PASS tokens=227 tok/s=9.66 wall=28.52s eta=2min
+[E] 38/40 py_18_spiral s0 FAIL test_fail tokens=316 tok/s=9.651 wall=37.44s eta=1min
+[E] 39/40 py_19_time_12h s0 FAIL test_fail tokens=422 tok/s=9.729 wall=48.09s eta=1min
+[E] 40/40 py_20_maze_steps s0 FAIL test_fail tokens=443 tok/s=9.721 wall=50.19s eta=0min
+[E] done in 26.0 min
+2026-11-08T23:42:32 ARM E runner rc=0
+2026-11-08T23:42:35 ARM E stopped; llama-server processes left: 0
+2026-11-08T23:42:35 ARM A2 start: repeat of A, nothing changed: the run-to-run noise floor of this server
+2026-11-08T23:42:35 ARM A2 forge: C:\Python312\python.exe -m forge serve --port 8081 --health-timeout 600
+2026-11-08T23:43:13 ARM A2 server up: ngl=16 ctx=16384 fa=False kv=f16 ub=256 spec=None source=tuned
+2026-11-08T23:43:13 ARM A2 llama-server: C:\Users\arthu\llm\llama-b12207\llama-server.exe -m C:\Users\arthu\.ollama\models\blobs\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312 --host 127.0.0.1 --port 8081 -ngl 16 -c 16384 -t 6 -tb 6 -fa off -ctk f16 -ctv f16 -ub 256 -np 1 --fit off --spec-type none
+2026-11-08T23:43:13 ARM A2 runner: C:\Python312\python.exe C:\Users\arthu\llm\forge\repo\03-agent\quality\run_quality.py --endpoint http://127.0.0.1:8081/v1 --arm A2 --out C:\Users\arthu\llm\phase3\results-full\A2.jsonl --thinking off --think-budget 2048 --temperature 0.0 --samples 1 --serve-json C:\Users\arthu\llm\phase3\results-full\A2.serve.json --note repeat of A, nothing changed: the run-to-run noise floor of this server --prompt-variant v3 --node C:\Program Files\nodejs\node.exe
+[A2] 40 requests to do (0 already in C:\Users\arthu\llm\phase3\results-full\A2.jsonl)
+[A2] 1/40 js_01_camel_to_snake s0 FAIL syntax CAP tokens=512 tok/s=9.739 wall=57.89s eta=38min
+[A2] 2/40 js_02_deep_equal s0 FAIL test_fail tokens=346 tok/s=3.69 wall=101.72s eta=51min
+[A2] 3/40 js_03_chunk s0 FAIL test_fail tokens=133 tok/s=9.778 wall=18.3s eta=37min
+[A2] 4/40 js_04_group_by s0 PASS tokens=138 tok/s=9.668 wall=18.72s eta=30min
+[A2] 5/40 js_05_parse_query s0 FAIL test_fail tokens=292 tok/s=9.739 wall=34.86s eta=27min
+[A2] 6/40 js_06_format_bytes s0 FAIL test_fail tokens=266 tok/s=9.747 wall=32.17s eta=25min
+[A2] 7/40 js_07_add_days s0 FAIL test_fail tokens=458 tok/s=9.601 wall=52.73s eta=25min
+[A2] 8/40 js_08_age_on s0 FAIL test_fail tokens=326 tok/s=9.735 wall=38.17s eta=24min
+[A2] 9/40 js_09_luhn s0 FAIL test_fail tokens=226 tok/s=9.763 wall=27.78s eta=22min
+[A2] 10/40 js_10_flatten s0 FAIL syntax tokens=144 tok/s=9.759 wall=18.8s eta=20min
+[A2] 11/40 js_11_memoize s0 PASS tokens=190 tok/s=9.101 wall=25.2s eta=19min
+[A2] 12/40 js_12_retry s0 FAIL timeout tokens=183 tok/s=9.666 wall=24.41s eta=19min
+[A2] 13/40 js_13_render s0 FAIL test_fail tokens=473 tok/s=9.706 wall=54.47s eta=19min
+[A2] 14/40 js_14_emitter s0 FAIL test_fail tokens=450 tok/s=9.463 wall=53.22s eta=18min
+[A2] 15/40 js_15_lower_bound s0 PASS tokens=130 tok/s=9.763 wall=18.05s eta=17min
+[A2] 16/40 js_16_common_prefix s0 FAIL test_fail tokens=170 tok/s=9.758 wall=22.11s eta=16min
+[A2] 17/40 js_17_topo_sort s0 FAIL test_fail tokens=575 tok/s=9.699 wall=64.0s eta=16min
+[A2] 18/40 js_18_expand_ranges s0 FAIL test_fail tokens=227 tok/s=9.719 wall=28.23s eta=15min
+[A2] 19/40 js_19_format_table s0 FAIL test_fail tokens=216 tok/s=9.755 wall=26.59s eta=14min
+[A2] 20/40 js_20_token_bucket s0 FAIL test_fail tokens=251 tok/s=9.748 wall=30.17s eta=13min
+[A2] 21/40 py_01_parse_duration s0 FAIL test_fail tokens=317 tok/s=9.692 wall=36.59s eta=12min
+[A2] 22/40 py_02_roman s0 FAIL syntax CAP tokens=512 tok/s=9.74 wall=57.22s eta=12min
+[A2] 23/40 py_03_iso_week s0 FAIL test_fail CAP tokens=512 tok/s=9.717 wall=57.48s eta=11min
+[A2] 24/40 py_04_add_months s0 FAIL test_fail tokens=287 tok/s=0.37 wall=777.23s eta=19min
+[A2] 25/40 py_05_business_days s0 PASS tokens=203 tok/s=5.451 wall=57.33s eta=18min
+[A2] 26/40 py_06_csv_line s0 FAIL api_error tokens=None tok/s=None wall=84.45s eta=17min
+[A2] 27/40 py_07_balanced s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=15min
+[A2] 28/40 py_08_merge_intervals s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=14min
+[A2] 29/40 py_09_lru_cache s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=12min
+[A2] 30/40 py_10_semver_compare s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=11min
+[A2] 31/40 py_11_wrap_text s0 FAIL api_error tokens=None tok/s=None wall=21.01s eta=9min
+[A2] 32/40 py_12_validate_username s0 FAIL api_error tokens=None tok/s=None wall=21.03s eta=8min
+[A2] 33/40 py_13_flatten_dict s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=7min
+[A2] 34/40 py_14_run_length s0 FAIL api_error tokens=None tok/s=None wall=21.03s eta=6min
+[A2] 35/40 py_15_rotated_search s0 FAIL api_error tokens=None tok/s=None wall=21.14s eta=5min
+[A2] 36/40 py_16_top_words s0 FAIL api_error tokens=None tok/s=None wall=21.0s eta=4min
+[A2] 37/40 py_17_allocate_cents s0 FAIL api_error tokens=None tok/s=None wall=21.03s eta=3min
+[A2] 38/40 py_18_spiral s0 FAIL api_error tokens=None tok/s=None wall=21.0s eta=2min
+[A2] 39/40 py_19_time_12h s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=1min
+[A2] 40/40 py_20_maze_steps s0 FAIL api_error tokens=None tok/s=None wall=21.02s eta=0min
+[A2] done in 35.8 min
+2026-11-09T00:19:00 ARM A2 runner rc=0
+2026-11-09T00:19:03 ARM A2 stopped; llama-server processes left: 1
+exit=0 2026-11-09T00:19:03

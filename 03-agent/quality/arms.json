@@ -1,0 +1,16 @@
+{
+  "defaults": {"temperature": 0.0, "samples": 1, "think_budget": 2048},
+  "arms": [
+    {"id": "A", "title": "default: forge's tuned config, thinking off", "serve": [], "thinking": "off"},
+    {"id": "B", "title": "A with thinking on, thinking budget 1024 tokens (the server ends the thinking when it is used up)", "serve": [], "thinking": "on",
+     "reasoning_budget": 1024, "reasoning_budget_message": "I have used my thinking budget, so I will stop thinking here and write the final answer now."},
+    {"id": "C", "title": "KV q8_0 + flash attention on, ubatch 256 (planner re-places the layers)", "serve": ["--kv", "q8_0", "--fa", "on", "--ubatch", "256"], "thinking": "off"},
+    {"id": "D", "title": "32K context, ubatch 256 (planner re-places the layers)", "serve": ["--ctx", "32768", "--ubatch", "256"], "thinking": "off"},
+    {"id": "E", "title": "speculative decoding ngram-mod", "serve": ["--spec", "ngram-mod"], "thinking": "off"},
+    {"id": "A2", "title": "repeat of A, nothing changed: the run-to-run noise floor of this server", "serve": [], "thinking": "off"},
+    {"id": "P-v1", "title": "prompt probe: A with prompt variant v1 (run on a few Python problems only)", "serve": [], "thinking": "off", "prompt_variant": "v1"},
+    {"id": "P-v2", "title": "prompt probe: A with prompt variant v2 (adds: Indent with 4 spaces per level)", "serve": [], "thinking": "off", "prompt_variant": "v2"},
+    {"id": "P-v3", "title": "prompt probe: A with prompt variant v3 (adds an example answer with 4-space layout to the system message); v3 became the default for all arms", "serve": [], "thinking": "off", "prompt_variant": "v3"},
+    {"id": "A-t0.6", "title": "A, 3 samples per problem at temperature 0.6 (pass@3 estimate)", "serve": [], "thinking": "off", "temperature": 0.6, "samples": 3}
+  ]
+}

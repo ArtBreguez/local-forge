@@ -1,0 +1,71 @@
+select: forced ubatch=256: the tuned entry is not used, the planner places the layers
+select: plan 'gpu': GPU available on mains power
+attempt 1: ngl=12 ctx=32768 fa=off kv=f16 ub=256 spec=none
+  failed: server exited with code 3221226505 before becoming healthy
+  0.09.357.435 I cmn          init: llama threadpool init, n_threads = 6
+ggml_vulkan: Device memory allocation of size 1024 failed.
+ggml_vulkan: vk::Device::allocateMemory: ErrorOutOfDeviceMemory
+attempt 2: ngl=11 ctx=32768 fa=off kv=f16 ub=256 spec=none
+{
+  "endpoint": "http://127.0.0.1:8081/v1",
+  "plan": "gpu",
+  "source": "plan",
+  "config": {
+    "ngl": 11,
+    "ctx": 32768,
+    "threads": 6,
+    "threads_batch": 6,
+    "fa": false,
+    "kv": "f16",
+    "ubatch": 256,
+    "parallel": 1,
+    "spec_type": null,
+    "device": null
+  },
+  "attempts": [
+    {
+      "ngl": 12,
+      "ctx": 32768,
+      "ok": false,
+      "detail": "server exited with code 3221226505 before becoming healthy"
+    },
+    {
+      "ngl": 11,
+      "ctx": 32768,
+      "ok": true,
+      "detail": "healthy"
+    }
+  ],
+  "command": [
+    "C:\\Users\\arthu\\llm\\llama-b12207\\llama-server.exe",
+    "-m",
+    "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    "8081",
+    "-ngl",
+    "11",
+    "-c",
+    "32768",
+    "-t",
+    "6",
+    "-tb",
+    "6",
+    "-fa",
+    "off",
+    "-ctk",
+    "f16",
+    "-ctv",
+    "f16",
+    "-ub",
+    "256",
+    "-np",
+    "1",
+    "--fit",
+    "off",
+    "--spec-type",
+    "none"
+  ],
+  "log": "C:\\Users\\arthu\\llm\\forge\\cache\\logs\\llama-server-20261108-224347-1.log"
+}

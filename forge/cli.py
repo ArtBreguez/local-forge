@@ -109,6 +109,7 @@ def cmd_serve(a: argparse.Namespace) -> int:
         srv, sel = servemod.serve(model_path, llama_dir=a.llama_dir, host=a.host, port=a.port, ctx=a.ctx, cache_dir=a.cache_dir,
                                   health_timeout=a.health_timeout, profile=json.loads(Path(a.profile).read_text()) if a.profile else None,
                                   depth=a.depth, pp_floor=a.pp_floor, spec=None if a.spec == "none" else a.spec,
+                                  kv=a.kv, fa={"on": True, "off": False, None: None}[a.fa], ubatch=a.ubatch,
                                   progress=lambda s: print(s, flush=True))
     except RuntimeError as e:
         print(f"error: {e}", file=sys.stderr)
@@ -174,6 +175,9 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--depth", type=int, default=autotune.DEFAULT_DEPTH, help="use the tuning made with this agent depth (default %(default)s)")
     p.add_argument("--pp-floor", type=float, default=autotune.DEFAULT_PP_FLOOR, help="use the tuning made with this prompt floor (default %(default)s)")
     p.add_argument("--once", action="store_true", help="start, check health, print the endpoint, stop (smoke test)")
+    p.add_argument("--kv", choices=["f16", "q8_0"], default=None, help="force the KV cache type (skips the tuned entry; the planner places the layers)")
+    p.add_argument("--fa", choices=["on", "off"], default=None, help="force flash attention (skips the tuned entry)")
+    p.add_argument("--ubatch", type=int, default=None, help="force the physical batch size -ub, 1..%d (skips the tuned entry)" % planmod.COMPUTE_MAX_UBATCH)
     _add_spec(p)
     p.set_defaults(fn=cmd_serve)
 

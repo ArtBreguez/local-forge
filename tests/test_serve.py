@@ -333,6 +333,46 @@ class EndToEnd(unittest.TestCase):
                     s.stop()
 
 
+    def test_forced_kv_fa_ubatch_bypass_the_tuned_entry(self):
+        """`serve --kv/--fa/--ubatch` measures one arm: the tuned entry (other settings) must not override it, and the command line must show it."""
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            model_path = str(tiny_gguf(d / "tiny.gguf", layers=8, layer_kib=256))
+            log = d / "server.log"
+            prof = profile(free_vram=3443, ram_free=12000)
+            m = plan.load_model(model_path)
+            tuned = tuned_for(prof, m, ngl=5, ubatch=256)                      # fa off, f16, ubatch 256
+            cache = autotune.Cache(d / "c")
+            variant = autotune.variant_of(plan.build_all(prof, m)["gpu"])
+            cache.save(autotune.cache_key(prof["fingerprint"], m.fingerprint, "b1", variant), {"result": tuned.to_dict()})
+            started, said = [], []
+            try:
+                with mock.patch.dict(os.environ, {"FAKE_SERVER_LOG": str(log), "FAKE_SERVER_LOAD_S": "0.3"}), \
+                        mock.patch.object(serve.util, "find_tool", return_value="llama-bench"), mock.patch.object(serve.autotune, "detect_build", return_value="b1"):
+                    def go(**kw):
+                        srv, sel = serve.serve(model_path, host="127.0.0.1", port=free_port(), cache_dir=str(d / "c"), server_prefix=FAKE_SERVER,
+                                               profile=prof, health_timeout=20, progress=said.append, **kw)
+                        started.append(srv)
+                        srv.stop()
+                        return sel
+                    sel = go()
+                    self.assertEqual((sel.source, sel.config.ubatch, sel.config.kv, sel.config.fa), ("tuned", 256, "f16", False))
+                    sel = go(kv="q8_0", fa=True)
+                    self.assertEqual((sel.source, sel.config.kv, sel.config.fa), ("plan", "q8_0", True))
+                    last = log.read_text().splitlines()[-1]
+                    for frag in ("-fa on", "-ctk q8_0", "-ctv q8_0"):
+                        self.assertIn(frag, last)
+                    sel = go(ubatch=128)
+                    self.assertEqual((sel.source, sel.config.ubatch), ("plan", 128))
+                    self.assertIn("-ub 128", log.read_text().splitlines()[-1])
+                    self.assertTrue(any("forced" in line and "tuned entry is not used" in line for line in said))
+                    with self.assertRaises(ValueError):                           # a quantised V cache needs flash attention
+                        go(kv="q8_0", fa=False)
+            finally:
+                for s in started:
+                    s.stop()
+
+
 class Cli(unittest.TestCase):
     def run_cli(self, *args):
         return subprocess.run([sys.executable, "-m", "forge", *args], cwd=ROOT, capture_output=True, text=True, timeout=60)
@@ -370,6 +410,8 @@ class Cli(unittest.TestCase):
             helptxt = self.run_cli("serve", "--help").stdout
             self.assertIn("--spec", helptxt)
             self.assertIn("ngram-mod", helptxt)
+            for flag in ("--kv", "--fa", "--ubatch"):
+                self.assertIn(flag, helptxt)
 
     def test_missing_model_is_a_clean_error(self):
         r = self.run_cli("plan", "--model", "/no/such.gguf")
