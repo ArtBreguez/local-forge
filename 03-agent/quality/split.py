@@ -69,36 +69,30 @@ def visible_indices(n: int) -> list[int]:
     return list(range(0, n, 2))
 
 
+def _is_test(item: ast.AST) -> bool:
+    return isinstance(item, (ast.FunctionDef, ast.AsyncFunctionDef)) and item.name.startswith("test_")
+
+
 def build_part(lang: str, src: str, keep: set[int]) -> str:
-    """The test file with every test function whose index is not in `keep` removed (everything else, helpers and imports, stays)."""
+    """The test file with every test function whose index is not in `keep` removed. Imports and helpers stay; a TestCase class that
+    would be left without any test method is removed whole (a helper class that never had tests stays)."""
     tests = list_tests(lang, src)
     drop: set[int] = set()
     for idx, (_, first, last) in enumerate(tests):
         if idx not in keep:
             drop.update(range(first, last + 1))
-    lines = src.splitlines()
-    kept = [ln for no, ln in enumerate(lines, 1) if no not in drop]
-    text = "\n".join(kept) + "\n"
     if lang == "py":
-        text = _drop_emptied_classes(text, {n.name for n in _test_classes(ast.parse(src))})
+        idx = 0
+        for node in ast.parse(src).body:
+            if isinstance(node, ast.ClassDef):
+                n = sum(1 for i in node.body if _is_test(i))
+                if n and not any(j in keep for j in range(idx, idx + n)):
+                    drop.update(range(min([node.lineno] + [d.lineno for d in node.decorator_list]), (node.end_lineno or node.lineno) + 1))
+                idx += n
+    text = "\n".join(ln for no, ln in enumerate(src.splitlines(), 1) if no not in drop) + "\n"
+    if lang == "py":
         ast.parse(text)
     return text
-
-
-def _test_classes(tree: ast.Module) -> list[ast.ClassDef]:
-    return [n for n in tree.body if isinstance(n, ast.ClassDef)
-            and any(isinstance(i, (ast.FunctionDef, ast.AsyncFunctionDef)) and i.name.startswith("test_") for i in n.body)]
-
-
-def _drop_emptied_classes(text: str, had_tests: set[str]) -> str:
-    """A TestCase that had test methods and lost all of them is dropped whole; helper classes (no test methods to begin with) stay."""
-    tree = ast.parse(text)
-    emptied = [n for n in tree.body if isinstance(n, ast.ClassDef) and n.name in had_tests and n not in _test_classes(tree)]
-    drop: set[int] = set()
-    for node in emptied:
-        first = min([node.lineno] + [d.lineno for d in node.decorator_list])
-        drop.update(range(first, (node.end_lineno or node.lineno) + 1))
-    return "\n".join(ln for no, ln in enumerate(text.splitlines(), 1) if no not in drop) + "\n"
 
 
 def _problems(root: Path) -> list[dict]:
