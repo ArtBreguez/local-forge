@@ -1,0 +1,302 @@
+{
+ "version": 1,
+ "purpose": "ground truth for the phase 6 REA tool-use benchmark (issue #23 part C), committed BEFORE any run",
+ "binary": {
+  "path": "03-agent/rea/bin/bench.exe",
+  "sha256": "4d70f118ada6364a376a0d6a73deafaf85f20d2e43eac0cf7f4de2ed31cd07d8",
+  "source": "03-agent/rea/src/bench.c",
+  "build": "C:\\TDM-GCC-64\\bin\\gcc.exe -O1 -fno-lto -o bench.exe bench.c -lws2_32",
+  "note": "builds differ in the PE timestamp, so the exact binary used is committed"
+ },
+ "gguf": {
+  "host_path": "C:\\Users\\arthu\\.ollama\\models\\blobs\\sha256-55f51ef810a801849ab84f2ae029d1e6142bf83f563983f550d3ce4898750312",
+  "header_sha256": "2e10a4e3c0ccaeaf08bbc152771943ff53c174f068d32eaf5479e6ea537c1e0e"
+ },
+ "tasks": [
+  {
+   "id": "crc-poly",
+   "category": "constant",
+   "question": "In the function rb_crc, which 32-bit polynomial constant is used? Answer in hex.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_crc"
+    }
+   ],
+   "scoring": {
+    "type": "hex",
+    "expected": 3988292384
+   },
+   "truth": "bench.c rb_crc: c = (c >> 1) ^ (0xEDB88320u & ...)"
+  },
+  {
+   "id": "mix-multiplier",
+   "category": "constant",
+   "question": "The function rb_mix multiplies by two constants. What is the FIRST multiplier (the one applied first)? Answer in hex.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_mix"
+    }
+   ],
+   "scoring": {
+    "type": "hex",
+    "expected": 2146121005
+   },
+   "truth": "bench.c rb_mix: x *= 0x7feb352du (first), then 0x846ca68bu"
+  },
+  {
+   "id": "xor-key",
+   "category": "constant",
+   "question": "The function rb_unmask XORs a buffer with a single-byte key. What is the key? Answer in hex.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_unmask"
+    }
+   ],
+   "scoring": {
+    "type": "hex",
+    "expected": 90
+   },
+   "truth": "bench.c rb_unmask: p[i] ^= 0x5A"
+  },
+  {
+   "id": "name-popcount",
+   "category": "naming",
+   "question": "What does the function rb_pop compute? Choose one: popcount, parity, bit-reverse, leading-zero-count, byte-swap.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_pop"
+    }
+   ],
+   "scoring": {
+    "type": "choice",
+    "expected": "popcount",
+    "choices": [
+     "popcount",
+     "parity",
+     "bit-reverse",
+     "leading-zero-count",
+     "byte-swap"
+    ]
+   },
+   "truth": "bench.c rb_pop: while (x) { x &= x - 1; n++; }"
+  },
+  {
+   "id": "name-gcd",
+   "category": "naming",
+   "question": "What does the function rb_gcd compute? Choose one: gcd, lcm, factorial, is-prime, modular-power.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_gcd"
+    }
+   ],
+   "scoring": {
+    "type": "choice",
+    "expected": "gcd",
+    "choices": [
+     "gcd",
+     "lcm",
+     "factorial",
+     "is-prime",
+     "modular-power"
+    ]
+   },
+   "truth": "bench.c rb_gcd: Euclid's algorithm"
+  },
+  {
+   "id": "password",
+   "category": "string",
+   "question": "The function rb_login compares a password with a hard-coded string. What is that password string?",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile",
+     "arg": "rb_login"
+    }
+   ],
+   "scoring": {
+    "type": "exact",
+    "expected": "tr0ub4dor&3"
+   },
+   "truth": "bench.c rb_login: strcmp(pass, \"tr0ub4dor&3\")"
+  },
+  {
+   "id": "find-strcmp",
+   "category": "find-function",
+   "question": "Which function whose name starts with rb_ calls strcmp? Answer with the function name only.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile_all",
+     "arg": "rb_"
+    }
+   ],
+   "scoring": {
+    "type": "name",
+    "expected": "rb_login"
+   },
+   "truth": "bench.c: of the rb_ functions only rb_login calls strcmp (main calls it too, which is why the question says rb_)"
+  },
+  {
+   "id": "find-xor-loop",
+   "category": "find-function",
+   "question": "Which function XORs every byte of a buffer with one constant value in a loop? Consider only functions whose name starts with rb_. Answer with the function name only.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile_all",
+     "arg": "rb_"
+    }
+   ],
+   "scoring": {
+    "type": "name",
+    "expected": "rb_unmask"
+   },
+   "truth": "bench.c rb_unmask"
+  },
+  {
+   "id": "find-golden",
+   "category": "find-function",
+   "question": "Which function uses the constant 0x9E3779B9 (the golden-ratio multiplier)? Consider only functions whose name starts with rb_. Answer with the function name only.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "decompile_all",
+     "arg": "rb_"
+    }
+   ],
+   "scoring": {
+    "type": "name",
+    "expected": "rb_spread"
+   },
+   "truth": "bench.c rb_spread"
+  },
+  {
+   "id": "imports-network",
+   "category": "imports",
+   "question": "Does the program import any networking (socket) functions? Answer yes or no.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "imports"
+    }
+   ],
+   "scoring": {
+    "type": "yesno",
+    "expected": "yes"
+   },
+   "truth": "bench.exe imports WSAStartup, socket, closesocket from WS2_32.dll"
+  },
+  {
+   "id": "imports-dll",
+   "category": "imports",
+   "question": "From which DLL does the program import WSAStartup? Answer with the DLL name.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "imports"
+    }
+   ],
+   "scoring": {
+    "type": "choice",
+    "expected": "ws2_32",
+    "choices": [
+     "ws2_32",
+     "kernel32",
+     "msvcrt"
+    ],
+    "strip_suffix": ".dll"
+   },
+   "truth": "objdump -p bench.exe: DLL Name WS2_32.dll lists WSAStartup"
+  },
+  {
+   "id": "imports-fwrite",
+   "category": "imports",
+   "question": "Which imported C-runtime function writes a block of raw bytes (buffer, element size, count) to a FILE stream? Answer with the function name only.",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "imports"
+    }
+   ],
+   "scoring": {
+    "type": "choice",
+    "expected": "fwrite",
+    "choices": [
+     "fwrite",
+     "fprintf",
+     "vfprintf",
+     "fopen",
+     "printf",
+     "fclose"
+    ]
+   },
+   "truth": "objdump -p bench.exe: msvcrt.dll imports fwrite (and fprintf, vfprintf, fopen, fclose, printf, strcmp)"
+  },
+  {
+   "id": "pe-import-rva",
+   "category": "pe-header",
+   "question": "What is the RVA of this PE file's import directory? Answer in hex (decimal is accepted too).",
+   "file": "bench",
+   "recipe": [
+    {
+     "call": "imports"
+    }
+   ],
+   "scoring": {
+    "type": "hex",
+    "expected": 98304
+   },
+   "truth": "PE optional header data directory 1 of the committed bin/bench.exe: RVA 0x18000 (98304), size 4160"
+  },
+  {
+   "id": "gguf-arch",
+   "category": "gguf-header",
+   "question": "What is the value of general.architecture in this GGUF model file?",
+   "file": "gguf",
+   "recipe": [
+    {
+     "call": "model_header"
+    }
+   ],
+   "scoring": {
+    "type": "choice",
+    "expected": "qwen35",
+    "choices": [
+     "qwen35",
+     "qwen3",
+     "llama",
+     "gemma",
+     "deepseek2"
+    ]
+   },
+   "truth": "results/rea/gguf.json: general.architecture = qwen35 (header sha256 2e10a4e3...)"
+  },
+  {
+   "id": "gguf-blocks",
+   "category": "gguf-header",
+   "question": "What is the block_count (number of transformer blocks) in this GGUF model file? Answer with the number.",
+   "file": "gguf",
+   "recipe": [
+    {
+     "call": "model_header"
+    }
+   ],
+   "scoring": {
+    "type": "hex",
+    "expected": 33,
+    "decimal_only": true
+   },
+   "truth": "results/rea/gguf.json and docs/JOURNAL.md: qwen35.block_count = 33"
+  }
+ ]
+}
