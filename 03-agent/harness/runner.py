@@ -242,11 +242,40 @@ def run_one(t: taskbench.Task, arm_id: str, run_idx: int, a: argparse.Namespace,
         rec["trace"] = o.get("trace")
     else:
         rec["steps"] = rec["tool_calls"] = rec["prompt_tokens"] = rec["completion_tokens"] = None
+    if arm["kind"] == "opencode":
+        rec.update(agent_events(log_path))
     rec["diff"] = taskbench.diff_summary(start_copy, repo, a.diff_chars)
     rec["agent_log_tail"] = tail_text(log_path, a.log_chars)
     if not a.keep_work:
         rmtree(base)
     return rec
+
+
+def agent_events(path: Path) -> dict[str, Any]:
+    """How an OpenCode run ended, from its JSON event stream (`--format json`, one object per line): the `error` events (a type and a short
+    message) and how many lines mention a compaction. Phase 5 found that a 16K context makes OpenCode compact a long session and that a
+    compaction the model cannot summarise ends the run (`compaction.failed`), which is neither the time limit nor the model giving up."""
+    errors: list[str] = []
+    compaction = 0
+    steps = 0
+    try:
+        with open(path, "rb") as f:
+            for raw in f:
+                line = raw.decode("utf-8", "replace")
+                if "compaction" in line.lower():
+                    compaction += 1
+                if line.startswith('{"type":"step_finish"'):
+                    steps += 1
+                if line.startswith('{"type":"error"'):
+                    try:
+                        e = json.loads(line).get("error") or {}
+                    except ValueError:
+                        e = {}
+                    if len(errors) < 5:
+                        errors.append(f"{e.get('type')}: {str(e.get('message'))[:120]}")
+    except OSError:
+        pass
+    return {"agent_errors": errors, "compaction_lines": compaction, "agent_step_finishes": steps}
 
 
 def mcp_calls(path: Path) -> dict[str, Any]:

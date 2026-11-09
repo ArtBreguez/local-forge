@@ -369,6 +369,40 @@ class Phase5Report(unittest.TestCase):
         self.assertNotIn("success within 15 min", text)
 
 
+class EndKinds(unittest.TestCase):
+    def test_how_a_run_ended(self):
+        ok = p5_row("a", "O30", 1, True, 100)
+        to = p5_row("b", "O30", 1, False, 1800, timed_out=True)
+        own = p5_row("c", "O30", 1, False, 150, agent_errors=[])
+        err = p5_row("d", "O30", 1, False, 900, agent_errors=["compaction.failed: Compaction produced no summary"])
+        old = p5_row("e", "O30", 1, False, 900, agent_log_tail='{"type":"error","timestamp":1,"error":{"type":"compaction.failed","message":"x"}}')
+        legacy_own = p5_row("f", "O30", 1, False, 150, agent_log_tail='{"type":"step_finish","reason":"stop"}')
+        self.assertEqual([report.end_kind(r) for r in (ok, to, own, err, old, legacy_own)],
+                         ["ok", "timeout", "stopped on its own", "error: compaction.failed", "error: compaction.failed", "stopped on its own"])
+
+    def test_event_stream_summary(self):
+        d = tmpdir(self)
+        log = d / "agent.log"
+        log.write_text('{"type":"step_start"}\n{"type":"step_finish","reason":"tool-calls"}\nnoise\n'
+                       '{"type":"error","error":{"type":"compaction.failed","message":"Compaction produced no summary"}}\n', encoding="utf-8")
+        ev = runner.agent_events(log)
+        self.assertEqual(ev["agent_errors"], ["compaction.failed: Compaction produced no summary"])
+        self.assertEqual((ev["compaction_lines"], ev["agent_step_finishes"]), (1, 1))
+        self.assertEqual(runner.agent_events(d / "missing.log")["agent_errors"], [])
+
+    def test_the_report_lists_how_failures_ended(self):
+        d = tmpdir(self)
+        rows = [p5_row("a", "O30", 1, False, 1800, timed_out=True), p5_row("b", "O30", 1, False, 150, agent_errors=[]),
+                p5_row("c", "O30", 1, False, 900, agent_errors=["compaction.failed: x"]), p5_row("d", "O30", 1, True, 100)]
+        with (d / "O30.jsonl").open("w") as f:
+            f.write(json.dumps({"type": "meta", "arm": "O30", "time_limit_s": 1800}) + "\n")
+            for r in rows:
+                f.write(json.dumps(r) + "\n")
+        text = report.build_report(d)
+        self.assertIn("## How the failed runs ended", text)
+        self.assertIn("| O30 | 3 | 1 | 1 | 1 | error: compaction.failed |", text)
+
+
 class Phase5Grid(unittest.TestCase):
     def test_new_arms_are_valid_stages(self):
         self.assertEqual(grid.parse_stages("O30@1;O30-ngram@1; O30-tool@1;O30@2"),

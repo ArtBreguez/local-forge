@@ -13,6 +13,7 @@ their own table, and the speed of an arm (the server's own generation tok/s, spe
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 from typing import Any
@@ -134,6 +135,24 @@ def cell(r: dict[str, Any] | None) -> str:
     return f"{'ok' if r['success'] else r['reason']} {r['tests_passed']}/{r['tests_total']} {r['wall_s'] / 60:.1f}m"
 
 
+def end_kind(r: dict[str, Any]) -> str:
+    """How a failed run ended: `timeout` (the limit killed it), `error: <type>` (OpenCode's own error event ended it, e.g. a compaction that
+    produced no summary) or `stopped on its own` (the agent ended the session with a test still failing: it gave up, which is not time).
+    Older records have no `agent_errors`; for them the tail of the agent log (where an ending error sits) is read."""
+    if r.get("success"):
+        return "ok"
+    if r.get("timed_out"):
+        return "timeout"
+    errs = r.get("agent_errors")
+    if errs:
+        return "error: " + errs[-1].split(":")[0]
+    if errs is None:
+        m = re.search(r'"type":"error".*?"error":\{"type":"([^"]+)"', r.get("agent_log_tail") or "")
+        if m:
+            return "error: " + m.group(1)
+    return "stopped on its own"
+
+
 def timeout_table(base_rows: list[dict[str, Any]], arms: dict[str, list[dict[str, Any]]]) -> list[str]:
     """Every task that timed out in some run of the baseline (phase 4's O): what the baseline runs did and what each other arm did, by run,
     so that "did it finish in 30 minutes, and at which minute" can be read off. A pass after minute 15 is marked `*`: time bought it."""
@@ -191,6 +210,13 @@ def build_report(directory: Path, baseline: str = "O", limit_s: float | None = N
             "(at most the limit).", "", "## Why runs failed (first run of each task)", ""]
     for a in arms:
         out.append(f"- **{a}**: " + ", ".join(f"{k} {v}" for k, v in sorted(sums[a]["reasons"].items(), key=lambda kv: -kv[1])))
+    out += ["", "## How the failed runs ended (first run of each task)", "",
+            "| arm | failed | timeout | stopped on its own with a test failing | ended by an OpenCode error | which |", "|---|---|---|---|---|---|"]
+    for a in arms:
+        fails = [end_kind(r) for r in first_runs(runs[a]).values() if not r["success"]]
+        errs = sorted({k for k in fails if k.startswith("error")})
+        out.append(f"| {a} | {len(fails)} | {fails.count('timeout')} | {fails.count('stopped on its own')} | {sum(1 for k in fails if k.startswith('error'))} | "
+                   f"{', '.join(errs) or '-'} |")
     long_arms = [a for a in arms if limits[a] > LIMIT15_S]
     if long_arms:
         out += ["", "## Time: each arm at its own limit, and re-scored at the protocol's 15 minutes (first run of each task)", "",
