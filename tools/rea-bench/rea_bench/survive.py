@@ -34,6 +34,7 @@ import pathlib
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 
 from .core import OPTS, forms
@@ -186,14 +187,30 @@ def check_task(t, cc: str | None = None, opt: str | None = None) -> tuple:
 
 
 class Gate:
-    """Callable for `core.build`: True when the task's facts survive at its own cc/opt. Counts what it did."""
+    """Callable for `core.build`: True when the task's facts survive at its own cc/opt. Counts what it did.
 
-    def __init__(self):
+    The toolchain is looked up when a task with facts is drawn, not when the gate is made: a run of the frozen legacy family (no facts)
+    needs neither compiler nor objdump, and a machine without clang gates the gcc draws, warns once, and counts the clang draws it could
+    not check (`unchecked`), which the summary reports."""
+
+    def __init__(self, warn=None):
         self.tried = self.rejected = 0
         self.by_variant: dict = {}
+        self.unchecked: dict = {}
+        self.warn = warn or (lambda msg: print(f"warning: {msg}", file=sys.stderr))
+
+    def available(self, cc: str) -> bool:
+        return bool(OBJDUMP and toolchain(cc))
 
     def __call__(self, t) -> bool:
         if not t.facts:
+            return True
+        cc = t.cc or "gcc"
+        if not self.available(cc):
+            if cc not in self.unchecked:
+                self.warn(f"the fact gate needs {cc} and objdump on PATH: tasks drawn with {cc} are NOT checked against the compiled code "
+                          f"(--cc gcc gates every task if only gcc is installed)")
+            self.unchecked[cc] = self.unchecked.get(cc, 0) + 1
             return True
         ok, _why = check_task(t)
         self.tried += 1
@@ -204,7 +221,8 @@ class Gate:
         return ok
 
     def summary(self) -> str:
-        return f"fact gate: {self.rejected} of {self.tried} draws rejected and resampled"
+        un = "".join(f"; {n} draws with {cc} not checked ({cc} or objdump missing)" for cc, n in sorted(self.unchecked.items()))
+        return f"fact gate: {self.rejected} of {self.tried} draws rejected and resampled{un}"
 
 
 def survival_rates(tasks, ccs=("gcc", "clang")) -> dict:

@@ -41,15 +41,12 @@ def pick_families(a, allow_small: bool = False) -> list:
 
 
 def make_gate(a):
-    """The fact gate (survive.Gate) unless --no-survive. It needs gcc, objdump and, for tasks drawn with cc=clang, clang."""
+    """The fact gate (survive.Gate) unless --no-survive. It looks for a compiler and objdump only when a task with facts is drawn, so the
+    frozen legacy family (no facts) runs without any of them; a draw whose compiler is missing is not checked, with a warning once and
+    a count in the summary (--cc gcc gates every task on a machine with gcc only)."""
     if a.no_survive:
         return None
     from . import survive
-    need = {"gcc": "gcc", "mix": "gcc and clang", "clang": "clang"}.get(getattr(a, "cc", "mix"), "gcc and clang")
-    missing = [x for x in need.split(" and ") if not survive.toolchain(x)] + ([] if survive.OBJDUMP else ["objdump"])
-    if missing:
-        raise SystemExit(f"the fact gate needs {', '.join(missing)} on PATH; install it, or pass --no-survive (tasks are then not checked "
-                         f"against the compiled code and the survival rate of their asked constant is unknown)")
     return survive.Gate()
 
 
@@ -107,6 +104,8 @@ def cmd_check(a) -> None:
         for pr in problems[:20]:
             print("    " + pr)
         bad += len(problems)
+    if gate is not None and gate.unchecked:
+        print("note: " + gate.summary().split("; ", 1)[-1])
     if bad:
         raise SystemExit(f"{bad} problems")
     print("all tasks compile clean and their harnesses prove the truth")

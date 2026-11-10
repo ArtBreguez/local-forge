@@ -202,9 +202,16 @@ class Task:
         return d
 
 
+FLAG_PATIENCE = 8     # a gated task is drawn again at the SAME compiler and -O level this many times before the flags change too
+
+
 def pick_flags(family: str, seed: int, i: int, cc: str = "mix", attempt: int = 0) -> tuple:
-    """Compiler and optimisation level for task i, from an rng that does not touch the template's own stream."""
-    rng = random.Random(f"flags/{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
+    """Compiler and optimisation level for task i, from an rng that does not touch the template's own stream. A redraw keeps the flags of
+    attempt 0 for the first FLAG_PATIENCE attempts (new parameters, same cc/opt) and only then draws flags of its own: if every redraw
+    drew new flags, a variant whose facts vanish at one compiler or -O level would end up with the others (round-2 review, m1:
+    bounds/char_class gcc 61% -> 38%, crc/bitwise_poly -O2 40% -> 18%)."""
+    a = attempt if attempt >= FLAG_PATIENCE else 0
+    rng = random.Random(f"flags/{family}/{seed}/{i}" + (f"/r{a}" if a else ""))
     opt = rng.choices(OPTS, OPT_WEIGHTS)[0]
     chosen = rng.choices(CCS, CC_WEIGHTS)[0]
     return opt, (chosen if cc == "mix" else cc)
@@ -215,8 +222,9 @@ MAX_TRIES = 60
 
 def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=None) -> list:
     """Task i is variant i mod len(variants), drawn from its own rng. With a `gate` (survive.Gate) a draw whose asked fact is not in
-    the code compiled at its own cc/opt is thrown away and the task is drawn again (new parameters, new cc/opt) from the stream
-    "<family>/<seed>/<i>/r<attempt>"; attempt 0 is the stream of the ungated generator, so a gate only changes the tasks it rejects."""
+    the code compiled at its own cc/opt is thrown away and the task is drawn again (new parameters; the same cc/opt for the first
+    FLAG_PATIENCE redraws, see pick_flags) from the stream "<family>/<seed>/<i>/r<attempt>"; attempt 0 is the stream of the ungated
+    generator, so a gate only changes the tasks it rejects."""
     names = list(variants)
     out = []
     for i in range(n):

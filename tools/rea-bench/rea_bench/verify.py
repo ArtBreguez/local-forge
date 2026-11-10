@@ -57,7 +57,7 @@ def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
     """Problems found with one task (empty list = fine): a filler reply scores, the C does not compile clean, a harness disagrees
     with the truth, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
     problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)] if t.cc else []   # legacy: frozen, see cli
-    if survive_check and t.facts:
+    if survive_check and t.facts and survive.OBJDUMP and survive.toolchain(t.cc or "gcc"):     # no compiler: the gate warned (survive.Gate)
         ok, why = survive.check_task(t)
         if not ok:
             problems.append(f"{t.id} ({t.variant}) fact does not survive: {why}")
