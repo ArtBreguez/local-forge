@@ -27,9 +27,11 @@ def filler_passes(t) -> list:
 
 
 def compile_check(src: str, opt: str, cc: str = "gcc") -> subprocess.CompletedProcess:
-    """-Wall -Werror compile of the generated file alone (no link): any warning at this level fails."""
-    return subprocess.run([cc, opt, "-Wall", "-Werror", "-c", "-o", "/dev/null", "-x", "c", "-"], input=src,
-                          capture_output=True, text=True, timeout=60)
+    """-Wall -Werror compile of the generated file alone (no link): any warning at this level fails. The object goes to a temp dir:
+    `zig cc` (the clang wrapper on machines without one) ignores `-o /dev/null` for stdin input and leaves `-.o` in the cwd."""
+    with tempfile.TemporaryDirectory() as d:
+        return subprocess.run([cc, opt, "-Wall", "-Werror", "-c", "-o", str(pathlib.Path(d, "o.o")), "-x", "c", "-"], input=src,
+                              capture_output=True, text=True, timeout=60)
 
 
 def run_harness(src: str, opt: str, extra=(), cc: str = "gcc") -> subprocess.CompletedProcess:
