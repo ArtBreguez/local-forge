@@ -360,7 +360,9 @@ class ModalScripts(unittest.TestCase):
 
     def test_one_scorer_everywhere(self):
         self.assertIs(self.rea.score, scoring.score)
-        self.assertIs(self.data.score, scoring.score)
+        self.assertIs(self.rea.score_any_line, scoring.score_any_line)
+        self.assertIs(self.data.score_strict, scoring.score_strict, "round 3: the sample stage scores with the grammar for every family")
+        self.assertFalse(hasattr(self.data, "score"), "the sample stage does not import the evaluation scorer (the frozen substring modes)")
         self.assertIs(self.rea.check_mode, scoring.check_mode)
 
     def test_tokens_and_exact_case_tasks_no_longer_crash_or_misscore(self):
@@ -955,8 +957,9 @@ class CipherReference(unittest.TestCase):
 
     def test_name_rejection_rules(self):
         from rea_bench import f_cipher
-        tea = f_cipher._truth("tea", [["32", "0x20"]], "enc")
-        xtea = f_cipher._truth("xtea", [["32", "0x20"]], "dec")
+        q = "This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it encrypt or decrypt, and how many iterations does its main loop run (decimal)?"
+        tea = {**f_cipher._truth("tea", [["32", "0x20"]], "enc"), "kind": "cipher", "variant": "tea_enc", "question": q}      # the full task record, as it is scored
+        xtea = {**f_cipher._truth("xtea", [["32", "0x20"]], "dec"), "kind": "cipher", "variant": "xtea_dec", "question": q}
         s = scoring.score
         self.assertTrue(s("TEA (Tiny Encryption Algorithm), encrypts, 32 iterations", tea))
         self.assertFalse(s("XTEA, encrypts, 32", tea))
@@ -1000,12 +1003,14 @@ class EncodingReference(unittest.TestCase):
         enc = next(t for t in families.generate("encoding", 60, 4) if t.params["asked"] == "ident" and t.params["direction"] == "encode" and t.params["base"] == "base64")
         dec = next(t for t in families.generate("encoding", 60, 4) if t.params["asked"] == "ident" and t.params["direction"] == "decode" and t.params["base"] == "base58")
         s = scoring.score
-        self.assertTrue(s("It is a Base64 encoder.", enc.truth))
-        self.assertTrue(s("encodes using base-64", enc.truth))
-        self.assertFalse(s("It is a Base64 decoder.", enc.truth))
-        self.assertFalse(s("It is a Base32 encoder.", enc.truth))
-        self.assertTrue(s("It decodes a Base58 encoding.", dec.truth))   # "encoding" as a noun is fine for a decoder
-        self.assertFalse(s("It encodes Base58.", dec.truth))
+        enc, dec = enc.meta(), dec.meta()
+        self.assertTrue(s("encodes using base-64", enc) and s("It encodes base64.", enc) and s("encoder, base64", enc))
+        self.assertFalse(s("It is a Base64 decoder.", enc))
+        self.assertFalse(s("It is a Base32 encoder.", enc))
+        self.assertFalse(s("It is a Base64 encoder.", enc), "round 3: the groups come in the order of the question (direction, then base): a yield-class format")
+        self.assertTrue(s("It decodes Base58.", dec))
+        self.assertFalse(s("It decodes a Base58 encoding.", dec), "round 3: `encoding` is an accepted spelling of the encode tasks, so it is no free noun")
+        self.assertFalse(s("It encodes Base58.", dec))
 
 
 class StrobfModel(unittest.TestCase):
@@ -1051,8 +1056,8 @@ class BoundsModel(unittest.TestCase):
             lo = t.params.get("lo")
             if t.variant in ("range_chain", "window", "clamp") and lo is not None and lo < 0:
                 seen += 1
-                self.assertTrue(scoring.score(f"lowest {lo}, highest {t.params['hi']}", t.truth))
-                self.assertFalse(scoring.score(f"lowest {-lo}, highest {t.params['hi']}", t.truth))
+                self.assertTrue(scoring.score(f"lowest {lo}, highest {t.params['hi']}", t.meta()))
+                self.assertFalse(scoring.score(f"lowest {-lo}, highest {t.params['hi']}", t.meta()))
         self.assertGreater(seen, 3, "the sample should contain negative bounds")
 
     def test_every_loop_and_guard_form_occurs(self):
@@ -1107,13 +1112,15 @@ class AntidebugModel(unittest.TestCase):
                 self.assertIn(str(p["thr"]), t.body)
         one = next(t for t in tasks if t.variant == "ptrace")
         s = scoring.score
-        self.assertTrue(s(f"ptrace, returns {one.params['rv']}", one.truth))
-        self.assertTrue(s(f"PTRACE_TRACEME self-attach; return value {one.params['rv']}", one.truth))
-        self.assertFalse(s(f"env, {one.params['rv']}", one.truth))
-        self.assertFalse(s("ptrace", one.truth), "the detail is missing")
+        self.assertTrue(s(f"ptrace, returns {one.params['rv']}", one.meta()))
+        self.assertFalse(s(f"PTRACE_TRACEME self-attach; return value {one.params['rv']}", one.meta()), "round 3: `self-attach` is a word the grammar does not know")
+        self.assertTrue(s(f"PTRACE_TRACEME; return value {one.params['rv']}", one.meta()))
+        self.assertFalse(s(f"env, {one.params['rv']}", one.meta()))
+        self.assertFalse(s("ptrace", one.meta()), "the detail is missing")
         env = next(t for t in tasks if t.variant == "env")
-        self.assertTrue(s(f"env: {env.params['name']}", env.truth))
-        self.assertTrue(s(f"It probes the environment variable {env.params['name'].lower()}.", env.truth))
+        self.assertTrue(s(f"env: {env.params['name']}", env.meta()))
+        self.assertTrue(s(f"The environment variable {env.params['name'].lower()}.", env.meta()))
+        self.assertFalse(s(f"It probes the environment variable {env.params['name'].lower()}.", env.meta()), "`probes` is not in the grammar")
 
     def test_harness_uses_fakes_not_the_real_process(self):
         for t in families.generate("antidebug", 6, 13):

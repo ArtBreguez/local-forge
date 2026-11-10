@@ -275,7 +275,7 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         return [g for g, (nums, lits) in enumerate(groups)
                 if (tok.kind == "num" and (tok.val in nums or tok.text in lits)) or (tok.kind == "word" and tok.text in lits)]
 
-    expected, current, depth, pending, last_hit, last_ctx = 0, None, 0, None, -9, -9
+    expected, current, depth, pending, last_hit, last_ctx, last_ret = 0, None, 0, None, -9, -9, -9
     lo_i = sp.numeric[0] if sp.interval else None
     hi_i = sp.numeric[-1] if sp.interval else None
     i = 0
@@ -328,8 +328,11 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         w = tok.text
         if w in sp.units and (not sp.multi_num or current == sp.numeric[-1]):
             continue                                               # `8 bits` after the rotation amount, not after the XOR constant
-        if w == "and" or w in GLUE or w in GENERIC or w in sp.fill or (w in CTX_NOUNS and last_ctx == here - 1) or (w in RETURN_WORDS and sp.returns):
+        if w in RETURN_WORDS and sp.returns:
+            last_ret = here
             continue
+        if w == "and" or w in GLUE or w in GENERIC or w in sp.fill or (w in CTX_NOUNS and last_ctx == here - 1) or (w == "value" and last_ret == here - 1):
+            continue                                               # `return value 111`: the value of what the question asked proc to return
         if (w in NOUNS_Q and sp.nouns_ok and current is None) or (w in NOUNS_N and (current is None or current not in sp.numeric)):
             continue                                               # a quantity noun only leads in ("key 48" after a cipher would mislabel the count)
         if sp.interval:
