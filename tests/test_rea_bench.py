@@ -104,15 +104,17 @@ class Scorer(unittest.TestCase):
         self.assertFalse(scoring.score("This is X-TEA", tea))
         self.assertFalse(scoring.score("TEA or maybe RC4", tea))
         b64 = {"score": "tokens", "accept": [["base64", "base-64"]]}
-        self.assertTrue(scoring.score("Base-64 encoder", b64))
+        self.assertTrue(scoring.score("Base-64", b64))
         self.assertTrue(scoring.score("base64", b64))
+        self.assertFalse(scoring.score("Base-64 encoder", b64), "round 3: a word the grammar does not know is a leftover")
 
     def test_tokens_signs_and_ranges(self):
-        t = {"score": "tokens", "accept": [["-37"], ["40"]]}
+        t = {"score": "tokens", "accept": [["-37"], ["40"]], "kind": "bounds"}
         self.assertTrue(scoring.score("lower bound is -37, upper 40", t))
-        self.assertTrue(scoring.score("(-37, 40)", t))
+        self.assertTrue(scoring.score("[-37, 40]", t))
+        self.assertFalse(scoring.score("(-37, 40)", t), "round 3 (M2): the parenthesis is the notation of an open interval")
         self.assertFalse(scoring.score("lower bound 37, upper 40", t))
-        r = {"score": "tokens", "accept": [["5"], ["9"]]}
+        r = {"score": "tokens", "accept": [["5"], ["9"]], "kind": "bounds"}
         self.assertTrue(scoring.score("range 5-9", r))        # a hyphen between digits separates the numbers
 
     def test_exact_case_is_case_sensitive(self):
@@ -151,13 +153,13 @@ class Scorer(unittest.TestCase):
     def test_two_environment_variable_names_are_not_an_answer(self):
         t = next(t for t in families.generate("antidebug", 24, 5) if t.variant == "env")
         name = t.params["name"]
-        self.assertTrue(scoring.score(f"env, {name}", t.truth) and scoring.score(f"env, {name.lower()}\nread with getenv", t.truth))
+        self.assertTrue(scoring.score(f"env, {name}", t.truth) and scoring.score(f"env, {name.lower()}\nThe function reads it with getenv before it checks.", t.truth))
         self.assertFalse(scoring.score(f"env, {name} or LD_AUDIT_X", t.truth))
         self.assertFalse(scoring.score(f"env: {name}, {name}_OLD", t.truth))
         self.assertTrue(scoring.score(f"environment variable {name}", t.truth))
 
     def test_bounds_must_come_in_order(self):
-        both = {"score": "tokens", "accept": [core.dec(1570), core.dec(1751)]}
+        both = {"score": "tokens", "accept": [core.dec(1570), core.dec(1751)], "kind": "bounds"}
         self.assertTrue(scoring.score("Lowest 1570, highest 1751", both))
         self.assertTrue(scoring.score("1570 to 1751", both))
         self.assertFalse(scoring.score("highest 1751, lowest 1570", both))
@@ -208,7 +210,8 @@ class Scorer(unittest.TestCase):
 
     def test_exact_head_and_unknown_modes(self):
         t = {"score": "exact_head", "accept": ["admin_login42"]}
-        self.assertTrue(scoring.score("`admin_login42`\nXOR 0x37", t))
+        self.assertTrue(scoring.score("`admin_login42`\nEach byte is XORed with a key from the table.", t))
+        self.assertFalse(scoring.score("`admin_login42`\nXOR 0x37", t), "round 3: what follows the key must be a sentence")
         self.assertTrue(scoring.score("Here is the string:\nadmin_login42", t))
         self.assertFalse(scoring.score("Here is the string:\nAdmin_Login42", t), "B1: plaintexts are case-sensitive")
         self.assertFalse(scoring.score("I do not know.\nadmin_login42", t))

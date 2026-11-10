@@ -1,0 +1,369 @@
+"""The whitelist grammar of a headline (round 3: M1, M2, M3, m2, m9).
+
+Rounds 1 to 3 each found a new word that turned a wrong reply into an answer in a scorer built on a list of hedge words. This module
+does not look for bad words. It asks whether the WHOLE headline is an answer, and rejects what it cannot parse.
+
+    headline  :=  (filler | separator)*  group_1  (filler | separator)*  group_2  ...  group_n  (filler | separator)*
+
+after normalisation: unicode quotes, apostrophes, dashes, the minus sign and full-width characters become ASCII, markdown and backticks
+are gone, one trailing `. , ; : !` is removed (a `?` or `...` is not removed: it is hesitation). Then, token by token:
+
+  group_i      a spelling of the i-th accept group (a number by value: `0x08` = `8` = `eight`; a name or a bare hex byte as written). The
+               groups must come in the order of `accept`; a group may be written twice in a row in two spellings (`0x28 (40)`).
+  separator    `,` `;` `/` `:` the word `and`, whitespace, quotes, balanced parentheses.
+  filler       a fixed vocabulary of function words (`the`, `is`, `with`, ...), the generic words `answer`/`result`, the question's own unit
+               words (`bytes`, `rounds`, `iterations`, `states`, `ns`, ... per question, see UNITS), and, for a task with at most one
+               numeric group, the nouns that name the quantity (`offset`, `size`, `key length`, ...). `allow` phrases of the task
+               ("extended tea" for XTEA) are removed first.
+  context      `128-bit`, `(88 bits)`, `CRC-32`: only where the question itself states that quantity (the key width, the block size, the CRC
+               width) or, for a byte count, eight times a group's value; never as a hit for a group, never as a free pass.
+  bounds       a task with two numeric groups that is a closed interval (`bounds` family, legacy `threshold`) also takes `lo to hi`,
+               `lo..hi`, `lo-hi`, `[lo, hi]`, `from lo to hi`, `lo <= x <= hi`, `lowest lo, highest hi`, a trailing `inclusive`. Nothing
+               exclusive: `<`, `>`, `(lo, hi)`, `[lo, hi)`, `between`, `exclusive`, `strictly`, `than` are not in the vocabulary.
+
+Everything else is a leftover and rejects: any other word (`not`, `or`, `at least`, `unknown`, `except`, a second name, a number word that is not
+the key), operator, symbol or number. A number is a hit only where it is a group's value, so `40, forty-one`, `≠ 40`, `at least 40`,
+`(1570, 1751)` and `CRC-40` fail for the same reason: something is left over. The price is yield: a headline with a clause after the
+answer is rejected. Poison is not acceptable, yield is.
+
+Exact-string keys (`exact_case`, `exact_head`) are compared as a whole after the same normalisation (`is_exact_answer`).
+"""
+from __future__ import annotations
+
+import re
+from typing import NamedTuple
+
+# ---- normalisation -----------------------------------------------------------------------------------------------------------
+
+
+def _table() -> dict:
+    t = {}
+    for ch in "‘’‛´ʼʹʻˈ′‵":
+        t[ord(ch)] = "'"
+    for ch in "“”„‟″«»❝❞":
+        t[ord(ch)] = '"'
+    for ch in "‐‑‒–—―−﹣⁃⸺":
+        t[ord(ch)] = "-"
+    for ch in "               　  \t\r\f\v":
+        t[ord(ch)] = " "
+    for c in range(0xFF01, 0xFF5F):                     # full-width ASCII (including ＇ and －) -> ASCII
+        t.setdefault(c, chr(c - 0xFEE0))
+    t.update({0x2264: "<=", 0x2265: ">=", 0x2260: "!=", 0x2026: "...", 0xb5: "u", 0x3bc: "u"})
+    return t
+
+
+_TABLE = _table()
+
+
+def normalise(s: str) -> str:
+    """Unicode quotes, apostrophes, dashes, the minus sign, full-width characters and odd spaces -> ASCII, `\\x3f` -> `x3f`, one space."""
+    s = s.translate(_TABLE)
+    s = re.sub(r"\\x([0-9a-fA-F]{2})", r"x\1", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+
+# ---- vocabulary --------------------------------------------------------------------------------------------------------------
+
+GLUE = frozenset("the a an this that it its it's is are here here's there with of in at for as using uses use runs run running "
+                 "performs implements".split())
+GENERIC = frozenset("answer result solution output final response".split())
+NOUNS = frozenset("""offset offsets size length count number value key name constant field record struct structure function proc
+returns return returned equals equal exactly cipher algorithm technique check hash stream block polynomial poly init initial
+register input string text plaintext secret alphabet variable endian endianness order""".split())
+
+_ROUNDS = {"round", "rounds", "iteration", "iterations", "cycle", "cycles", "loop", "loops", "times", "main"}
+_BYTES = {"byte", "bytes"}
+UNITS = {
+    "structs": _BYTES, "pktsum": _BYTES, "cipher/rc4": _BYTES, "cipher": _ROUNDS, "multi/limit_helper": {"character", "characters", "char", "chars", "byte", "bytes"},
+    "fsm/table_states": {"state", "states", "distinct", "different"}, "fsm/switch_states": {"state", "states", "distinct", "different"},
+    "fsm/opcode_count": {"opcode", "opcodes", "case", "cases", "handler", "handlers", "different", "distinct"}, "fsm/opcode_value": {"opcode"},
+    "antidebug/timing_ns": {"ns", "nanosecond", "nanoseconds"}, "antidebug/timing_us": {"us", "microsecond", "microseconds"},
+    "bounds/char_class": {"value", "values", "byte", "bytes", "different", "distinct"},
+    "lcg": _ROUNDS, "rotate": {"bit", "bits", "position", "positions"},
+}
+ANY_UNITS = frozenset(_ROUNDS | _BYTES | {"state", "states", "opcode", "opcodes", "value", "values", "char", "chars", "character", "characters",
+                                           "ns", "us", "nanoseconds", "microseconds", "distinct", "different"})
+
+LO_LABELS = frozenset("lowest lower low min minimum smallest from first start".split())
+HI_LABELS = frozenset("highest upper high max maximum largest last end".split())
+NEUTRAL_LABELS = frozenset("bound bounds limit limits range interval inclusive inclusively".split())
+
+# Spellings that are one name in the question's own words ("little-endian" for 'little'), and phrases that only explain a name.
+ALIASES = {"little": ("little-endian",), "big": ("big-endian",)}
+EXPLAIN = {"tea": ("tiny encryption algorithm",)}
+
+# The lead-in of an exact string ("The string is", "Alphabet:", "It writes"): function words only.
+LEAD_WORDS = frozenset("""the a an this that it its it's proc function string text plaintext plain ascii secret alphabet result output
+answer value key name path url writes write written writing returns return returned outputs produces produce builds copies decodes decoded
+decode yields yield stores store is are was here here's equals equal argument buffer index order in of to into as input counts count
+counted looks for checks final solution response""".split())
+LEADIN_LINE_WORDS = LEAD_WORDS | GLUE | GENERIC | NOUNS
+
+_ONES = "zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen seventeen eighteen nineteen".split()
+_NUMWORD = {w: i for i, w in enumerate(_ONES)}
+for _i, _tw in enumerate("twenty thirty forty fifty sixty seventy eighty ninety".split(), start=2):
+    _NUMWORD[_tw] = 10 * _i
+    for _u in range(1, 10):
+        _NUMWORD[f"{_tw}-{_ONES[_u]}"] = 10 * _i + _u
+
+
+# ---- lexer -------------------------------------------------------------------------------------------------------------------
+
+class Tok(NamedTuple):
+    kind: str            # "num", "word", "ctx" (`N-bit`, `N-bytes`), "p" (one punctuation character)
+    text: str
+    val: int = 0         # num: value; ctx: N
+    unit: str = ""       # ctx: bit | byte | char
+
+
+_NUM = re.compile(r"(-?)(0x[0-9a-f]+|[0-9]+)(?:ull|llu|ul|lu|ll|u|l)?")
+_THOUSANDS = re.compile(r"(?<![0-9a-z_,])[0-9]{1,3}(?:,[0-9]{3})+(?![0-9a-z_])")
+_LEX = re.compile(r"""
+    (?P<ctx>(?<![0-9a-z_])(?P<cn>[0-9]+)-(?P<cu>bit|byte|character|char)s?(?![0-9a-z_]))
+  | (?P<num>(?<![0-9a-z_])-?(?:0x[0-9a-f]+|[0-9]+)(?:ull|llu|ul|lu|ll|u|l)?(?![0-9a-z_]))
+  | (?P<word>[a-z_][a-z0-9_]*(?:-[a-z0-9_]+)*(?:'[a-z]+)?|[0-9][0-9a-z_]*)
+  | (?P<space>\s+)
+  | (?P<other>.)
+""", re.X | re.S)
+
+
+def num_value(tok: str):
+    """Integer value of a decimal or 0x literal, C suffix allowed ("0x08" -> 8, "16ul" -> 16); None for anything else."""
+    m = _NUM.fullmatch(tok)
+    if not m:
+        return None
+    v = int(m.group(2), 16 if m.group(2).startswith("0x") else 10)
+    return -v if m.group(1) else v
+
+
+def prep(text: str) -> str:
+    """Lower case, C23 digit separators (1'000), `1_000`, and thousands commas (250,000,000) removed."""
+    t = text.lower()
+    t = re.sub(r"(?<=[0-9])'(?=[0-9a-f])|(?<=[0-9a-f])'(?=[0-9])", "", t)
+    t = re.sub(r"(?<=[0-9])_(?=[0-9])", "", t)
+    return _THOUSANDS.sub(lambda m: m.group(0).replace(",", ""), t)
+
+
+def lex(text: str, letter_runs: bool = False) -> list:
+    """Tokens of an already normalised text. Number words (zero..ninety-nine) are numbers. With `letter_runs`, single letters separated only
+    by spaces or commas are one word ("b, b, b" -> "bbb"): the fsm answers are letter strings."""
+    out = []
+    for m in _LEX.finditer(prep(text)):
+        g = m.lastgroup
+        if g == "space":
+            continue
+        s = m.group(0)
+        if g == "ctx":
+            out.append(Tok("ctx", s, int(m.group("cn")), m.group("cu")))
+        elif g == "num":
+            out.append(Tok("num", s, num_value(s)))
+        elif g == "word":
+            out.append(Tok("num", s, _NUMWORD[s]) if s in _NUMWORD else Tok("word", s))
+        else:
+            out.append(Tok("p", s))
+    if letter_runs:
+        merged, i = [], 0
+        while i < len(out):
+            j = i
+            while j < len(out) and out[j].kind == "word" and len(out[j].text) == 1:
+                k = j + 1
+                if k < len(out) and out[k].kind == "p" and out[k].text == ",":
+                    k += 1
+                if k < len(out) and out[k].kind == "word" and len(out[k].text) == 1:
+                    j = k
+                else:
+                    break
+            if j > i:
+                merged.append(Tok("word", "".join(t.text for t in out[i:j + 1] if t.kind == "word")))
+                i = j + 1
+            else:
+                merged.append(out[i])
+                i += 1
+        out = merged
+    return out
+
+
+# ---- what a task allows ------------------------------------------------------------------------------------------------------
+
+_QUESTION_CTX = re.compile(r"([0-9]+)-(bit|byte|character|char)s?\b", re.I)
+_QUESTION_CRC = re.compile(r"([0-9]+)-bit\s+crc", re.I)
+_QUESTION_NUM = re.compile(r"\b(?:0x[0-9a-f]+|[0-9]+)\b", re.I)
+
+
+class Spec:
+    """Everything a headline may contain for one task, derived from its truth dict (`accept`, `allow`, `question`, `kind`, `variant`)."""
+
+    def __init__(self, t: dict):
+        self.groups = []
+        for g in t["accept"]:
+            nums = {num_value(a.lower()) for a in g} - {None}
+            lits = {a.lower() for a in g}
+            for a in list(lits):
+                lits |= {x for x in ALIASES.get(a, ())}
+            self.groups.append((nums, lits))
+        self.numeric = [i for i, (nums, _l) in enumerate(self.groups) if nums]
+        self.multi_num = len(self.numeric) >= 2
+        kind, variant = t.get("kind", ""), t.get("variant", "")
+        self.interval = self.multi_num and (kind in ("bounds", "threshold") or bool(t.get("interval")))
+        self.nouns_ok = not self.multi_num
+        key = f"{kind}/{variant}"
+        self.units = set(UNITS.get(key) or UNITS.get(kind) or (ANY_UNITS if not kind else ()))
+        q = t.get("question", "")
+        self.qwords = set(re.findall(r"[a-z]+", q.lower()))
+        self.q_numbers = {num_value(m.group(0).lower()) for m in _QUESTION_NUM.finditer(q)} - {None}
+        self.ctx = {(int(n), u.lower()[:4] if u.lower().startswith("char") else u.lower()) for n, u in _QUESTION_CTX.findall(q)}
+        self.crc = {int(n) for n in _QUESTION_CRC.findall(q)}
+        values = {v for nums, _l in self.groups for v in nums}
+        self.bits_ok = {n for n, u in self.ctx if u == "bit"}
+        if kind == "structs" or key == "cipher/rc4" or not kind:     # a byte count whose size in bits may be stated: RC4, N bytes (8N bits)
+            self.bits_ok |= {8 * v for v in values if v > 0}
+        self.fill = set()
+        for words, marker in ((("decimal", "dec"), "decimal"), (("hex", "hexadecimal"), "hex")):
+            if marker in self.qwords and self.numeric:
+                self.fill |= set(words)
+        self.allow = [p.lower() for p in t.get("allow", [])]
+        for nums_lits in self.groups:
+            for lit in nums_lits[1]:
+                self.allow += list(EXPLAIN.get(lit, ()))
+        self.letter_runs = bool(t.get("cand"))
+        self.values = values
+        self.literals = {l for _n, ls in self.groups for l in ls}
+
+
+def _blank(text: str, phrases) -> str:
+    for ph in phrases:
+        text = re.sub(r"(?<![0-9a-z_-])" + re.escape(ph) + r"(?![0-9a-z_-])", " ", text, flags=re.I)
+    return text
+
+
+def _ctx_ok(tok: Tok, sp: Spec) -> bool:
+    u = tok.unit[:4] if tok.unit.startswith("char") else tok.unit
+    return tok.val in sp.bits_ok if u == "bit" else (tok.val, u) in sp.ctx
+
+
+_CLOSERS = "\"'"
+_CHAIN = re.compile(r"(-?(?:0x[0-9a-f]+|[0-9]+))\s*<=\s*(?:x|v|n|i|idx|index|value)\s*<=\s*(-?(?:0x[0-9a-f]+|[0-9]+))")
+
+
+# ---- the headline ------------------------------------------------------------------------------------------------------------
+
+def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
+    """Does the whole headline parse as the answer grammar of the task (see the module docstring)?"""
+    sp = sp or Spec(t)
+    s = normalise(head).rstrip(_CLOSERS + " ")
+    s = re.sub(r"[.,;:!]$", "", s).rstrip(_CLOSERS + " ")
+    if sp.interval:
+        m = re.fullmatch(r"\[(.*)\]", s)
+        if m:
+            s = m.group(1)
+        s = _CHAIN.sub(r"\1 to \2", s.lower())
+        s = re.sub(r"(?<=[0-9a-z])\s*\.\.\s*(?=-?[0-9a-z])", " to ", s)
+    s = _blank(s.lower(), sp.allow)
+    toks = lex(s, sp.letter_runs)
+    groups, n = sp.groups, len(sp.groups)
+    if not toks or n == 0:
+        return False
+    def groups_of(tok) -> list:
+        return [g for g, (nums, lits) in enumerate(groups)
+                if (tok.kind == "num" and (tok.val in nums or tok.text in lits)) or (tok.kind == "word" and tok.text in lits)]
+
+    expected, current, depth, pending, last_hit = 0, None, 0, None, -9
+    lo_i = sp.numeric[0] if sp.interval else None
+    hi_i = sp.numeric[-1] if sp.interval else None
+    i = 0
+    while i < len(toks):
+        tok = toks[i]
+        i += 1
+        here = i - 1                                               # index of `tok`
+        if tok.kind == "p":
+            c = tok.text
+            if c in ",;/:\"'":
+                continue
+            if c == "(":
+                depth += 1
+            elif c == ")":
+                if depth == 0:
+                    return False
+                depth -= 1
+            elif c == "-" and sp.interval and current == lo_i and expected == hi_i and pending is None and last_hit == here - 1 \
+                    and i < len(toks) and hi_i in groups_of(toks[i]):
+                continue                                           # lo-hi: the hyphen directly after lo and directly before hi
+            else:
+                return False
+            continue
+        cands = groups_of(tok)
+        if cands:
+            if sp.interval and depth > 0:
+                ok = [g for g in cands if g == current]            # in parentheses only a second spelling of the same bound
+            else:
+                ok = [g for g in cands if g == expected] or [g for g in cands if g == current]
+            if not ok:
+                return False
+            g = ok[0]
+            if pending is not None and not (g == expected and g == (lo_i if pending == "lo" else hi_i)):
+                return False                                       # "lowest 1751": a label must sit on its own bound
+            if g == expected:
+                expected += 1
+            current, pending, last_hit = g, None, here
+            continue
+        if tok.kind == "ctx":
+            if not _ctx_ok(tok, sp):
+                return False
+            continue
+        if tok.kind == "num":
+            nxt = toks[i] if i < len(toks) else None
+            if depth > 0 and nxt is not None and nxt.kind == "word" and nxt.text in ("bit", "bits") and tok.val in sp.bits_ok:
+                i += 1                                             # "(88 bits)"
+                continue
+            return False
+        w = tok.text
+        if w in sp.units and (not sp.multi_num or current == sp.numeric[-1]):
+            continue                                               # `8 bits` after the rotation amount, not after the XOR constant
+        if w == "and" or w in GLUE or w in GENERIC or w in sp.fill or (w in NOUNS and sp.nouns_ok):
+            continue
+        if sp.interval:
+            if w in LO_LABELS or w in HI_LABELS:
+                if pending is not None or expected != (lo_i if w in LO_LABELS else hi_i):
+                    return False                                   # two labels in a row, or a label for a bound that is already written
+                pending = "lo" if w in LO_LABELS else "hi"
+                continue
+            if w in NEUTRAL_LABELS:
+                continue
+            if w == "to" and current == lo_i and expected == hi_i and pending is None and last_hit == here - 1 \
+                    and i < len(toks) and hi_i in groups_of(toks[i]):
+                continue                                           # `lo to hi`: directly between the two bounds ("lo, to hi", "lo to lo" are not a range)
+        m = re.fullmatch(r"crc-?([0-9]+)", w)
+        if m and int(m.group(1)) in sp.crc:
+            continue
+        return False
+    return expected == n and depth == 0 and pending is None
+
+
+# ---- exact strings -----------------------------------------------------------------------------------------------------------
+
+_OPEN = "\"'`(["          # what may stand in front of a key without a lead-in word
+_CLOSE = "\"'`)]"         # what may follow it; angle brackets are comparison operators, not quotes
+_PREFIX_PUNCT = re.compile(r"[\s:=,\->" + re.escape(_OPEN) + r"]+")
+
+
+def is_exact_answer(head: str, key: str) -> bool:
+    """The whole headline is `key`: quotes, backticks, one trailing `. , ; : !` and a lead-in of function words ("The string is",
+    "Alphabet:") are allowed around it; anything else (a second string, a prefix or suffix glued to the key, another case, other spacing)
+    is not. Case and spaces are significant."""
+    s = normalise(head)
+    if s != key:
+        s = s.rstrip(_CLOSE + " ")                         # closing quotes and brackets, then ONE terminal mark ("key..." and "key?" are not the key)
+        s = re.sub(r"[.,;:!]$", "", s).rstrip(_CLOSE + " ")
+    if s == key:
+        return True
+    if not key or not s.endswith(key):
+        return False
+    prefix = s[:-len(key)]
+    if prefix[-1] not in " :=->" + _OPEN:                  # the key must start a word: "xkey", "/etc/key" are other strings
+        return False
+    words = re.findall(r"[A-Za-z]+(?:'[A-Za-z]+)*", prefix)
+    if _PREFIX_PUNCT.sub("", re.sub(r"[A-Za-z]+(?:'[A-Za-z]+)*", "", prefix)):
+        return False                                       # digits or other symbols in the lead-in
+    if not words and prefix.strip(_OPEN + " "):
+        return False                                       # no lead word: only opening quotes and brackets may precede the key ("-key", ":key", "> key")
+    return len(words) <= 6 and all(w.lower() in LEAD_WORDS for w in words)

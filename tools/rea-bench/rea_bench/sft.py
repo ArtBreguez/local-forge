@@ -1,23 +1,28 @@
 """Which sampled replies become SFT pairs, and what exactly is stored (stdlib only; unit-tested without Modal).
 
-`modal_rea_data.py --stage sample` asks a model K times per task. This module decides, per task, from the K replies and the scorer:
+`modal_rea_data.py --stage sample` asks a model K times per task. This module decides, per task, from the K replies and the STRICT scorer
+(`scoring.score_strict`, the whitelist grammar, for every family including legacy; the frozen substring scorer is for `modal_rea.py`'s
+evaluation only):
 
+  re-scored     every reply is scored again from its text, whatever flag the checkpoint holds: a `--resume` run or an older checkpoint
+                never carries the verdict of an older scorer into the data (round 3, m3). The text of a failed request is never a reply.
   stored text   the headline and at most ONE justification sentence (`scoring.sft_target`): the rest of the reply is cut off and the
-                record says `truncated: true`. A justification that hedges, names another candidate value or changes its mind
-                (wait / actually / correction / however) vetoes the reply, so a right first line cannot carry a wrong body into the data.
-  agreement     a task with `chance >= AGREE_CHANCE` (a guess is right that often: CRC init and xorout 0.5, pktsum 0.2-0.36, fsm
-                0.17-0.27) is kept only when at least AGREE_MIN of the K samples have a right headline: one lucky guess is not evidence
-                that the model read the code. Tasks below the threshold keep any right sample, as before. Agreement filters luck, it
-                does not make a 0.55 task hard: a model that always answers "all ones" still agrees with itself.
+                record says `truncated: true`. A justification that holds another number, name or string of the key's shape, or a hesitation
+                word, is DROPPED (`sentence_dropped: true`): the headline alone is stored.
+  agreement     a task with `chance >= AGREE_CHANCE` (the best constant guess within its variant is right that often: CRC init and xorout
+                0.4-0.6, pktsum 0.2-0.5, fsm 0.2-0.4, TEA/XTEA with the round count guessed 0.3, ...) is kept only when at least AGREE_MIN of
+                the K samples have a right, storable headline: one lucky guess is not evidence that the model read the code. Tasks below
+                the threshold keep any right sample. Agreement filters luck, it does not make a 0.55 task hard: a model that always answers
+                "all ones" still agrees with itself.
   distinct      identical stored texts of one task are kept once.
 """
 from __future__ import annotations
 
 import collections
 
-from .scoring import is_error_reply, sft_target
+from .scoring import is_error_reply, score_strict, sft_target
 
-AGREE_CHANCE = 0.2
+AGREE_CHANCE = 0.1
 AGREE_MIN = 2
 
 
@@ -27,28 +32,28 @@ def needs_agreement(t: dict) -> bool:
 
 
 def select(outs: list, t: dict) -> tuple:
-    """([records], reason) for one task. `outs` = [(reply, scored right)] for its K samples. A record is
-    {"text", "headline", "truncated"}; reason is "kept", "no_correct", "agreement" (too few agreeing right samples for the task's
-    chance level) or "vetoed" (every right reply had a justification that is not storable)."""
-    good = [o for o, ok in outs if ok and not is_error_reply(o)]       # the text of a failed request is never a sample
-    if not good:
+    """([records], reason) for one task. `outs` = [(reply, flag)] for its K samples; the flag is not used (every reply is scored again). A record
+    is {"text", "headline", "truncated", "sentence_dropped"}; reason is "kept", "no_correct" (no sample has a right headline) or "agreement"
+    (too few right samples for the task's chance level)."""
+    targets = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
+    if not targets:
         return [], "no_correct"
-    if needs_agreement(t) and len(good) < AGREE_MIN:
+    if needs_agreement(t) and len(targets) < AGREE_MIN:
         return [], "agreement"
     seen, kept = set(), []
-    for reply in good:
-        r = sft_target(reply, t)
-        if r is None or r["text"] in seen:
+    for r in targets:
+        if r["text"] in seen:
             continue
         seen.add(r["text"])
-        kept.append({"text": r["text"], "headline": r["headline"], "truncated": r["truncated"]})
-    return kept, ("kept" if kept else "vetoed")
+        kept.append({k: r[k] for k in ("text", "headline", "truncated", "sentence_dropped")})
+    return kept, "kept"
 
 
 class Stats:
     """The sample stage's counters, in total and per task family (`kind`)."""
 
-    FIELDS = ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "truncated", "no_correct", "agreement", "vetoed")
+    FIELDS = ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "truncated", "sentence_dropped", "no_correct",
+              "agreement")
 
     def __init__(self):
         self.total = collections.Counter()
@@ -64,7 +69,8 @@ class Stats:
             c["kept_tasks"] += bool(kept)
             c["kept_records"] += len(kept)
             c["truncated"] += sum(r["truncated"] for r in kept)
-            if reason in ("no_correct", "agreement", "vetoed"):
+            c["sentence_dropped"] += sum(r.get("sentence_dropped", False) for r in kept)
+            if reason in ("no_correct", "agreement"):
                 c[reason] += 1
 
     def as_dict(self) -> dict:
@@ -89,17 +95,17 @@ def error_warning(stats: dict):
 
 
 def assemble(tasks: list, results: dict, model: str, messages_for) -> tuple:
-    """(SFT records, stats dict) from the K replies of every task. `results` = {task id: {"outs": [[reply, scored right], ...]}} (the
-    sample stage's checkpoint format); `messages_for(task)` = the system and user message. A task without a result is skipped."""
+    """(SFT records, stats dict) from the K replies of every task. `results` = {task id: {"outs": [[reply, flag], ...]}} (the sample stage's
+    checkpoint format; the flag is ignored, see above); `messages_for(task)` = the system and user message. A task without a result is skipped."""
     st, kept = Stats(), []
     for t in tasks:
         rec = results.get(t["id"])
         if rec is None:
             continue
-        outs = [(o, bool(ok)) for o, ok in rec["outs"]]
+        outs = [(o, score_strict(o, t)) for o, _flag in rec["outs"]]
         records, reason = select(outs, t)
         st.add(t, outs, records, reason)
         for r in records:
             kept.append({"messages": [*messages_for(t), {"role": "assistant", "content": r["text"]}], "task": t["id"], "kind": t["kind"],
-                         "model": model, "truncated": r["truncated"]})
+                         "model": model, "truncated": r["truncated"], "sentence_dropped": r["sentence_dropped"]})
     return kept, st.as_dict()

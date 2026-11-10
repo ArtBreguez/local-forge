@@ -21,8 +21,12 @@ UBSAN_FLAGS = ("-fsanitize=undefined", "-fno-sanitize-recover=all")
 FILLER_REPLIES = ["0 1 2", "1 2 3", "0x10 0x20", "0 1 2 3 4 8 16 32 64 255 256 0x10 0x20"]
 
 
-def filler_passes(t) -> list:
-    """The filler replies the task's scorer accepts (empty list = fine)."""
+def filler_passes(t, strict: bool = False) -> list:
+    """The filler replies the task's scorer accepts (empty list = fine). strict=True: the scorer of the data path (`score_strict`, the whitelist
+    grammar for every family, legacy converted), not the evaluation scorer (frozen substring modes for the legacy templates)."""
+    if strict:
+        m = t.meta()
+        return [r for r in FILLER_REPLIES if scoring.score_strict(r, m)]
     return [r for r in FILLER_REPLIES if scoring.score(r, t.truth)]
 
 
@@ -57,6 +61,7 @@ def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
     """Problems found with one task (empty list = fine): a filler reply scores, the C does not compile clean, a harness disagrees
     with the truth, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
     problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)] if t.cc else []   # legacy: frozen, see cli
+    problems += [f"{t.id} accepts the content-free reply {r!r} under the strict scorer of the sample stage" for r in filler_passes(t, strict=True)] if not t.cc else []
     if survive_check and t.facts and survive.OBJDUMP and survive.toolchain(t.cc or "gcc"):     # no compiler: the gate warned (survive.Gate)
         ok, why = survive.check_task(t)
         if not ok:

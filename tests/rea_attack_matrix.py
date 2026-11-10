@@ -1,13 +1,16 @@
 """The reviewer's scorer attacks (round 2: repro_scorer.py, s_attack.py, s_attack2.py), ported to run on generated tasks.
 
 `matrix(task_dicts)` returns {(name, expect): [passed, total]} plus one example per row that went the wrong way:
-  expect False   a WRONG reply: must be rejected (candidate lists, `X or Y`, negations, supersets, a lead-in over a list, ...)
-  expect True    a RIGHT reply in a realistic format: must be accepted (the 28 formats of the review, see RIGHT_FORMATS)
-Rows that the review marked "info" (policy questions) are not counted either way. Where this round changed the policy the old
-expectation is flipped on purpose and listed in CHANGED_BY_DESIGN: a key followed by a parenthesis, spaced-out alphabets, upper-cased
-plaintexts and `X or Y` over two accepted answers are no longer accepted.
+  expect False    a WRONG reply: must be rejected (candidate lists, `X or Y`, negations, supersets, a lead-in over a list, ...)
+  expect True     a RIGHT reply in a realistic format: must be accepted (the 28 formats of the review, see RIGHT_FORMATS)
+  expect "yield"  a RIGHT reply in a format the whitelist grammar of round 3 does not parse: it must be rejected. These rows are the yield
+                  cost of the design ("yield cost is acceptable, poison is not"), pinned so the list in the README stays exact.
+Rows that the review marked "info" (policy questions) are not counted either way. Where a round changed the policy the old expectation
+is flipped on purpose: a key followed by a parenthesis, spaced-out alphabets, upper-cased plaintexts and `X or Y` over two accepted answers
+(round 2); a number followed by `approximately` (a hedge), a unit the question did not use, a name group written in another order than the
+question asked, a second line that is not a sentence (round 3).
 
-    python3 -m tests.rea_attack_matrix [seed] [per-variant]        the numbers of the final report
+    python3 -m tests.rea_attack_matrix [seed] [per-variant]        the numbers of the final report, with the right-format pass rate per family
 """
 from __future__ import annotations
 
@@ -21,18 +24,19 @@ from .helpers import ROOT
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
 from rea_bench import families  # noqa: E402
-from rea_bench.scoring import num_value, score  # noqa: E402
+from rea_bench.scoring import num_value, score, strict_task  # noqa: E402
 
 NEW_FAMILIES = [f for f in families.modules() if f != "legacy"]
 HEADLINE_MODES = ("tokens", "exact_case", "exact_head")
 
 CHANGED_BY_DESIGN = ["eh key + more (a parenthesis after the key)", "alpha spaced chars", "eh uppercase", "fsm two accepted (X or Y)"]
 
-# The 28 right-answer formats of the review (s_attack "R ..." rows: 12 generic + 11 single-number + 5 two-bound).
+# The 28 right-answer formats of the review (s_attack "R ..." rows: 12 generic + 11 single-number + 5 two-bound), 27 of them here: "approximately N"
+# is a hedge, not an answer, and is a wrong row since round 3 ("W approx"). Five more are yield-class (a non-sentence second line, a bullet before a digit).
 RIGHT_FORMATS = ["R bare", "R md-bold", "R backtick", "R answer-colon", "R answer-colon-nl", "R sentence", "R +just-line2", "R heading",
                  "R bullet", "R trailing-dot", "R blank-first", "R parens",
                  "R hex-dec-both", "R dec-in-hex-paren", "R zero-padded", "R u-suffix", "R ull-suffix hex", "R bytes", "R offset-word",
-                 "R it-is", "R approx", "R commas", "R trailing-colon",
+                 "R it-is", "R commas", "R trailing-colon",
                  "R lo-to-hi", "R lo-and-hi", "R lo hi interval", "R lo..hi", "R lo-hi hyphen"]
 
 
@@ -42,6 +46,11 @@ def tasks_for(seed: int, per_variant: int, fams=None, gate=None) -> list:
         m = families.modules()[fam]
         out += [t.meta() | {"_truth": t.truth} for t in families.generate(fam, per_variant * len(m.VARIANTS), seed, "mix", gate)]
     return out
+
+
+def legacy_tasks(seed: int, n: int) -> list:
+    """The ten legacy templates as the data path scores them (`strict_task`): grammar groups and exact strings, kind kept."""
+    return [strict_task(t.meta()) for t in families.generate("legacy", n, seed)]
 
 
 def _nums(t):
@@ -65,17 +74,23 @@ def generic_attacks(t) -> list:
     """s_attack.py: (name, reply, expect) for every headline-mode task."""
     A, mode, k = _bare(t), t["score"], _nums(t)
     numeric = [x for x in k if x is not None]
+    interval = t.get("kind") in ("bounds", "threshold") and len(k) == 2 and None not in k
     out = [("R bare", A, True), ("R md-bold", f"**{A}**", True), ("R backtick", f"`{A}`", True), ("R answer-colon", f"Answer: {A}", True),
-           ("R answer-colon-nl", f"Answer:\n{A}\nbecause of the loop", True), ("R sentence", f"The answer is {A}.", True),
-           ("R +just-line2", f"{A}\nThe constant 1 and 2 and 3 appear in the loop at offset 4.", True), ("R heading", f"## {A}\njustification 7", True),
-           ("R bullet", f"- {A}", True), ("R trailing-dot", f"{A}.", True), ("R blank-first", f"\n\n{A}\nbecause", True), ("R parens", f"({A})", True)]
+           ("R answer-colon-nl", f"Answer:\n{A}\nbecause of the loop", True),
+           ("R sentence", f"The answer is {A}.", True),
+           ("R +just-line2", f"{A}\nThe constant 1 and 2 and 3 appear in the loop at offset 4.", True), ("R heading", f"## {A}\njustification 7", "yield"),
+           ("R bullet", f"- {A}", "yield" if re.match(r"[\d-]", A) else True), ("R trailing-dot", f"{A}.", True),
+           ("R blank-first", f"\n\n{A}\nbecause", "yield"),
+           (("W interval-parens" if interval else "R parens"), f"({A})", False if interval else True)]
     if mode == "tokens" and numeric and len(k) == 1:
         v = numeric[0]
         out += [("R hex-dec-both", f"0x{v:x} ({v})" if v >= 0 else f"{v}", True), ("R dec-in-hex-paren", f"{v} (0x{v:x})" if v >= 0 else f"{v}", True),
                 ("R zero-padded", f"0x{v:08x}" if v >= 0 else f"{v}", True), ("R u-suffix", f"{v}u" if v >= 0 else f"{v}", True),
-                ("R ull-suffix hex", f"0x{v:x}ULL" if v >= 0 else f"{v}", True), ("R bytes", f"{v} bytes", True), ("R offset-word", f"Offset {v}", True),
-                ("R it-is", f"It is {v}", True), ("R approx", f"approximately {v}", True), ("R commas", f"{v:,}" if v >= 1000 else f"{v}", True),
+                ("R ull-suffix hex", f"0x{v:x}ULL" if v >= 0 else f"{v}", True), ("R offset-word", f"Offset {v}", True),
+                ("R it-is", f"It is {v}", True), ("W approx", f"approximately {v}", False), ("R commas", f"{v:,}" if v >= 1000 else f"{v}", True),
                 ("R trailing-colon", f"{v}:", True)]
+        if t.get("kind") in ("structs", "pktsum") or t.get("variant") in ("rc4", "limit_helper"):
+            out.append(("R bytes", f"{v} bytes", True))               # a unit the question uses; `5 bytes` for a state count is a wrong unit
     if mode == "tokens" and numeric:
         v = numeric[0]
 
@@ -91,11 +106,14 @@ def generic_attacks(t) -> list:
                 ("W K-in-expr", f"{v + 3} - {v + 1} = 2", False), ("W sum", f"{v} + {v}", False)]
         if len(numeric) == 2:
             lo, hi = numeric
-            out += [("W swapped-order", f"{hi}, {lo}", False), ("W only-lo", f"{lo}", False), ("W only-hi", f"{hi}", False),
-                    ("R lo-to-hi", f"{lo} to {hi}", True), ("R lo-and-hi", f"lowest {lo}, highest {hi}", True), ("R lo hi interval", f"[{lo}, {hi}]", True),
-                    ("R lo..hi", f"{lo}..{hi}", True)]
-            if lo >= 0:
-                out.append(("R lo-hi hyphen", f"{lo}-{hi}", True))
+            out += [("W swapped-order", f"{hi}, {lo}", False), ("W only-lo", f"{lo}", False), ("W only-hi", f"{hi}", False)]
+            if interval:
+                out += [("R lo-to-hi", f"{lo} to {hi}", True), ("R lo-and-hi", f"lowest {lo}, highest {hi}", True), ("R lo hi interval", f"[{lo}, {hi}]", True),
+                        ("R lo..hi", f"{lo}..{hi}", True)]
+                if lo >= 0:
+                    out.append(("R lo-hi hyphen", f"{lo}-{hi}", True))
+            else:
+                out.append(("R two numbers", f"{lo}, {hi}", True))
     return out
 
 
@@ -132,13 +150,16 @@ def family_attacks(t) -> list:
         if tea:
             right = [f"{alg}, {d}, {rounds}", f"{alg} {dd}, {rounds} iterations", f"It's {alg} ({d}), {rounds} rounds.", f"**{alg}**, {d}, {rounds} rounds",
                      f"{alg}: {d}, {rounds}", f"The function is {alg} {dd} running {rounds} rounds.", f"{alg} {d}s with {rounds} iterations of the main loop",
-                     f"{alg}, {d}, {rounds} rounds (128-bit key)", f"{alg} {d}, {rounds} iterations (a 128-bit key, 64-bit blocks)"]
+                     f"{alg}, {d}, {rounds} rounds (128-bit key)"]
+            yields = [f"{alg} {d}, {rounds} iterations (a 128-bit key, 64-bit blocks)"]          # 64-bit blocks: the question says 8-byte
         elif v == "rc4":
             right = [f"{alg}, {rounds}", f"{alg}: {rounds} bytes", f"It's {alg}, key length {rounds}.", f"**{alg}**, {rounds}",
-                     f"{alg}, {rounds} bytes ({int(rounds) * 8} bits)", f"{alg} with a {rounds}-byte key"]
+                     f"{alg}, {rounds} bytes ({int(rounds) * 8} bits)"]
+            yields = [f"{alg} with a {rounds}-byte key"]                                          # `N-byte` is a context form, not a hit
         else:
             right = [f"{alg}, {rounds}", f"{alg}: {rounds} rounds", f"It's {alg}, {rounds} rounds.", f"**{alg}**, {rounds}", f"{alg}, {rounds} rounds (256-bit key)"]
-        out += [("cipher right", r, True) for r in right]
+            yields = []
+        out += [("cipher right", r, True) for r in right] + [("cipher right (yield)", r, "yield") for r in yields]
         if v in ("tea_enc", "tea_dec", "xtea_enc", "xtea_dec"):
             other = "decrypt" if d == "encrypt" else "encrypt"
             twin = "TEA" if alg == "XTEA" else "XTEA"
@@ -172,9 +193,10 @@ def family_attacks(t) -> list:
         base, direction = v.split("_")
         opp = "decode" if direction == "encode" else "encode"
         other_base = "base32" if base != "base32" else "base64"
-        right = [f"{base.capitalize()} {direction}", f"It {direction}s {base}", f"{direction.capitalize()}s {base}", f"{base} {direction}r", f"{base}-{direction}",
-                 f"It {direction}s data in {base}.", f"{direction}, {base}", f"Base-{re.sub('[^0-9]', '', base)} {direction}"]
-        out += [("enc right", r, True) for r in right if not r.endswith("decoder") or direction == "decode"]
+        right = [f"It {direction}s {base}", f"{direction.capitalize()}s {base}", f"{direction}, {base}"]
+        yields = [f"{base.capitalize()} {direction}", f"{base} {direction}r", f"{base}-{direction}", f"It {direction}s data in {base}.",
+                  f"Base-{re.sub('[^0-9]', '', base)} {direction}"]                              # base first, or a hyphen word, or a word the grammar does not know
+        out += [("enc right", r, True) for r in right] + [("enc right (reversed order, yield)", r, "yield") for r in yields if not r.endswith("decoder") or direction == "decode"]
         out += [("enc wrong dir", f"{base} {opp}", False), ("enc wrong dir sentence", f"It {opp}s {base}", False), ("enc wrong base", f"{other_base} {direction}", False),
                 ("enc both dirs", f"{base} encode/decode", False), ("enc 'not <dir>'", f"{base}, not {direction}", False), ("enc dir absent", f"{base}", False),
                 ("enc base absent", f"{direction}", False), ("enc ascii85", f"ascii85 {direction}", False), ("enc base16", f"base16 {direction}", False),
@@ -226,6 +248,37 @@ def family_attacks(t) -> list:
     return out
 
 
+LEGACY_KINDS = ("xor-key", "password", "magic", "lcg", "hash", "skip", "keycount", "alphabet", "rotate", "threshold")
+
+
+def legacy_attacks(t) -> list:
+    """Right and wrong replies for the ten legacy templates as the data path scores them (the task is a `strict_task`)."""
+    kind, acc = t["kind"], t["accept"]
+    if kind in ("xor-key", "password", "keycount", "alphabet"):
+        k = acc[0]
+        return [("legacy right", r, True) for r in (k, f"The key is {k}", f"`{k}`", f'"{k}"', f"{k}.")] + [
+            ("legacy wrong exact", r, False) for r in (k[:-1], k + "x", f"x{k}", f"{k} or {k[:-1]}x", f"not {k}", k.upper() if k.upper() != k else k + "9")]
+    nums = [[num_value(a.lower()) for a in g if num_value(a.lower()) is not None] for g in acc]
+    if kind == "skip":
+        v, first, last = nums[0][0], acc[0][0], acc[0][-1]
+        return [("legacy right", r, True) for r in (first, last, f"0x{v:02x}", f"The value is {first}")] + [
+            ("legacy wrong", r, False) for r in ("a", "the letter a", f"{v + 1}", "0x%02x" % ((v + 1) % 256), f"not {first}", f"{first} or {v + 1}")]
+    if kind == "hash":
+        name, h = acc[0][0], acc[1][0]
+        wrong_name = "sdbm" if name != "sdbm" else "djb2"
+        return [("legacy right", r, True) for r in (f"{name}, 0x{h}", f"{acc[0][-1]}, {h}", f"{name} and {h}", f"{name.upper()}, 0x{h.upper()}")] + [
+            ("legacy wrong", r, False) for r in (f"{wrong_name}, 0x{h}", f"{name}, 0x{h[:-1]}0" if h[-1] != "0" else f"{name}, 0x{h[:-1]}1", f"{name}", f"0x{h}",
+                                                 f"{name} or {wrong_name}, 0x{h}")]
+    if kind == "threshold":
+        lo, hi = nums[0][0], nums[1][0]
+        return [("legacy right", r, True) for r in (f"{lo} to {hi}", f"[{lo}, {hi}]", f"lowest {lo}, highest {hi}", f"{lo}, {hi}")] + [
+            ("legacy wrong", r, False) for r in (f"{hi}, {lo}", f"({lo}, {hi})", f"x > {lo} and x < {hi}", f"{lo + 1} to {hi - 1}", f"{lo}")]
+    a, b = nums[0][0], nums[1][0]                                        # magic, lcg, rotate: two values in the order of the question
+    unit = " rounds" if kind == "lcg" else " bits" if kind == "rotate" else ""
+    return [("legacy right", r, True) for r in (f"{acc[0][0]}, {b}", f"0x{a:x}, {b}", f"{a} and {b}{unit if unit != ' bits' else ''}", f"{a}; {b}")] + [
+        ("legacy wrong", r, False) for r in (f"{b}, {acc[0][0]}", f"{acc[0][0]}, {b + 1}", f"{acc[0][0]}", f"{b}", f"{acc[0][0]} or {b}")]
+
+
 def lead_in_attacks(t) -> list:
     """The M3 shapes: a lead-in line over a list of candidates (the key among them, first or last)."""
     if t["score"] != "tokens":
@@ -241,43 +294,70 @@ def lead_in_attacks(t) -> list:
             ("M lead-in + one answer + prose", f"Answer:\n{a}\nThe value is read from the third field.", True)]
 
 
+# kind -> [right replies accepted, right replies tried, yield-class replies tried]: the right-format pass rate per family is
+# accepted / (tried + yield tried), so the formats the grammar gives up are counted against it.
+FAMILY_RATE = collections.defaultdict(lambda: [0, 0, 0])
+YIELD_EXAMPLES = collections.defaultdict(set)              # yield row name -> kinds it applies to
+
+
 def matrix(tasks) -> tuple:
+    FAMILY_RATE.clear()
+    YIELD_EXAMPLES.clear()
     res = collections.defaultdict(lambda: [0, 0])
     ex = {}
     for t in tasks:
         if t["score"] not in HEADLINE_MODES:
             continue
-        truth = t.get("_truth") or {k: t[k] for k in ("score", "accept", "reject", "cand", "allow") if k in t}
-        for name, reply, expect in generic_attacks(t) + repro_attacks(t) + family_attacks(t) + lead_in_attacks(t):
+        truth = {k: v for k, v in t.items() if k != "_truth"}          # the full task record, as the sampler and modal_rea.py score it
+        fam = FAMILY_RATE[t["kind"] if t["kind"] in NEW_FAMILIES else "legacy"]
+        for name, reply, expect in generic_attacks(t) + repro_attacks(t) + family_attacks(t) + lead_in_attacks(t) + (legacy_attacks(t) if t["kind"] in LEGACY_KINDS else []):
             if expect is None:
                 continue
             got = score(reply, truth)
             row = res[(name, expect)]
             row[0] += got
             row[1] += 1
-            if got != expect and (name, expect) not in ex:
-                ex[(name, expect)] = (t["id"], reply)
+            if expect is True:
+                fam[0] += got
+                fam[1] += 1
+            elif expect == "yield":
+                fam[2] += 1
+                YIELD_EXAMPLES[name].add(t["kind"] if t["kind"] in NEW_FAMILIES else "legacy")
+            if got != (expect is True):
+                ex.setdefault((name, expect), (t["id"], reply))
     return dict(res), ex
 
 
 def summary(res: dict) -> dict:
     wrong = [(n, a, b) for (n, e), (a, b) in res.items() if e is False]
     right = [(n, a, b) for (n, e), (a, b) in res.items() if e is True]
+    yields = [(n, a, b) for (n, e), (a, b) in res.items() if e == "yield"]
     fmt = [(n, a, b) for n, a, b in right if n in RIGHT_FORMATS]
-    return {"wrong_total": sum(b for _, _, b in wrong), "wrong_accepted": sum(a for _, a, _ in wrong), "wrong_rows": len(wrong),
+    return {"yield_total": sum(b for _, _, b in yields), "yield_accepted": sum(a for _, a, _ in yields), "yield_rows": sorted(n for n, _a, _b in yields),
+            "wrong_total": sum(b for _, _, b in wrong), "wrong_accepted": sum(a for _, a, _ in wrong), "wrong_rows": len(wrong),
             "right_total": sum(b for _, _, b in right), "right_passed": sum(a for _, a, _ in right),
             "formats_total": sum(b for _, _, b in fmt), "formats_passed": sum(a for _, a, _ in fmt), "formats_rows": len(fmt)}
+
+
+def family_table() -> list:
+    """[(family, accepted, right replies, yield replies, pass rate over right + yield)] after a matrix() run."""
+    return [(k, a, n, y, a / max(n + y, 1)) for k, (a, n, y) in sorted(FAMILY_RATE.items())]
 
 
 if __name__ == "__main__":
     seed = int(sys.argv[1]) if len(sys.argv) > 1 else 99
     per = int(sys.argv[2]) if len(sys.argv) > 2 else 20
-    res, ex = matrix(tasks_for(seed, per))
+    res, ex = matrix(tasks_for(seed, per) + legacy_tasks(seed, per * 10))
     s = summary(res)
     print(f"seed {seed}, {per} tasks per variant: attacks (wrong replies) accepted {s['wrong_accepted']}/{s['wrong_total']} in {s['wrong_rows']} shapes; "
           f"right replies accepted {s['right_passed']}/{s['right_total']}; the review's {len(RIGHT_FORMATS)} formats {s['formats_passed']}/{s['formats_total']} "
-          f"({100 * s['formats_passed'] / max(s['formats_total'], 1):.2f}%)")
+          f"({100 * s['formats_passed'] / max(s['formats_total'], 1):.2f}%); formats the grammar gives up by design (yield): "
+          f"{s['yield_total'] - s['yield_accepted']}/{s['yield_total']} rejected")
+    print("right-format pass rate per family (accepted / (right-format replies + yield-class replies)):")
+    for fam, a, n, y, rate in family_table():
+        print(f"  {fam:10s} {a:5d}/{n + y:<5d} {100 * rate:6.1f}%   ({n} right-format replies, all {'accepted' if a == n else 'NOT all accepted'}; {y} in yield-class formats, rejected)")
+    print("yield-class formats (right answers the grammar does not parse): " + ", ".join(f"{n} [{'/'.join(sorted(k))}]" for n, k in sorted(YIELD_EXAMPLES.items())))
     for (n, e), (a, b) in sorted(res.items(), key=lambda kv: (str(kv[0][1]), kv[0][0])):
-        bad = (e is False and a) or (e is True and a < b)
+        bad = (e is False and a) or (e is True and a < b) or (e == "yield" and a)
         if bad:
-            print(f"  {'WRONG ACCEPTED' if e is False else 'RIGHT REJECTED':15s} {n:48s} {a}/{b}   e.g. {ex[(n, e)]}")
+            print(f"  {'WRONG ACCEPTED' if e is False else 'RIGHT REJECTED' if e is True else 'YIELD ACCEPTED':15s} {n:48s} {a}/{b}   e.g. {ex[(n, e)]}")

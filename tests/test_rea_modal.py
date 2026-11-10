@@ -61,11 +61,13 @@ class SampleSelection(unittest.TestCase):
         t = {"id": "s-1", "kind": "structs", "score": "tokens", "accept": [core.hx(8)], "chance": 0.07}
         msgs = lambda task: [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
         results = {"s-1": {"outs": [["0x8\nThe pointer is at 0x8. Wait, actually it moves.\nMore text.", True], ["0x8\nIt is the next field. And another sentence.", True],
-                                    ["0x8\nWait, actually 0x70.", True], ["0x10", False]]}}
+                                    ["0x8\nWait, actually 0x70 in some builds of the code.", True], ["0x8\nWait, actually 0x70.", True], ["0x10", False]]}}
         kept, stats = sft.assemble([t], results, "m", msgs)
-        self.assertEqual([r["messages"][-1]["content"] for r in kept], ["0x8\nThe pointer is at 0x8.", "0x8\nIt is the next field."])
+        self.assertEqual([r["messages"][-1]["content"] for r in kept], ["0x8\nThe pointer is at 0x8.", "0x8\nIt is the next field.", "0x8"],
+                         "a justification that contradicts itself is dropped and the headline alone is stored; a second line that is no sentence makes a list")
+        self.assertEqual([r["sentence_dropped"] for r in kept], [False, False, True])
         self.assertTrue(all(r["truncated"] for r in kept))
-        self.assertEqual((stats["correct"], stats["kept_records"], stats["truncated"]), (3, 2, 2))
+        self.assertEqual((stats["correct"], stats["kept_records"], stats["truncated"], stats["sentence_dropped"]), (3, 3, 3, 1))
         self.assertEqual(stats["by_kind"]["structs"]["kept_tasks"], 1)
 
     def test_high_chance_tasks_need_two_right_samples(self):
@@ -75,7 +77,7 @@ class SampleSelection(unittest.TestCase):
         self.assertEqual((kept, st["agreement"]), ([], 1))
         kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0xffff", True], ["0x1", False]]}}, "m", msgs)
         self.assertEqual((len(kept), st["agreement"]), (1, 0), "two identical stored texts are one record")
-        kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0xffff\nIt is the all-ones init.", True]]}}, "m", msgs)
+        kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0xffff\nIt is the all-ones init of the register.", True]]}}, "m", msgs)
         self.assertEqual(len(kept), 2)
 
 
@@ -246,10 +248,10 @@ class LegacyDefault(ModalCase):
     def test_the_legacy_default_says_what_it_is(self):
         with tempfile.TemporaryDirectory() as d:
             self.run_main(pathlib.Path(d), stage="decompile", n=6, seed=7, family="legacy")
-            self.assertIn("scored on the whole reply by substring", self.printed)
-            self.assertIn("--family all", self.printed)
+            self.assertIn("frozen whole-reply substring scoring in modal_rea.py's evaluation", self.printed)
+            self.assertIn("strict headline grammar", self.printed)
             self.run_main(pathlib.Path(d), stage="decompile", n=6, seed=7, family="crc")
-            self.assertNotIn("whole reply", self.printed)
+            self.assertNotIn("whole-reply", self.printed)
 
     def test_k_below_two_is_warned_about(self):
         with tempfile.TemporaryDirectory() as d:

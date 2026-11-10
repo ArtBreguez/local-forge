@@ -94,8 +94,9 @@ def cmd_check(a) -> None:
         dups = [f"{b} duplicates {first} (same program and question)" for first, b in dedupe.duplicates(tasks)]
         if nm == "legacy":      # frozen templates and frozen whole-reply scoring: reported, not a problem (the held-out exclusion drops repeats)
             lax = sum(bool(verify.filler_passes(t)) for t in tasks)
-            print(f"  legacy (frozen): {len(dups)} repeated programs, {lax} tasks accept a content-free reply under whole-reply scoring "
-                  f"(noted, not counted)")
+            strict = sum(bool(verify.filler_passes(t, strict=True)) for t in tasks)
+            print(f"  legacy (frozen): {len(dups)} repeated programs, {lax} tasks accept a content-free reply under the whole-reply scoring of the evaluation "
+                  f"(noted, not counted), {strict} under the strict scorer of the sample stage (counted as problems)")
         else:
             problems += dups
         for t in tasks:

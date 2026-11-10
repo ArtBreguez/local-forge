@@ -6,7 +6,11 @@ for that wording: the chance on one task is how often its answer occurs among th
 cipher name + direction + rounds counts as one). The chance of a variant is the mean over its tasks. A guesser cannot see the
 variant label, which is why "which base, encode or decode" comes out near 1/6, not 1. Input strings of the fsm are different: a
 guess is a string over the machine's alphabet, so the chance is |accepted| / alphabet^length. Values are floored at 1/1000.
-It is a baseline for reading yields, not a guarantee: a task with a high chance keeps lucky guesses under rejection sampling.
+Round 3 (m3): the estimate above is the rate of a guesser that SAMPLES the answer distribution. A model that reads the family off the code
+and only guesses the number does better: it answers the variant's most common answer every time (XTEA decrypt: 32 rounds, right on 32% of
+the tasks; the sampling estimate said 4.5%). So the chance of a variant is the larger of the two: the best constant answer within the
+variant. It is a baseline for reading yields, not a guarantee: a task with a high chance keeps lucky guesses under rejection sampling,
+which is what the agreement rule of sft.py (AGREE_CHANCE) is for.
 
     python3 tools/rea-bench chance            print the estimates
     python3 tools/rea-bench chance --write    rewrite the table below (after a generator change)
@@ -19,68 +23,68 @@ from collections import Counter
 
 # <table> (generated, do not edit)
 CHANCE: dict = {
-    "antidebug/env": 0.0038,
-    "antidebug/ptrace": 0.005,
-    "antidebug/ptrace_raw": 0.0049,
-    "antidebug/timing_ns": 0.001,
-    "antidebug/timing_us": 0.001,
-    "antidebug/tracerpid": 0.0049,
-    "bounds/char_class": 0.0403,
+    "antidebug/env": 0.015,
+    "antidebug/ptrace": 0.011,
+    "antidebug/ptrace_raw": 0.01,
+    "antidebug/timing_ns": 0.003,
+    "antidebug/timing_us": 0.003,
+    "antidebug/tracerpid": 0.011,
+    "bounds/char_class": 0.062,
     "bounds/clamp": 0.001,
-    "bounds/index_limit": 0.0107,
-    "bounds/loop_iterations": 0.0188,
+    "bounds/index_limit": 0.037,
+    "bounds/loop_iterations": 0.036,
     "bounds/range_chain": 0.001,
-    "bounds/window": 0.001,
-    "cipher/chacha": 0.0545,
-    "cipher/rc4": 0.0833,
-    "cipher/salsa": 0.0563,
-    "cipher/tea_dec": 0.0452,
-    "cipher/tea_enc": 0.0473,
-    "cipher/xtea_dec": 0.0452,
-    "cipher/xtea_enc": 0.045,
+    "bounds/window": 0.002,
+    "cipher/chacha": 0.198,
+    "cipher/rc4": 0.101,
+    "cipher/salsa": 0.203,
+    "cipher/tea_dec": 0.277,
+    "cipher/tea_enc": 0.305,
+    "cipher/xtea_dec": 0.278,
+    "cipher/xtea_enc": 0.274,
     "crc/bitwise_init": 0.571,
-    "crc/bitwise_poly": 0.0573,
-    "crc/bitwise_xorout": 0.4109,
+    "crc/bitwise_poly": 0.081,
+    "crc/bitwise_xorout": 0.447,
     "crc/table_init": 0.5616,
-    "crc/table_poly": 0.0541,
-    "crc/table_xorout": 0.4162,
-    "encoding/base32_decode": 0.119,
-    "encoding/base32_encode": 0.1094,
-    "encoding/base58_decode": 0.1127,
-    "encoding/base58_encode": 0.1231,
-    "encoding/base64_decode": 0.1114,
-    "encoding/base64_encode": 0.119,
-    "fsm/opcode_count": 0.2501,
-    "fsm/opcode_value": 0.0425,
+    "crc/table_poly": 0.073,
+    "crc/table_xorout": 0.451,
+    "encoding/base32_decode": 0.705,
+    "encoding/base32_encode": 0.676,
+    "encoding/base58_decode": 0.686,
+    "encoding/base58_encode": 0.717,
+    "encoding/base64_decode": 0.682,
+    "encoding/base64_encode": 0.705,
+    "fsm/opcode_count": 0.264,
+    "fsm/opcode_value": 0.06,
     "fsm/switch_input": 0.1763,
-    "fsm/switch_states": 0.2677,
+    "fsm/switch_states": 0.358,
     "fsm/table_input": 0.1681,
-    "fsm/table_states": 0.2683,
-    "multi/chain": 0.0012,
-    "multi/decode_secret": 0.001,
-    "multi/eval_arith": 0.0029,
-    "multi/key_helper": 0.0039,
-    "multi/limit_helper": 0.0404,
+    "fsm/table_states": 0.369,
+    "multi/chain": 0.006,
+    "multi/decode_secret": 0.002,
+    "multi/eval_arith": 0.012,
+    "multi/key_helper": 0.01,
+    "multi/limit_helper": 0.063,
     "pktsum/crc16": 0.3687,
     "pktsum/fletcher16": 0.3638,
     "pktsum/len_field": 0.2554,
-    "pktsum/sum16_be": 0.3679,
-    "pktsum/sum16_le": 0.3574,
-    "pktsum/sum8": 0.2281,
-    "pktsum/xor8": 0.2255,
-    "strobf/alt_xor": 0.001,
-    "strobf/reverse_xor": 0.001,
-    "strobf/rot_n": 0.001,
-    "strobf/stack_string": 0.001,
-    "strobf/sub_const": 0.001,
-    "strobf/xor_const": 0.001,
-    "strobf/xor_rolling": 0.001,
-    "structs/alloc_size": 0.1392,
-    "structs/array_stride": 0.1349,
-    "structs/field_read": 0.0766,
-    "structs/init_magic": 0.0708,
-    "structs/linked_next": 0.2907,
-    "structs/nested_offset": 0.1209,
+    "pktsum/sum16_be": 0.499,
+    "pktsum/sum16_le": 0.488,
+    "pktsum/sum8": 0.306,
+    "pktsum/xor8": 0.293,
+    "strobf/alt_xor": 0.003,
+    "strobf/reverse_xor": 0.003,
+    "strobf/rot_n": 0.002,
+    "strobf/stack_string": 0.003,
+    "strobf/sub_const": 0.003,
+    "strobf/xor_const": 0.003,
+    "strobf/xor_rolling": 0.003,
+    "structs/alloc_size": 0.219,
+    "structs/array_stride": 0.211,
+    "structs/field_read": 0.137,
+    "structs/init_magic": 0.125,
+    "structs/linked_next": 0.399,
+    "structs/nested_offset": 0.187,
 }
 # </table>
 
@@ -112,7 +116,8 @@ def estimate(seed: int = 424242, n: int = PER_VARIANT) -> dict:
                 p = sum(len(t.truth["accept"][0]) / len(t.params["alphabet"]) ** t.params["d"] for t in ts) / len(ts)
             else:
                 p = sum((groups[_group(t)][_answer(t)] - 1) / max(sum(groups[_group(t)].values()) - 1, 1) for t in ts) / len(ts)
-            out[f"{fam}/{variant}"] = round(max(p, 1 / len(ts)), 4)
+            best_constant = Counter(_answer(t) for t in ts).most_common(1)[0][1] / len(ts)
+            out[f"{fam}/{variant}"] = round(max(p, best_constant, 1 / len(ts)), 4)
     return out
 
 
