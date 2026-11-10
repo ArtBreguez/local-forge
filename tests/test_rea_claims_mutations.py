@@ -97,13 +97,21 @@ def family_of(key: str) -> str:
     return key.split("/")[0] if "/" in key else "legacy"
 
 
+def classes(t) -> set:
+    """The code forms of a task (test_rea_claims.form_keys: the values of the generator's form parameters and the forms only the C shows, as `ClaimsHold` counts them) and
+    its parameter classes that are no form parameter: which hash a legacy `hash` task is (NL3 and NL4 change the name and the start value of one hash only)."""
+    out = set(T.form_keys(t))
+    if t.kind == "hash":
+        out.add(("hash", "stem", t.truth["accept"][0][0]))
+    return out
+
+
 def choose(tasks: list) -> list:
-    """The sample of one key: the first task of every code form (the values of the generator's form parameters and the forms only the C shows, as `ClaimsHold` counts
-    them: test_rea_claims.form_keys), then the next tasks until there are TASKS_PER_KEY. A sentence that is false for one form only (or for the draws of one parameter
-    class) is rendered for a task of that form."""
+    """The sample of one key: the first task of every code form and parameter class (`classes`), then the next tasks until there are TASKS_PER_KEY. A sentence that is false
+    for one form only (or for the draws of one parameter class) is rendered for a task of that form."""
     chosen, covered = [], set()
     for t in tasks:
-        new = set(T.form_keys(t)) - covered
+        new = classes(t) - covered
         if new:
             chosen.append(t)
             covered |= new
@@ -236,6 +244,8 @@ class MutationCorpus(unittest.TestCase):
                         seen[(k, name)].add(v)
         for (k, name), domain in T.FORM_DOMAINS.items():
             self.assertTrue(domain <= seen[(k, name)], f"{k} {name}: the sample misses {sorted(domain - seen[(k, name)], key=str)}")
+        stems = {t.truth["accept"][0][0] for t in sample("legacy")["hash"]}
+        self.assertEqual(stems, {"fnv", "djb2", "sdbm", "murmur"}, "every hash of the legacy `hash` template is in the sample (NL3, NL4)")
 
     def test_a_swap_of_the_rounds_and_the_multiplier_is_rejected_in_seconds(self):
         """Round 7, m4: L5 swaps the two numbers of the LCG sentence: the rounds become 22,695,477 or 1,103,515,245 and the claim looped in Python for 7 s to 6 minutes per
