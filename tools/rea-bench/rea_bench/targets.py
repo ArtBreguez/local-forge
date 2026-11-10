@@ -189,7 +189,7 @@ def _fsm_states(t):
     return {"n": n, "last": n - 1}
 
 
-_FSM_ST_H = ("{n} states", "{n}", "{n} distinct states", "It has {n} states.")
+_FSM_ST_H = ("{n} states", "{n}", "{n} distinct states", "There are {n} states.")
 _FSM_ST_S = ("The machine has {n} states, numbered from 0, and proc returns the state it ends in.",
              "There are {n} distinct states, numbered 0 to {last}, and the machine starts in state 0.",
              "Starting from state 0, the machine can reach all of its {n} states.")
@@ -493,11 +493,11 @@ def _timing(unit, scale):
     return f
 
 
-spec("antidebug/timing_ns", ("{tech}, {thr}", "{tech}, {thr} ns", "{tech}: {thr} ns", "{thr} ns, {tech}"),
+spec("antidebug/timing_ns", ("{tech}, {thr}", "{tech}, {thr} ns", "{tech}: {thr} ns", "{tech} check, {thr} ns"),
      ("proc measures the time between two clock readings and reports a debugger when it is above {thr} nanoseconds.",
       "A debugger is reported when more than {thr} nanoseconds pass between the two clock readings.",
       "The largest time between the two clock readings that proc still lets pass is {thr} nanoseconds."))(_timing("nanoseconds", 10 ** 9))
-spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}, {thr} us", "{tech}: {thr} us", "{thr} us, {tech}"),
+spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}, {thr} us", "{tech}: {thr} us", "{tech} check, {thr} us"),
      ("proc measures the time between two clock readings and reports a debugger when it is above {thr} microseconds.",
       "A debugger is reported when more than {thr} microseconds pass between the two clock readings.",
       "The largest time between the two clock readings that proc still lets pass is {thr} microseconds."))(_timing("microseconds", 10 ** 6))
@@ -514,7 +514,7 @@ def _(t):
     return {"n": _val(t["accept"][0]), "n0": _qint(t, r"called with\s+(\d+)", "argument")}
 
 
-@spec("multi/key_helper", ("{k:#x}", "It is {k:#x}.", "Answer: {k:#x}", "byte {k:#x}"),
+@spec("multi/key_helper", ("{k:#x}", "It is {k:#x}.", "Answer: {k:#x}", "The value is {k:#x}."),
       ("When it is called with the seed {seed}, proc XORs the byte {k:#x} into every byte of the buffer.",
        "The byte that proc XORs into each byte of the buffer for the seed {seed} is {k:#x}.",
        "For the seed {seed}, every byte of the buffer is XORed with {k:#x}."))
@@ -548,7 +548,7 @@ def _(t):
 
 # ---- legacy: the original ten templates ---------------------------------------------------------------------------------------------
 
-@spec("xor-key", ("{s}", "The key is: {s}", "Key: {s}", "XOR key: {s}"),
+@spec("xor-key", ("{s}", "The key is: {s}", "Key: {s}", "The key string is: {s}"),
       ("The function XORs every byte of the buffer with this key, and the key repeats every {len} bytes.",
        "Each byte of the buffer is XORed with a character of the key string, taken in turn.",
        "The key is a string of {len} characters that is repeated along the whole buffer."))
@@ -615,7 +615,7 @@ def _(t):
     return {"name": _HASH_NAME[stem], "c": int(t["accept"][1][0], 16), "init": _HASH_INIT[stem]}
 
 
-@spec("skip", ("0x{b:02x}", "It is 0x{b:02x}.", "The value is 0x{b:02x}.", "byte 0x{b:02x}"),
+@spec("skip", ("0x{b:02x}", "It is 0x{b:02x}.", "The value is 0x{b:02x}.", "Answer: 0x{b:02x}"),
       ("The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.",
        "Bytes with the value 0x{b:02x} are left out of the sum, and the length of the input is added at the end.",
        "Exactly one byte value does not count in the sum, and it is 0x{b:02x}."))

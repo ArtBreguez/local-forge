@@ -52,7 +52,7 @@ from . import rea_sentences as RS
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import core, f_cipher, f_crc, f_encoding, f_pktsum, families, targets  # noqa: E402
+from rea_bench import core, f_cipher, f_crc, f_encoding, f_pktsum, families, scoring, targets  # noqa: E402
 
 N = int(os.environ.get("REA_CLAIMS_N", "200"))
 WORKERS = int(os.environ.get("REA_CLAIMS_WORKERS", "2"))
@@ -506,6 +506,27 @@ class Phrasings(unittest.TestCase):
             heads, sentences = d["of"]
             if d["n"] >= 60:
                 self.assertGreaterEqual(len(d["pairs"]), min(heads * sentences, 9), f"{key}: the headline is a function of the sentence: {sorted(d['pairs'])}")
+
+    def test_every_headline_of_every_key_is_an_answer_under_the_strict_grammar(self):
+        """Round 7: making head[3] reachable showed seven headlines that `score_strict` rejects (`{thr} ns, {tech}`: a number before the name, `It has {n} states.`,
+        `byte 0x3b`, `XOR key: <key>`: not a lead-in of the grammar) and `sft_target` raises on such a text. All 4 headlines of every key, with every sentence, are
+        an answer for 15 tasks of the key: whatever the RNG draws, the stored text scores."""
+        per = collections.defaultdict(list)
+        for t, r in self.tasks.values():
+            if len(per[r["key"]]) < 15:
+                per[r["key"]].append(t)
+        self.assertEqual(sorted(per), sorted(targets.SPECS))
+        n = 0
+        for key, tasks in per.items():
+            for t in tasks:
+                m = t.meta()
+                heads = targets.render(m)["head_templates"]
+                for k in range(heads):
+                    for j in range(targets.render(m)["templates"]):
+                        text = targets.render(m, j, k)["text"]
+                        n += 1
+                        self.assertTrue(scoring.score_strict(text, m), f"{key} head {k} sentence {j}: score_strict rejects {text!r}")
+        self.assertGreater(n, 12000)
 
     def test_a_task_is_always_rendered_the_same_way_and_the_sentence_is_the_round_6_one(self):
         for tid, (t, r) in list(self.tasks.items())[::37]:

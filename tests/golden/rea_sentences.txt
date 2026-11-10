@@ -57,14 +57,14 @@ fsm/switch_input sentence[2] This input of <d> letters moves the machine from st
 fsm/table_states head[0] <n> states
 fsm/table_states head[1] <n>
 fsm/table_states head[2] <n> distinct states
-fsm/table_states head[3] It has <n> states.
+fsm/table_states head[3] There are <n> states.
 fsm/table_states sentence[0] The machine has <n> states, numbered from 0, and proc returns the state it ends in.
 fsm/table_states sentence[1] There are <n> distinct states, numbered 0 to <last>, and the machine starts in state 0.
 fsm/table_states sentence[2] Starting from state 0, the machine can reach all of its <n> states.
 fsm/switch_states head[0] <n> states
 fsm/switch_states head[1] <n>
 fsm/switch_states head[2] <n> distinct states
-fsm/switch_states head[3] It has <n> states.
+fsm/switch_states head[3] There are <n> states.
 fsm/switch_states sentence[0] The machine has <n> states, numbered from 0, and proc returns the state it ends in.
 fsm/switch_states sentence[1] There are <n> distinct states, numbered 0 to <last>, and the machine starts in state 0.
 fsm/switch_states sentence[2] Starting from state 0, the machine can reach all of its <n> states.
@@ -526,14 +526,14 @@ antidebug/env sentence[2] The check reads the environment variable <NAME>, and t
 antidebug/timing_ns head[0] <tech>, <thr>
 antidebug/timing_ns head[1] <tech>, <thr> ns
 antidebug/timing_ns head[2] <tech>: <thr> ns
-antidebug/timing_ns head[3] <thr> ns, <tech>
+antidebug/timing_ns head[3] <tech> check, <thr> ns
 antidebug/timing_ns sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> nanoseconds.
 antidebug/timing_ns sentence[1] A debugger is reported when more than <thr> nanoseconds pass between the two clock readings.
 antidebug/timing_ns sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> nanoseconds.
 antidebug/timing_us head[0] <tech>, <thr>
 antidebug/timing_us head[1] <tech>, <thr> us
 antidebug/timing_us head[2] <tech>: <thr> us
-antidebug/timing_us head[3] <thr> us, <tech>
+antidebug/timing_us head[3] <tech> check, <thr> us
 antidebug/timing_us sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> microseconds.
 antidebug/timing_us sentence[1] A debugger is reported when more than <thr> microseconds pass between the two clock readings.
 antidebug/timing_us sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> microseconds.
@@ -547,7 +547,7 @@ multi/eval_arith sentence[2] The value that proc returns when it is called with 
 multi/key_helper head[0] <k:#x>
 multi/key_helper head[1] It is <k:#x>.
 multi/key_helper head[2] Answer: <k:#x>
-multi/key_helper head[3] byte <k:#x>
+multi/key_helper head[3] The value is <k:#x>.
 multi/key_helper sentence[0] When it is called with the seed <seed>, proc XORs the byte <k:#x> into every byte of the buffer.
 multi/key_helper sentence[1] The byte that proc XORs into each byte of the buffer for the seed <seed> is <k:#x>.
 multi/key_helper sentence[2] For the seed <seed>, every byte of the buffer is XORed with <k:#x>.
@@ -575,7 +575,7 @@ multi/limit_helper sentence[2] The longest string that passes with the mode <mod
 xor-key head[0] <s>
 xor-key head[1] The key is: <s>
 xor-key head[2] Key: <s>
-xor-key head[3] XOR key: <s>
+xor-key head[3] The key string is: <s>
 xor-key sentence[0] The function XORs every byte of the buffer with this key, and the key repeats every <len> bytes.
 xor-key sentence[1] Each byte of the buffer is XORed with a character of the key string, taken in turn.
 xor-key sentence[2] The key is a string of <len> characters that is repeated along the whole buffer.
@@ -624,7 +624,7 @@ hash sentence[2] The function returns the hash of its input string XORed with 0x
 skip head[0] 0x<b:02x>
 skip head[1] It is 0x<b:02x>.
 skip head[2] The value is 0x<b:02x>.
-skip head[3] byte 0x<b:02x>
+skip head[3] Answer: 0x<b:02x>
 skip sentence[0] The checksum adds up every byte of the input except those equal to 0x<b:02x>, and then adds the length.
 skip sentence[1] Bytes with the value 0x<b:02x> are left out of the sum, and the length of the input is added at the end.
 skip sentence[2] Exactly one byte value does not count in the sum, and it is 0x<b:02x>.

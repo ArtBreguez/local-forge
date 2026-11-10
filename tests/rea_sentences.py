@@ -386,12 +386,12 @@ TABLE.update({
 _ANY = ("",)
 HEAD_WORDS = {
     # neutral: they say nothing about proc
-    "a": _ANY, "and": _ANY, "answer": _ANY, "at": _ANY, "from": _ANY, "is": _ANY, "it": _ANY, "the": _ANY, "to": _ANY,
+    "a": _ANY, "and": _ANY, "answer": _ANY, "are": _ANY, "at": _ANY, "from": _ANY, "is": _ANY, "it": _ANY, "the": _ANY, "there": _ANY, "to": _ANY,
     "s": _ANY, "x": _ANY,                   # the plural suffix after a placeholder (`{Dir}s`), the hex prefix of `0x{m:08x}`
     # labels and units, each true for the keys whose question and proc they describe
     "alphabet": ("encoding/", "alphabet"),
     "bits": ("rotate",),
-    "byte": ("structs/", "pktsum/", "multi/key_helper", "skip", "bounds/char_class"),
+    "byte": ("structs/", "pktsum/", "bounds/char_class"),
     "bytes": ("structs/", "cipher/rc4"),
     "cases": ("fsm/opcode_count",),
     "characters": ("multi/limit_helper",),
@@ -401,7 +401,6 @@ HEAD_WORDS = {
     "distinct": ("fsm/table_states", "fsm/switch_states"),
     "endian": ("pktsum/",),
     "getenv": ("antidebug/env",),
-    "has": ("fsm/table_states", "fsm/switch_states"),
     "highest": ("bounds/range_chain", "bounds/window", "bounds/index_limit", "bounds/clamp", "threshold"),
     "input": ("fsm/table_input", "fsm/switch_input", "password", "multi/decode_secret"),
     "iterations": ("cipher/tea_", "cipher/xtea_"),
@@ -418,13 +417,12 @@ HEAD_WORDS = {
     "rounds": ("cipher/chacha", "cipher/salsa", "lcg"),
     "size": ("structs/array_stride", "structs/alloc_size"),
     "states": ("fsm/table_states", "fsm/switch_states"),
-    "string": ("strobf/", "multi/decode_secret", "password"),
+    "string": ("strobf/", "multi/decode_secret", "password", "xor-key"),
     "structure": ("structs/alloc_size",),
     "us": ("antidebug/timing_us",),
-    "value": ("crc/", "skip"),
+    "value": ("crc/", "skip", "multi/key_helper"),
     "values": ("bounds/char_class",),
     "writes": ("strobf/",),                  # proc WRITES the string into its argument; decode_secret and password compare, xor-key writes the buffer
-    "xor": ("xor-key",),
 }
 
 
@@ -495,7 +493,7 @@ _NUM_H = ("{n:i}", "It is {n:i}.", "Answer: {n:i}", "{n:i}.")
 _BOUND_H = ("{lo:i} to {hi:i}", "lowest {lo:i}, highest {hi:i}", "[{lo:i}, {hi:i}]", "from {lo:i} to {hi:i}")
 _ACCEPTED_H = ("{s:t}", "The string is: {s:t}", "Input: {s:t}", "The input is: {s:t}")
 _FSM_IN_H = ("{s:l}", "Input: {s:l}", "The input is {s:l}.", '"{s:l}"')
-_FSM_ST_H = ("{n:i} states", "{n:i}", "{n:i} distinct states", "It has {n:i} states.")
+_FSM_ST_H = ("{n:i} states", "{n:i}", "{n:i} distinct states", "There are {n:i} states.")
 _Q_FINAL = Q(r"returns\s+(\d+)\s*\.")
 _CRC_POLY_H = ("{lit:h}, {dir:normal|reflected}", "{lit:h} {dir:normal|reflected}", "The polynomial is {lit:h}, {dir:normal|reflected}.",
                "polynomial {lit:h}, {dir:normal|reflected}")
@@ -517,7 +515,7 @@ def _ad(tech: str, claim: str, **implied) -> list:
 
 def _timing_h(tech: str = "timing") -> list:
     return ([H("{tech:%s}, {thr:i}" % tech, "timing_threshold", unit=_Q_UNIT)]
-            + _hr(("{tech:%s}, {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s}: {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{thr:i} {unit:%s}, {tech:%s}" % (_TECH_UNIT, tech)),
+            + _hr(("{tech:%s}, {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s}: {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s} check, {thr:i} {unit:%s}" % (tech, _TECH_UNIT)),
                   "timing_threshold"))
 
 
@@ -571,11 +569,11 @@ HEADS: dict = {
     "antidebug/timing_ns": _timing_h(), "antidebug/timing_us": _timing_h(),
     # multi
     "multi/eval_arith": _hr(_NUM_H, "returns_for_argument", n0=_Q_ARG), "multi/chain": _hr(_NUM_H, "returns_for_argument", n0=_Q_ARG),
-    "multi/key_helper": _hr(("{k:h}", "It is {k:h}.", "Answer: {k:h}", "byte {k:h}"), "xors_key_byte", seed=Q(r"seed\s*=\s*(\d+)")),
+    "multi/key_helper": _hr(("{k:h}", "It is {k:h}.", "Answer: {k:h}", "The value is {k:h}."), "xors_key_byte", seed=Q(r"seed\s*=\s*(\d+)")),
     "multi/decode_secret": _hr(_ACCEPTED_H, "accepts_only_the_secret"),
     "multi/limit_helper": _hr(("{n:i}", "{n:i} characters", "It is {n:i}.", "{n:i} chars"), "limit_for_mode", mode=Q(r"mode\s*=\s*(\d+)")),
     # legacy
-    "xor-key": _hr(("{s:t}", "The key is: {s:t}", "Key: {s:t}", "XOR key: {s:t}"), "xor_key_repeats"),
+    "xor-key": _hr(("{s:t}", "The key is: {s:t}", "Key: {s:t}", "The key string is: {s:t}"), "xor_key_repeats"),
     "password": _hr(_ACCEPTED_H, "password_equal_only"),
     "keycount": _hr(("{s:t}", "The key is: {s:t}", "Key: {s:t}", "The counted key is: {s:t}"), "keycount_lines"),
     "alphabet": _hr(_ALPHA_H, "alphabet_position"),
@@ -584,7 +582,7 @@ HEADS: dict = {
     "hash": _hr(["{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}, {c:h}", "{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur} and {c:h}",
                  "It is {name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}, {c:h}.", "{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}: {c:h}"],
                 "hash_name_is_the_algorithm", "hash_final_xor"),
-    "skip": _hr(("{b:h}", "It is {b:h}.", "The value is {b:h}.", "byte {b:h}"), "skip_one_value"),
+    "skip": _hr(("{b:h}", "It is {b:h}.", "The value is {b:h}.", "Answer: {b:h}"), "skip_one_value"),
     "rotate": _hr(("{k:h}, {r:i}", "{k:h} and {r:i}", "{k:h}; {r:i}", "{k:h}, {r:i} bits"), "rotate_reference", dir=Q(r"(left|right)-rotation", "w")),
     "threshold": _hr(_BOUND_H, "threshold_values", inside=Q(r"for which this returns (-?\d+)")),
 }
