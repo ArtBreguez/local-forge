@@ -8,7 +8,9 @@ filter was a list of bad words or shapes, and the next review found the word tha
     K-agreement rule of sft.py): that proves the task is answerable from the pseudocode. What is STORED as the assistant message is never
     the teacher's text. It is rendered here from the task's own truth: the canonical headline plus ONE factual justification sentence,
     chosen from a per-variant set of 3-6 phrasings by a seeded RNG (`random.Random("truth-template/<task id>/<variant>")`, so a task is
-    always rendered the same way and the set of phrasings is spread over the tasks of a variant).
+    always rendered the same way and the set of phrasings is spread over the tasks of a variant). The canonical headline is chosen from its own set of 4 phrasings by a
+    second RNG (`.../head`) independently of the sentence (round 7, m2: `heads[i % 4]` of a sentence index 0..2 never rendered the 4th headline of any key, and
+    paired each sentence with one headline only), so every phrasing of both sets is rendered, and any pair of them.
 
 THE RULE FOR A SENTENCE (round 5, owner decision, applies to every template of every family). A sentence states only SEMANTIC facts:
 
@@ -72,7 +74,7 @@ TARGET_SOURCE = "truth-template"
 
 class Spec(NamedTuple):
     facts: Callable            # (task record) -> {name: value}: everything a phrasing may state
-    heads: tuple               # canonical headlines (format strings over the facts); phrasing i uses heads[i % len(heads)]
+    heads: tuple               # canonical headlines (format strings over the facts); one is chosen per task, independently of the sentence (round 7, m2)
     sentences: tuple           # one factual sentence per phrasing (3 to 6)
     consts: tuple = ()         # names of facts that are constants of the template, true for every task of the variant (checked against the C source)
 
@@ -671,7 +673,7 @@ def render(t: dict, index: int | None = None, head: int | None = None) -> dict:
     f = SPECS[key].facts(t)
     heads, sentences = _template_set(key, f)
     i = random.Random(f"{TARGET_SOURCE}/{t.get('id', '')}/{key}").randrange(len(sentences)) if index is None else index
-    k = i % len(heads) if head is None else head
+    k = random.Random(f"{TARGET_SOURCE}/{t.get('id', '')}/{key}/head").randrange(len(heads)) if head is None else head
     h = heads[k].format(**f)
     sentence = sentences[i].format(**f)
     return {"text": f"{h}\n{sentence}", "headline": h, "sentence": sentence, "facts": f, "key": key, "template": i, "templates": len(sentences),

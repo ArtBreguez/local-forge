@@ -471,6 +471,48 @@ class HeadWording(unittest.TestCase):
             self.assertNotIn("writes", targets.render(t.meta())["headline"].lower(), t.id)
 
 
+class Phrasings(unittest.TestCase):
+    """Round 7, m2: the headline is chosen independently of the sentence, so every headline and every sentence of every key is rendered for some task (head[3] of all
+    78 keys never was), a task is rendered the same way every time, and the sentence of a task is the one that round 6 rendered."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.seen = collections.defaultdict(lambda: {"heads": set(), "sentences": set(), "pairs": set(), "n": 0, "of": None})
+        cls.tasks = {}
+        for fam, mod in families.modules().items():
+            for t in families.generate(fam, 150 * len(mod.VARIANTS), 7):
+                r = targets.render(t.meta())
+                cls.tasks[t.id] = (t, r)
+                d = cls.seen[r["key"]]
+                d["heads"].add(r["head_template"])
+                d["sentences"].add(r["template"])
+                d["pairs"].add((r["head_template"], r["template"]))
+                d["n"] += 1
+                d["of"] = (r["head_templates"], r["templates"])
+
+    def test_every_headline_and_every_sentence_of_every_key_is_rendered(self):
+        self.assertEqual(sorted(self.seen), sorted(targets.SPECS), "every key is rendered for some task")
+        for key, d in self.seen.items():
+            heads, sentences = d["of"]
+            self.assertEqual(d["heads"], set(range(heads)), f"{key}: a headline that no task is rendered with ({d['n']} tasks)")
+            self.assertEqual(d["sentences"], set(range(sentences)), f"{key}: a sentence that no task is rendered with")
+
+    def test_the_headline_does_not_follow_from_the_sentence(self):
+        for key, d in self.seen.items():
+            heads, sentences = d["of"]
+            if d["n"] >= 60:
+                self.assertGreaterEqual(len(d["pairs"]), min(heads * sentences, 9), f"{key}: the headline is a function of the sentence: {sorted(d['pairs'])}")
+
+    def test_a_task_is_always_rendered_the_same_way_and_the_sentence_is_the_round_6_one(self):
+        for tid, (t, r) in list(self.tasks.items())[::37]:
+            again = targets.render(t.meta())
+            self.assertEqual(r, again, tid)
+            key = r["key"]
+            self.assertEqual(r["template"], random.Random(f"truth-template/{tid}/{key}").randrange(r["templates"]), "the sentence RNG is the one of round 6")
+            self.assertEqual(r["head_template"], random.Random(f"truth-template/{tid}/{key}/head").randrange(r["head_templates"]))
+            self.assertEqual(targets.render(t.meta(), r["template"], r["head_template"]), r)
+
+
 class Golden(unittest.TestCase):
     def test_every_headline_and_sentence_with_a_sentinel_per_placeholder(self):
         """Any edit of a template shows here: the diff of tests/golden/rea_sentences.txt is the review of the text."""
