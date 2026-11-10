@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import f_antidebug, f_bounds, f_cipher, f_crc, f_encoding, f_fsm, f_multifunc, f_pktsum, f_strobf, f_structs, legacy
-from .core import build
+from .core import build, draw
 
 NEW_MODULES: list = [f_structs, f_fsm, f_crc, f_cipher, f_encoding, f_strobf, f_pktsum, f_bounds, f_antidebug, f_multifunc]
 
@@ -18,6 +18,14 @@ def generate(family: str, n: int, seed: int, cc: str = "mix", gate=None) -> list
     if hasattr(m, "generate"):
         return m.generate(n, seed, cc)
     return build(m.FAMILY, m.VARIANTS, n, seed, cc, gate)
+
+
+def draws(family: str, n: int, seed: int, attempts: int, cc: str = "mix") -> list:
+    """Every draw the fact gate could keep for the first n tasks: attempts 0..attempts-1 of each (legacy has one: it is never gated)."""
+    m = modules()[family]
+    if hasattr(m, "generate"):
+        return m.generate(n, seed, cc)
+    return [draw(m.FAMILY, m.VARIANTS, i, seed, cc, a) for i in range(n) for a in range(attempts)]
 
 
 def generate_many(names: list, n: int, seed: int, cc: str = "mix", gate=None) -> list:

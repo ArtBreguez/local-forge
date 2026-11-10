@@ -9,7 +9,7 @@ every real difference (a constant, a form, an order) is a different key.
 The held-out split is seed 1001. `heldout-1001.txt` pins the keys of its first HELDOUT_N tasks per family (a superset of every
 standard held-out run: `--family all --n 330` uses 30 per family, one family at n=60 uses 60): the file records what was actually held
 out even if a generator edit later changes seed 1001. The data pipeline drops every generated task whose key is in the list
-(`modal_rea_data.py --exclude-seed 1001`, default for any other seed); `check` reports duplicates within the generated seed.
+(`modal_rea_data.py --exclude-seed 1001`, default for any other seed); `check` reports duplicates within the generated seed. The exclusion also covers the later draws a fact gate may have kept in a held-out slot.
 
     python3 tools/rea-bench heldout --write      regenerate the list (after a generator change; commit the result)
     python3 tools/rea-bench heldout              verify the list against the generator
@@ -17,12 +17,14 @@ out even if a generator edit later changes seed 1001. The data pipeline drops ev
 """
 from __future__ import annotations
 
+import functools
 import hashlib
 import pathlib
 import re
 
 HELDOUT_SEED = 1001
 HELDOUT_N = 120
+HELDOUT_ATTEMPTS = 12     # a gated seed-1001 task may be a later draw of its slot (core.draw); all of these stay out of training
 HELDOUT_FILE = pathlib.Path(__file__).with_name("heldout-1001.txt")
 
 _TOKEN = re.compile(r'"(?:[^"\\]|\\.)*"|\'(?:[^\'\\]|\\.)+\'|[A-Za-z_]\w*|0[xX][0-9a-fA-F]+\w*|\d\w*|\S')
@@ -90,12 +92,17 @@ def write_heldout(path: pathlib.Path = HELDOUT_FILE) -> int:
     return len(lines)
 
 
-def heldout_keys(seed: int = HELDOUT_SEED) -> set:
-    """What a training run must avoid: for seed 1001 the pinned list plus the held-out tasks the generator makes today; for any other
-    seed only what the generator makes today (first HELDOUT_N tasks per family)."""
+@functools.lru_cache(maxsize=None)
+def _held_out_draws(seed: int) -> frozenset:
     from . import families
-    now = {task_key(t) for fam in families.modules() for t in families.generate(fam, HELDOUT_N, seed)}
-    return now | load_heldout() if seed == HELDOUT_SEED else now
+    return frozenset(task_key(t) for fam in families.modules() for t in families.draws(fam, HELDOUT_N, seed, HELDOUT_ATTEMPTS))
+
+
+def heldout_keys(seed: int = HELDOUT_SEED) -> set:
+    """What a training run must avoid: every draw of the first HELDOUT_N tasks per family of `seed` (the first HELDOUT_ATTEMPTS attempts
+    of each slot: which one the fact gate kept depends on the compilers that generated the held-out set, the candidates do not) and,
+    for seed 1001, the pinned list."""
+    return set(_held_out_draws(seed)) | (load_heldout() if seed == HELDOUT_SEED else set())
 
 
 def exclusion_seed(seed: int, exclude_seed: int = -1):
@@ -105,10 +112,10 @@ def exclusion_seed(seed: int, exclude_seed: int = -1):
     return exclude_seed or None
 
 
-def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed: int = -1) -> tuple:
-    """(kept, dropped): n tasks over the named families without any task of the excluded (held-out) seed."""
+def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed: int = -1, gate=None) -> tuple:
+    """(kept, dropped): n tasks over the named families without any task of the excluded (held-out) seed. `gate`: survive.Gate."""
     from . import families
-    tasks = families.generate_many(names, n, seed, cc)
+    tasks = families.generate_many(names, n, seed, cc, gate)
     ex = exclusion_seed(seed, exclude_seed)
     return drop_heldout(tasks, heldout_keys(ex)) if ex else (tasks, [])
 

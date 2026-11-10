@@ -163,8 +163,10 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
 
 @app.local_entrypoint()
 def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "", k: int = 6, family: str = "legacy", cc: str = "mix",
-         exclude_seed: int = -1, force: bool = False):
+         exclude_seed: int = -1, force: bool = False, local_gate: bool = True):
     """exclude_seed: tasks of that seed never enter this run (-1: the held-out seed 1001 for any other seed, 0: none).
+    local_gate: draw tasks again when the asked constant is not in the code compiled HERE (needs gcc, objdump and, for clang tasks,
+    clang on PATH; without them it is skipped with a warning and only the Modal-side re-check applies).
     Outputs are keyed by seed and family (rea_bench.outputs); an existing output is never overwritten without --force."""
     dest = ROOT / "results" / "phase6" / "rea-data"
     dest.mkdir(parents=True, exist_ok=True)
@@ -176,7 +178,13 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
             raise SystemExit(f"unknown family {unknown}; known: {', '.join(families.modules())} (or 'all')")
         out_path = dest / f"{outputs.decompiled_stem(tag)}.jsonl"
         outputs.refuse_overwrite([out_path], force)
-        kept, dropped = dedupe.training_tasks(names, n, seed, cc, exclude_seed)
+        gate = survive.Gate() if local_gate and survive.OBJDUMP and all(survive.toolchain(c) for c in (["gcc", "clang"] if cc == "mix" else [cc])) else None
+        if gate is None:
+            print("warning: no local fact gate (gcc/clang/objdump missing or --local-gate false): tasks whose asked constant the compiler "
+                  "removes are only dropped by the Modal-side re-check")
+        kept, dropped = dedupe.training_tasks(names, n, seed, cc, exclude_seed, gate)
+        if gate:
+            print(gate.summary())
         if dropped:
             print(f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed "
                   f"{dedupe.exclusion_seed(seed, exclude_seed)}): {', '.join(sorted({t.kind for t in dropped}))}")

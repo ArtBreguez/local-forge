@@ -154,22 +154,29 @@ def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=
     """Task i is variant i mod len(variants), drawn from its own rng. With a `gate` (survive.Gate) a draw whose asked fact is not in
     the code compiled at its own cc/opt is thrown away and the task is drawn again (new parameters, new cc/opt) from the stream
     "<family>/<seed>/<i>/r<attempt>"; attempt 0 is the stream of the ungated generator, so a gate only changes the tasks it rejects."""
-    from .chance import CHANCE
     names = list(variants)
     out = []
     for i in range(n):
         for attempt in range(MAX_TRIES):
-            rng = random.Random(f"{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
-            t = variants[names[i % len(names)]](rng)
-            t.id = f"{t.kind}-{seed}-{i:04d}"
-            t.opt, t.cc = pick_flags(family, seed, i, cc, attempt)
-            t.chance = CHANCE.get(f"{family}/{t.variant}")
+            t = draw(family, variants, i, seed, cc, attempt)
             if gate is None or gate(t):
                 break
         else:
             raise RuntimeError(f"{family}/{names[i % len(names)]}: no draw in {MAX_TRIES} keeps its fact in the code (task {i}, seed {seed})")
         out.append(t)
     return out
+
+
+def draw(family: str, variants: dict, i: int, seed: int, cc: str = "mix", attempt: int = 0) -> Task:
+    """Draw `attempt` of task i. Which attempt a gate keeps depends on the compilers, the set of possible draws does not."""
+    from .chance import CHANCE
+    names = list(variants)
+    rng = random.Random(f"{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
+    t = variants[names[i % len(names)]](rng)
+    t.id = f"{t.kind}-{seed}-{i:04d}"
+    t.opt, t.cc = pick_flags(family, seed, i, cc, attempt)
+    t.chance = CHANCE.get(f"{family}/{t.variant}")
+    return t
 
 
 def write_tasks(tasks, out: pathlib.Path) -> None:

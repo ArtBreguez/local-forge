@@ -108,7 +108,7 @@ def estimate(seed: int = 424242, n: int = PER_VARIANT) -> dict:
             groups.setdefault(_group(t), Counter())[_answer(t)] += 1
         for variant in mod.VARIANTS:
             ts = [t for t in tasks if t.variant == variant]
-            if ts[0].truth.get("cand"):
+            if ts[0].truth.get("cand") and "alphabet" in ts[0].params:      # fsm input strings
                 p = sum(len(t.truth["accept"][0]) / len(t.params["alphabet"]) ** t.params["d"] for t in ts) / len(ts)
             else:
                 p = sum((groups[_group(t)][_answer(t)] - 1) / max(sum(groups[_group(t)].values()) - 1, 1) for t in ts) / len(ts)

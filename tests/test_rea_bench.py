@@ -50,6 +50,7 @@ def global_text_symbols(src: str, opt: str) -> set:
 
 
 UBSAN = verify.ubsan_available()
+GCC_OBJDUMP = bool(shutil.which("gcc") and shutil.which("objdump"))
 
 
 class LegacyPin(unittest.TestCase):
@@ -145,6 +146,14 @@ class Scorer(unittest.TestCase):
         self.assertTrue(s("bcd", fsm) and s("b c d", fsm) and s("b, d, c", fsm))
         self.assertFalse(s("bcd or ccd", fsm))
         self.assertTrue(s("bcd or bdc", fsm), "both are shortest inputs")
+
+    def test_two_environment_variable_names_are_not_an_answer(self):
+        t = next(t for t in families.generate("antidebug", 24, 5) if t.variant == "env")
+        name = t.params["name"]
+        self.assertTrue(scoring.score(f"env, {name}", t.truth) and scoring.score(f"env, {name.lower()}\nread with getenv", t.truth))
+        self.assertFalse(scoring.score(f"env, {name} or LD_AUDIT_X", t.truth))
+        self.assertFalse(scoring.score(f"env: {name}, {name}_OLD", t.truth))
+        self.assertTrue(scoring.score(f"environment variable {name}", t.truth))
 
     def test_bounds_must_come_in_order(self):
         both = {"score": "tokens", "accept": [core.dec(1570), core.dec(1751)]}
@@ -359,10 +368,10 @@ class ModalScripts(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
-            with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data.subprocess, "run"), \
+            with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", types.SimpleNamespace(run=mock.MagicMock())), \
                     mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
                     contextlib.redirect_stdout(io.StringIO()):
-                self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc")
+                self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc", local_gate=False)
                 out = [json.loads(l) for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed7-legacy+crc.jsonl").read_text().splitlines()]
         held = dedupe.heldout_keys()
         kept, dropped = dedupe.training_tasks(["legacy", "crc"], 600, 7)
@@ -380,11 +389,14 @@ class ModalScripts(unittest.TestCase):
             return [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _tag in tasks]
 
         remote = mock.MagicMock(return_value={"sft": [{"task": "x"}], "stats": {"tasks": 1}})
-        with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data.subprocess, "run") as run, \
+        fake_subprocess = types.SimpleNamespace(run=mock.MagicMock())
+        run = fake_subprocess.run
+        with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", fake_subprocess), \
                 mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
                 mock.patch.object(self.data, "sample_answers", types.SimpleNamespace(remote=remote)), \
-                contextlib.redirect_stdout(io.StringIO()):
-            self.data.main(**kw)
+                contextlib.redirect_stdout(io.StringIO()) as printed:
+            self.data.main(**{"local_gate": False, **kw})
+        self.printed = printed.getvalue()
         return remote, run
 
     def test_second_family_or_seed_does_not_overwrite_and_force_is_needed(self):
@@ -403,6 +415,17 @@ class ModalScripts(unittest.TestCase):
             self.assertEqual(len((rd / "decompiled-seed7-crc.jsonl").read_text().splitlines()), 6)
             wiped = [c.args[0][-1] for c in run.call_args_list if "volume" in c.args[0]]
             self.assertEqual(wiped, ["/decompiled-seed7-crc"], "only this run's volume dir is wiped")
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_decompile_stage_draws_again_when_a_fact_is_not_in_the_local_code(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            self.run_main(root, stage="decompile", n=18, seed=41, family="crc", cc="gcc", local_gate=True)
+            self.assertIn("fact gate:", self.printed)
+            ids = [json.loads(l)["id"] for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed41-crc.jsonl").read_text().splitlines()]
+            self.assertEqual(len(ids), 18)
+            self.run_main(root, stage="decompile", n=6, seed=42, family="crc", local_gate=False)
+            self.assertNotIn("fact gate:", self.printed)
 
     def test_sft_files_are_keyed_by_seed_and_family_and_refused_before_a_gpu_is_rented(self):
         name = self.data.MODELS[0][0]
@@ -467,7 +490,7 @@ class Disjointness(unittest.TestCase):
         self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
 
     def test_new_families_are_distinct_and_disjoint_from_the_heldout_split(self):
-        held = dedupe.heldout_keys()
+        held = dedupe.load_heldout()          # the standard held-out list (the pipeline's exclusion also covers later gate draws, below)
         for fam in families.modules():
             if fam == "legacy":
                 continue          # frozen: the exclusion in the pipeline handles it (test below)
@@ -476,6 +499,24 @@ class Disjointness(unittest.TestCase):
             self.assertGreaterEqual(len({t.body for t in tasks}), 2960, f"{fam}: distinct C bodies per 3000")
             self.assertGreaterEqual(len(set(keys)), 2960, f"{fam}: distinct programs per 3000")
             self.assertEqual(sum(k in held for k in keys), 0, f"{fam}: seed-7 tasks identical to a held-out task")
+
+    def test_a_resampled_heldout_task_is_excluded_too(self):
+        """The fact gate may keep a later draw of a held-out slot (which one depends on the compilers): all candidates stay out of training."""
+        rejected = []
+
+        def gate(t):                       # reject the first two draws of every fourth slot
+            n = int(t.id.rsplit("-", 1)[1])
+            if n % 4 == 0 and rejected.count(t.id) < 2:
+                rejected.append(t.id)
+                return False
+            return True
+
+        held = dedupe.heldout_keys()
+        tasks = [t for fam in ("crc", "antidebug", "structs") for t in families.generate(fam, 40, 1001, gate=gate)]
+        self.assertTrue(rejected)
+        self.assertEqual([t for t in tasks if dedupe.task_key(t) not in held], [], "every gated seed-1001 task is a held-out key")
+        plain = {dedupe.task_key(t) for fam in ("crc", "antidebug", "structs") for t in families.generate(fam, 40, 1001)}
+        self.assertTrue({dedupe.task_key(t) for t in tasks} - plain, "the gate did replace some tasks")
 
     def test_training_tasks_drop_the_heldout_ones(self):
         held = dedupe.heldout_keys()
@@ -492,9 +533,6 @@ class Disjointness(unittest.TestCase):
         self.assertEqual(dedupe.exclusion_seed(7), 1001)
         self.assertIsNone(dedupe.exclusion_seed(1001))
         self.assertIsNone(dedupe.exclusion_seed(7, 0))
-
-
-GCC_OBJDUMP = bool(shutil.which("gcc") and shutil.which("objdump"))
 
 
 class FactGate(unittest.TestCase):

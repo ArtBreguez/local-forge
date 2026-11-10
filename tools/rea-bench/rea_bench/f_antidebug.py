@@ -120,6 +120,7 @@ def v_env(rng):
             f'    printf("%d\\n", proc());\n    return 0;\n}}')
     other = rng.choice([n for n in ENV_VARS if n != name])
     t = truth("env", [name.lower()])
+    t["cand"] = "[a-z0-9]*_[a-z0-9_]*"       # another variable name in the headline ("LD_PRELOAD or LD_AUDIT") is a second candidate
     return Task(kind=FAMILY, variant="env", headers=HEADERS, body=body, question=question("which environment variable does it look at?"),
                 truth=t, params={"name": name, "rv": rv, "form": form}, wrong=f"env, {other}", check=(main, f"0\n{rv}\n"), facts=[[name]])
 

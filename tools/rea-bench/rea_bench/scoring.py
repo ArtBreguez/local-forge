@@ -14,7 +14,8 @@ never turn a wrong headline into a match, and the full reply is only worth keepi
                     thousands separator, also `_` and `'`). A headline that holds a number the key does not contain (a competing
                     candidate) fails, so a reply listing several candidates ("0 1 2", "0x10 0x20") is not an answer. With two
                     numeric groups (lower and upper bound) they must appear in that order. Optional `cand` (a regex) names the
-                    shape of non-numeric candidates (the fsm input strings); another such token in the headline fails too.
+                    shape of non-numeric candidates (the fsm input strings, environment variable names); another such token
+                    in the headline fails too.
   exact_case        like exact on the headline but case-sensitive (alphabets: "aB" and "Ab" are different alphabets)
   exact_head        like exact on the headline (plaintexts, secrets)
 
