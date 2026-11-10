@@ -19,6 +19,12 @@ up as a number in the code. A fact the compiler folded away (TEA's counter into 
 show its marker. `no_table` also fails a CRC polynomial when the object holds 256 bytes or more of read-only data that is not a string: a
 table the compiler made from the bit loop, not in the source.
 
+String obfuscation (round 5, M1) has no constant to ask for: the answer is the string the code writes. Its tasks carry an `object_gate`
+instead of `facts`: {"hidden": plaintext, "stored": hex of the stored bytes, "keys": [decode constants]}. The object compiled at the task's own
+cc/opt must NOT hold the plaintext (a 4-byte window of it with at least 3 letters, searched in the code and data sections: the compiler
+decoded the string at compile time and no decoding is left to read) and must hold the stored bytes (a 4-byte window of them) or a key. The
+sections are read from the ELF object itself (not symbols, not debug info: clang's UBSan strings and the build path are no part of the code).
+
 This is a necessary condition, not proof that the decompiler shows it. What it removes is the tasks the reviewers found unanswerable:
 TEA's round count (the loop counter becomes a compare against DELTA*rounds), a CRC polynomial in a vectorised or table-ised loop, a
 character class that became one bit-test against a 42-bit mask.
@@ -33,6 +39,7 @@ from __future__ import annotations
 import pathlib
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
@@ -160,6 +167,65 @@ def _probe(spec: dict, alts: list, src: str, cc: str, opt: str, d: str, nums: se
     return True, ""
 
 
+# ---- the object gate (strobf) --------------------------------------------------------------------------------------------------
+
+SECTION_PREFIXES = (".text", ".rodata", ".data")
+
+
+_BUILD_PATH = re.compile(rb"/[\x20-\x7e]*\.c(?=\x00)")
+
+
+def object_blob(path: pathlib.Path) -> bytes:
+    """The contents of the code and data sections (.text*, .rodata*, .data*) of a relocatable ELF64 little-endian object: what the program
+    holds, without symbol names, debug info or comments, and without the path of the C file: the zig-cc wrapper that stands in for clang here
+    compiles with UBSan source locations and keeps `/home/<user>/.cache/zig/tmp/<hash>-stdin.c` in .rodata.str, which holds "cach" and "tmp/" (a
+    plaintext window) in 15-25% of the clang -O0 objects. A string that starts with / and ends with .c is a path, never a plaintext of this generator."""
+    data = pathlib.Path(path).read_bytes()
+    if data[:4] != b"\x7fELF" or data[4] != 2 or data[5] != 1:
+        raise RuntimeError("the object gate reads ELF64 little-endian objects only")
+    shoff, = struct.unpack_from("<Q", data, 0x28)
+    shentsize, shnum, shstrndx = struct.unpack_from("<HHH", data, 0x3A)
+    heads = [struct.unpack_from("<IIQQQQ", data, shoff + i * shentsize) for i in range(shnum)]       # name, type, flags, addr, offset, size
+    names_at = heads[shstrndx][4]
+    out = []
+    for name, typ, _flags, _addr, offset, size in heads:
+        end = data.index(b"\0", names_at + name)
+        if typ == 1 and data[names_at + name:end].startswith(tuple(p.encode() for p in SECTION_PREFIXES)):     # PROGBITS
+            out.append(data[offset:offset + size])
+    return _BUILD_PATH.sub(b"\0", b"\0".join(out))
+
+
+def plaintext_visible(plain: str, blob: bytes) -> bool:
+    """A 4-byte window of the plaintext with at least 3 letters is in the blob (a window of digits and punctuation is in every object)."""
+    s = plain.encode()
+    return any(s[i:i + 4] in blob for i in range(len(s) - 3) if sum(chr(x).isalpha() for x in s[i:i + 4]) >= 3)
+
+
+def stored_visible(stored_hex: str, blob: bytes) -> bool:
+    b = bytes.fromhex(stored_hex)
+    return any(b[i:i + 4] in blob for i in range(max(len(b) - 3, 1)))
+
+
+def object_gate_check(gate: dict, obj: pathlib.Path) -> tuple:
+    """(ok, why) for one compiled object."""
+    blob = object_blob(obj)
+    if plaintext_visible(gate["hidden"], blob):
+        return False, "the plaintext is in the object: the compiler decoded the string at compile time"
+    if stored_visible(gate["stored"], blob):
+        return True, ""
+    if any(forms(k) & numbers(_objdump(["-d", "--no-show-raw-insn", "-M", "intel"], obj)) for k in gate.get("keys", [])):
+        return True, ""
+    return False, "neither the stored bytes nor a key is in the object"
+
+
+def check_object(gate: dict, src: str, cc: str, opt: str) -> tuple:
+    if not OBJDUMP or not toolchain(cc):
+        raise RuntimeError(f"the object gate needs {cc} and objdump on PATH (gen --no-survive skips it)")
+    with tempfile.TemporaryDirectory() as d:
+        ok, why = object_gate_check(gate, _compile(src, cc, opt, d, "o.o"))
+    return ok, (f"{cc} {opt}: {why}" if not ok else "")
+
+
 def check(facts: list, src: str, cc: str, opt: str) -> tuple:
     """(True, "") when every fact group is present, else (False, what is missing). Raises RuntimeError when the toolchain is missing
     or the file does not compile."""
@@ -180,10 +246,15 @@ def check(facts: list, src: str, cc: str, opt: str) -> tuple:
 
 
 def check_task(t, cc: str | None = None, opt: str | None = None) -> tuple:
-    """The gate for one task at its own compiler and -O level (or the ones given). Tasks without facts pass."""
-    if not t.facts:
-        return True, ""
-    return check(t.facts, t.source(), cc or t.cc or "gcc", opt or t.opt)
+    """The gate for one task at its own compiler and -O level (or the ones given). Tasks without facts or an object gate pass."""
+    cc, opt = cc or t.cc or "gcc", opt or t.opt
+    if t.facts:
+        ok, why = check(t.facts, t.source(), cc, opt)
+        if not ok:
+            return False, why
+    if t.object_gate:
+        return check_object(t.object_gate, t.source(), cc, opt)
+    return True, ""
 
 
 class Gate:
@@ -203,7 +274,7 @@ class Gate:
         return bool(OBJDUMP and toolchain(cc))
 
     def __call__(self, t) -> bool:
-        if not t.facts:
+        if not t.facts and not t.object_gate:
             return True
         cc = t.cc or "gcc"
         if not self.available(cc):
@@ -226,17 +297,16 @@ class Gate:
 
 
 def survival_rates(tasks, ccs=("gcc", "clang")) -> dict:
-    """{(family/variant, cc): [present, total]} over every task and every -O level; tasks without facts are skipped."""
+    """{(family/variant, cc): [present, total]} over every task and every -O level; tasks without facts or an object gate are skipped."""
     out: dict = {}
     for t in tasks:
-        if not t.facts:
+        if not t.facts and not t.object_gate:
             continue
-        src = t.source()
         for cc in ccs:
             if not toolchain(cc):
                 continue
             row = out.setdefault((f"{t.kind}/{t.variant}", cc), [0, 0])
             for opt in OPTS:
-                row[0] += check(t.facts, src, cc, opt)[0]
+                row[0] += check_task(t, cc, opt)[0]
                 row[1] += 1
     return out

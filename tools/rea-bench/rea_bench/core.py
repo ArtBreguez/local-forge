@@ -179,6 +179,7 @@ class Task:
     check: tuple | None = None      # (C main, expected stdout[, preamble]): a harness that proves the truth
     facts: list = field(default_factory=list)   # groups of alternatives (int immediates / str data) the compiled code must still hold (survive.py)
     chance: float | None = None     # estimated probability that a guess is right (chance.py); None = legacy task
+    object_gate: dict | None = None  # what the compiled object must (not) show, for a task whose answer is data, not a constant (strobf; survive.object_gate_check)
 
     def source(self, main: str | None = None, preamble: str = "") -> str:
         """The generated file; with `main` a harness instead of the stub main, with `preamble` (macros that swap a libc call for a
@@ -198,6 +199,8 @@ class Task:
             d["facts"] = self.facts
         if self.chance is not None:
             d["chance"] = self.chance
+        if self.object_gate:
+            d["object_gate"] = self.object_gate
         d.update(self.truth)
         return d
 

@@ -66,7 +66,7 @@ def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
         scoring.check_target(t.meta())
     except Exception as e:                                    # a missing template, an unparsable question, a text the scorer rejects
         problems.append(f"{t.id} ({t.variant}) truth template: {e}")
-    if survive_check and t.facts and survive.OBJDUMP and survive.toolchain(t.cc or "gcc"):     # no compiler: the gate warned (survive.Gate)
+    if survive_check and (t.facts or t.object_gate) and survive.OBJDUMP and survive.toolchain(t.cc or "gcc"):     # no compiler: the gate warned (survive.Gate)
         ok, why = survive.check_task(t)
         if not ok:
             problems.append(f"{t.id} ({t.variant}) fact does not survive: {why}")

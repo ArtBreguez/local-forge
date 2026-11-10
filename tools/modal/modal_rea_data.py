@@ -3,7 +3,7 @@
 Stage 1 (CPU, parallel): generate tasks with tools/rea-bench (python3 tools/rea-bench list shows the families), compile each
 one stripped with the task's own compiler and -O level (`cc` and `opt` in its JSON; gcc and -O1/-O2/-Os when absent), decompile `proc`
 (and any `helpers` it calls) with REA + Ghidra, store pseudocode + question + truth. A task whose asked constant is not in the code
-compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled.
+compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled (a strobf task carries an `object_gate` instead: the plaintext must not be in the object, the stored bytes must).
     modal run tools/modal/modal_rea_data.py --stage decompile --n 300 [--family legacy|all|crc,cipher,...] [--cc mix|gcc|clang]
         [--exclude-seed 1001 (default for any other seed; 0 = none)] [--force]
 Stage 2 (GPU): an uncensored model answers each task K times at T=0.7. The model is a FILTER, not the author of the data (round 4): a task
@@ -113,6 +113,13 @@ def _decompile_task(task: dict, src: str, tag: str) -> dict:
         try:
             ok, why = survive.check(task["facts"], src, cc, opt)
         except Exception as e:      # never raise out of a remote function: it aborts the whole starmap
+            ok, why = False, f"gate failed: {e!r}"[:200]
+        if not ok:
+            return {**task, "error": f"fact not in the compiled code ({why})"}
+    if task.get("object_gate"):     # strobf: the compiled object must hold the string encoded, not decoded (round 5, M1)
+        try:
+            ok, why = survive.check_object(task["object_gate"], src, cc, opt)
+        except Exception as e:
             ok, why = False, f"gate failed: {e!r}"[:200]
         if not ok:
             return {**task, "error": f"fact not in the compiled code ({why})"}
@@ -230,9 +237,12 @@ def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
     if gate is None:
         print("warning: no local fact gate (--local-gate false): tasks whose asked constant the compiler removes are only dropped by the "
               "Modal-side re-check")
-    kept, dropped = dedupe.training_tasks(names, n, seed, cc, exclude_seed, gate)
+    report: dict = {}
+    kept, dropped = dedupe.training_tasks(names, n, seed, cc, exclude_seed, gate, report)
     if gate:
         print(gate.summary())
+    for why, count in report.get("untrainable", {}).items():
+        print(f"dropped {count} generated tasks: {why}")
     if dropped:
         print(f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed "
               f"{dedupe.exclusion_seed(seed, exclude_seed)}): {', '.join(sorted({t.kind for t in dropped}))}")

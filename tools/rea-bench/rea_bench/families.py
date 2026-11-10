@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from . import f_antidebug, f_bounds, f_cipher, f_crc, f_encoding, f_fsm, f_multifunc, f_pktsum, f_strobf, f_structs, legacy
-from .core import build, draw
+from .core import HELDOUT_SEED, build, draw
 
 NEW_MODULES: list = [f_structs, f_fsm, f_crc, f_cipher, f_encoding, f_strobf, f_pktsum, f_bounds, f_antidebug, f_multifunc]
 
@@ -28,9 +28,28 @@ def draws(family: str, n: int, seed: int, attempts: int, cc: str = "mix") -> lis
     return [draw(m.FAMILY, m.VARIANTS, i, seed, cc, a) for i in range(n) for a in range(attempts)]
 
 
-def generate_many(names: list, n: int, seed: int, cc: str = "mix", gate=None) -> list:
-    """n tasks over the named families (split_counts), in family order."""
-    return [t for nm, c in zip(names, split_counts(n, len(names))) for t in generate(nm, c, seed, cc, gate)]
+def untrainable(t, seed: int) -> str | None:
+    """Why a task of a TRAINING seed is not trained on although the generator makes it, or None (round 5, M2). The frozen legacy generator
+    cannot change, so the filter lives here: `skip` with b = 0x00 asks which byte value the checksum skips, and the test `p[i] != 0x00` is
+    dead code that every optimiser removes (gcc -O1/-O2/-Os: `proc` identical with and without it, 60/60): there is nothing to see, the
+    only answer is a guess. The held-out seed is not filtered: its bytes stay what they were."""
+    if seed != HELDOUT_SEED and t.kind == "skip" and t.truth.get("accept", [None])[0] == "0x00":
+        return "legacy skip with b = 0x00: the compare is dead code, the answer cannot be read"
+    return None
+
+
+def generate_many(names: list, n: int, seed: int, cc: str = "mix", gate=None, dropped: list | None = None) -> list:
+    """n tasks over the named families (split_counts), in family order, without the tasks `untrainable` names (appended to `dropped`
+    as (task, reason) when a list is given): a training run asks for n tasks and may get a few fewer."""
+    out = []
+    for nm, c in zip(names, split_counts(n, len(names))):
+        for t in generate(nm, c, seed, cc, gate):
+            why = untrainable(t, seed)
+            if why and dropped is not None:
+                dropped.append((t, why))
+            elif not why:
+                out.append(t)
+    return out
 
 
 def split_counts(n: int, k: int) -> list:

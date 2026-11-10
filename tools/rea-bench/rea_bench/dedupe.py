@@ -162,11 +162,19 @@ def heldout_overflow(tasks) -> dict:
     return {f: c for f, c in counts.items() if c > HELDOUT_N}
 
 
-def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed: int = -1, gate=None) -> tuple:
-    """(kept, dropped): n tasks over the named families without any task of the excluded (held-out) seed. `gate`: survive.Gate."""
+def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed: int = -1, gate=None, report: dict | None = None) -> tuple:
+    """(kept, dropped): n tasks over the named families without any task of the excluded (held-out) seed. `gate`: survive.Gate.
+    Tasks a training seed must not use (families.untrainable: legacy skip with b = 0x00) are not generated into `kept` and not in `dropped`
+    (that list is the held-out repeats); with a `report` dict they are counted there as report["untrainable"] = {reason: count}."""
     from . import families
     check_heldout_range(names, n, seed)
-    tasks = families.generate_many(names, n, seed, cc, gate)
+    skipped: list = []
+    tasks = families.generate_many(names, n, seed, cc, gate, skipped)
+    if report is not None:
+        counts: dict = {}
+        for _t, why in skipped:
+            counts[why] = counts.get(why, 0) + 1
+        report["untrainable"] = counts
     ex = exclusion_seed(seed, exclude_seed)
     return drop_heldout(tasks, heldout_keys(ex)) if ex else (tasks, [])
 

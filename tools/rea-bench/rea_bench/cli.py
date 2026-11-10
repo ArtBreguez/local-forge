@@ -10,6 +10,7 @@
     heldout [--write]                                          verify (or regenerate) the pinned list of held-out tasks (seed 1001)
     chance [--write]                                           estimated chance level per variant (JSON field `chance`)
     survival --family all --n 120                              share of tasks whose asked constant is in the compiled code, per variant
+                                                               (strobf: the plaintext is hidden and the stored bytes are shown)
     stats --seed 7 --n 3000                                    per family: distinct programs and overlap with the held-out list
 
 The old invocation `gen_rea_tasks.py --n N --seed S --out D` still works (it means `gen --family legacy`).
@@ -101,7 +102,7 @@ def cmd_check(a) -> None:
             problems += dups
         for t in tasks:
             problems += verify.check_task(t, ubsan, survive_check=gate is not None)
-        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if t.facts)} with a fact checked at their own cc/opt" if gate else ""), flush=True)
+        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if t.facts or t.object_gate)} with a fact or an object gate checked at their own cc/opt" if gate else ""), flush=True)
         for pr in problems[:20]:
             print("    " + pr)
         bad += len(problems)
@@ -143,7 +144,7 @@ def cmd_survival(a) -> None:
           f"{', '.join(ccs)}; n={a.n} tasks per family, seed {a.seed}, generated without the gate")
     print(f"{'family/variant':26s} {'tasks':>5s}" + "".join(f" {cc:>7s}" for cc in ccs) + "    by -O level (" + ", ".join(core.OPTS) + ") per compiler")
     for nm in pick_families(a, allow_small=True):
-        tasks = [t for t in families.generate(nm, a.n, a.seed, "mix") if t.facts]
+        tasks = [t for t in families.generate(nm, a.n, a.seed, "mix") if t.facts or t.object_gate]
         for variant in dict.fromkeys(t.variant for t in tasks):
             group = [t for t in tasks if t.variant == variant]
             cells, detail = [], []
@@ -151,7 +152,7 @@ def cmd_survival(a) -> None:
                 per_opt = {o: [0, 0] for o in core.OPTS}
                 for t in group:
                     for o in core.OPTS:
-                        per_opt[o][0] += survive.check(t.facts, t.source(), cc, o)[0]
+                        per_opt[o][0] += survive.check_task(t, cc, o)[0]
                         per_opt[o][1] += 1
                 tot = sum(v[0] for v in per_opt.values()), sum(v[1] for v in per_opt.values())
                 cells.append(f"{100 * tot[0] / tot[1]:6.1f}%")
