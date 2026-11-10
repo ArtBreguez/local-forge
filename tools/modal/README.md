@@ -22,7 +22,7 @@ Volumes are created on first use: `lf-models` (downloaded GGUFs, checked against
 |---|---|---|---|---|
 | 1 | `modal_qbench.py` | 40 coding problems with hidden tests (same runner as phase 3, `03-agent/quality`): first try at temp 0 and 10 samples at temp 0.7, per model in `MODELS` | `results/phase6/modal/` | US$ 3–4 per 6 models |
 | 2 | `modal_rea.py` | REA benchmark: 10 fixed questions on one stripped binary (`rea-bench/targets.c`), recipe arm (Ghidra pseudocode given) and agent arm (`funcs`, `decomp`, `decomp-all`, `refdata` tools, 12 steps), plus the 60 generated held-out tasks (seed 1001) | `results/phase6/rea/` | ~US$ 1 per model |
-| 3 | `modal_rea_data.py --stage decompile` | Generate tasks with `rea-bench/gen_rea_tasks.py` (10 kinds, automatic answer key), compile stripped, decompile with Ghidra, resolve referenced bytes | `results/phase6/rea-data/decompiled-seed*.jsonl` | ~US$ 1 per 1,200 |
+| 3 | `modal_rea_data.py --stage decompile [--family legacy\|all\|crc,cipher,...] [--cc mix\|gcc\|clang]` | Generate tasks with `tools/rea-bench` (11 families, automatic answer key; default `legacy` = the original 10 templates), compile stripped with each task's own compiler and -O level, decompile `proc` (and the helpers it calls) with Ghidra, resolve referenced bytes | `results/phase6/rea-data/decompiled-seed*.jsonl` | ~US$ 1 per 1,200 |
 | 4 | `modal_rea_data.py --stage sample --model <teacher> --k 4` | The teacher (uncensored, e.g. CodeForge 27B heretic Q4) answers each task k times; only answers that match the key are kept | `results/phase6/rea-data/sft-*.jsonl` | ~US$ 5 per 4,800 answers |
 | 5 | (upload) | The SFT file went to the private dataset `HiddenTerps/local-forge-agent-sft` (`rea/sft_train.jsonl`, `rea/tasks_*.jsonl`) | Hugging Face | — |
 | 6 | `modal_lora.py [--smoke]` | LoRA (rank 32, all attention/MLP projections) on the base safetensors, merge, convert and quantize **both** the trained and the base model to Q4_K_M by the same path | volume `lf-lora`, `results/phase6/lora/*.json` | ~US$ 2–3 (A100, 44 min) |
@@ -31,6 +31,39 @@ Volumes are created on first use: `lf-models` (downloaded GGUFs, checked against
 | 9 | `modal_hf_upload.py` | Upload merged weights + LoRA adapter, and the Q4_K_M GGUF, to private repos | Hugging Face | CPU only |
 
 Run each with `modal run tools/modal/<script>.py [options]`; `--help` lists the options. Long runs are best started detached from the shell (e.g. `systemd-run --user --unit=modal-x ...`) so a dropped session does not kill them.
+
+## REA task generator (`tools/rea-bench`)
+
+Every task is a small C program whose function under question is named `proc`; the answer is computed by the generator from its own parameters (never by a model) and each family ships a harness that proves it. One command regenerates any family, from the repo root (stdlib only):
+
+```bash
+python3 tools/rea-bench list                                                  # families and variants
+python3 tools/rea-bench gen --family crc --n 60 --seed 1001 --out /tmp/crc    # <id>.c + <id>.json per task; --family a,b,c or all
+python3 tools/rea-bench check --family all --n 330 --seed 1001                # compile -O0..-O3/-Os -Wall -Werror (gcc, clang if installed) and run the harnesses
+modal run tools/modal/modal_rea_data.py --stage decompile --family crc --n 60 --seed 1001
+```
+
+Without `--family`, `modal_rea_data.py` still generates the original 10 templates; `python3 tools/rea-bench --n 60 --seed 1001 --out D` (the old `gen_rea_tasks.py` command line) means `--family legacy`. The `legacy` output is frozen: a test pins its SHA-256 for seeds 1001 (held-out) and 7. Each decompile run wipes `/decompiled-seed<seed>` on the volume, so give each family (or each `--family all` run) its own seed; the held-out split of a family is a different seed from its training seed.
+
+| family | variants | the question asks | the harness proves it with |
+|---|---|---|---|
+| `legacy` | 10 templates | the original ten (xor key, password, magic, LCG, hash, skip byte, key count, alphabet, rotate, threshold) | pinned hash |
+| `structs` | 6 | field offset (hex) in a plain, nested or linked struct, which offset gets a constant, struct size (array stride, allocation) | `offsetof`/`sizeof` and `proc` on values it wrote |
+| `fsm` | 6 | shortest input reaching a state, number of states (table or `switch` machine); opcode of an operation, number of opcodes (dispatcher) | every input up to the shortest length enumerated against a Python BFS |
+| `crc` | 6 | polynomial as written + reflected/normal, initial value, final XOR; 16/32-bit, 10 standard algorithms or random polynomials, bitwise or runtime table | Python Rocksoft model (anchored to `zlib`, `binascii`, published check values) |
+| `cipher` | 7 | RC4 + key length; TEA/XTEA + encrypt/decrypt + loop count; ChaCha/Salsa + total rounds | Python references (RC4 vector, RFC 7539, zero-key TEA/XTEA vectors) |
+| `encoding` | 6 | base64/base58/base32 x encode/decode (standard or shuffled alphabet): which one, or the alphabet | stdlib `base64` + big-int base58, encode or round-trip |
+| `strobf` | 7 | the plaintext written by a stack string, xor (constant, rolling, alternating, reversed), subtraction or rot-N | the C is run and its output compared |
+| `pktsum` | 7 | where the checksummed range starts, bytes excluded at the end, byte order of the stored checksum, offset of the length byte (sum8, xor8, sum16, Fletcher-16, CRC-16) | valid and mutated packets against a Python model |
+| `bounds` | 6 | lowest/highest accepted value (five spellings, unsigned window, clamp), table index limits, loop iteration count, count of accepted byte values | the whole domain scanned |
+| `antidebug` | 6 | technique (`ptrace`, `timing`, `env`, `tracerpid`) + return value, env variable or threshold; ptrace via libc or raw syscall, `clock_gettime` or `gettimeofday` | libc call swapped for a fake: request code, syscall number, path, threshold and unit |
+| `multi` | 5 | value that needs the helper's body (arithmetic, XOR key, decoded secret, two-hop chain, length limit) | evaluation in Python; `objdump` shows `proc` calls the `noinline` helper at every -O level |
+
+Task JSON (new families): `id, kind, question, opt, cc, function, variant, score, accept` and, where needed, `reject` and `helpers`. `cc` is `gcc` or `clang` (about 60/40) and `opt` one of -O0..-O3/-Os; `decompile_task` compiles with `task.get('cc','gcc')` and the Modal image has clang. `helpers` names the functions `proc` calls; their pseudocode is appended after `proc`'s in the prompt. ARM64 and Windows PE are not generated yet.
+
+Scoring (`tools/rea-bench/rea_bench/scoring.py`, imported by `modal_rea_data.py`): the original modes `exact`, `any`, `all`, `all_groups` are unchanged. New: `tokens` (every group must match a whole token of the answer; a `reject` token fails it, so "XTEA" is not "TEA" and "0x18" is not 8) and `exact_case` (alphabets).
+
+Tests: `python -m unittest tests.test_rea_bench` (about two minutes; compiles and runs a sample of every family; the clang tests skip when clang is absent).
 
 ## Rules the scripts keep
 
