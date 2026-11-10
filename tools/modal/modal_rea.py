@@ -7,6 +7,10 @@ Two arms per model, on 10 questions about 8 functions in one stripped Linux bina
   agent  : the model gets a shell with `rea`, the binary and the question, and must find the function itself (up to 8 tool
            calls, JSON tool protocol enforced by the harness). Measures tool use.
 Scoring is rea_bench.scoring.score (substring modes for the fixed questions, headline-only modes for generated families), recorded with the full transcript in results/phase6/rea/<model>.jsonl.
+The generated held-out set (seed 1001) is a third arm, reported on its own line and never added to the fixed 10: each record has `pass` (strict:
+the HEADLINE of the reply is the answer) and `pass_any_line` (a format-insensitive control: any line of the reply is). A base model that
+thinks aloud on line 1 scores 0 strict and, if it answers later, 1 on the control; the gain of a fine-tune on the strict score is only
+trustworthy as far as the control moves with it.
 
     modal run tools/modal_rea.py --only heretic-9b,qwen35-35b-a3b-heretic
 """
@@ -28,8 +32,8 @@ RB = ROOT / "tools" / "rea-bench"          # the generator package; inside the c
 if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
-from rea_bench import outputs  # noqa: E402  (stdlib only)
-from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib only; the one scorer the data pipeline and the unit tests use)
+from rea_bench import dedupe, outputs  # noqa: E402  (stdlib only)
+from rea_bench.scoring import check_mode, score, score_any_line  # noqa: E402  (stdlib only; the one scorer the data pipeline and the unit tests use)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 # Our own GGUFs (base and LoRA quantized by the same path, tools/modal_lora.py): repo "vol:" = file inside the lf-lora volume
 LOCAL_MODELS = [
@@ -118,6 +122,22 @@ def decompile_all(binary: str) -> dict:
     return out
 
 
+def run_heldout(tasks: list, ask) -> list:
+    """The held-out arm: one record per task with the strict score (`pass`: the headline is the answer) and the control (`pass_any_line`).
+    `ask(messages) -> (reply, usage)`. A call that raises is recorded as an error and the run goes on."""
+    out = []
+    for t in tasks:
+        extra = f"\n\nData referenced by the function (bytes at those addresses):\n{t['refs']}" if t.get("refs") else ""
+        try:
+            ans, _usage = ask([{"role": "system", "content": SYSTEM_RECIPE},
+                               {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}])
+            rec = {"pass": score(ans, t), "pass_any_line": score_any_line(ans, t), "answer": ans[:600]}
+        except Exception as e:      # one timeout must not lose the whole model run (the fixed arms and the agent arm)
+            rec = {"pass": False, "pass_any_line": False, "answer": "", "error": repr(e)[:300]}
+        out.append({"arm": "heldout", "task": t["id"], "kind": t["kind"], **rec})
+    return out
+
+
 def run_model(name: str, repo: str, fname: str, heldout: list | None = None) -> dict:
     import shutil
     from huggingface_hub import hf_hub_download
@@ -153,11 +173,7 @@ def run_model(name: str, repo: str, fname: str, heldout: list | None = None) -> 
             ans, usage = chat([{"role": "system", "content": SYSTEM_RECIPE},
                                {"role": "user", "content": f"```c\n{code}\n```{extra}\n\nQuestion: {t['question']}"}])
             records.append({"arm": "recipe", "task": t["id"], "pass": score(ans, t), "answer": ans[:600], "usage": usage})
-        for t in heldout or []:   # generated held-out set (seed 1001), never used for training
-            extra = f"\n\nData referenced by the function (bytes at those addresses):\n{t['refs']}" if t.get("refs") else ""
-            ans, usage = chat([{"role": "system", "content": SYSTEM_RECIPE},
-                               {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}])
-            records.append({"arm": "heldout", "task": t["id"], "kind": t["kind"], "pass": score(ans, t), "answer": ans[:600]})
+        records += run_heldout(heldout or [], chat)      # generated held-out set (seed 1001), never used for training
         for t in tasks:
             msgs = [{"role": "system", "content": SYSTEM_AGENT},
                     {"role": "user", "content": f"Binary: /work/target (stripped ELF x86-64). Question: {t['question']} "
@@ -213,6 +229,11 @@ def main(only: str = ""):
     dest.mkdir(parents=True, exist_ok=True)
     todo = [m for m in MODELS + LOCAL_MODELS if not only or m[0] in only.split(",")]
     heldout = outputs.load_tasks(outputs.heldout_files(dest.parent / "rea-data"))   # decompiled-seed1001*.jsonl, one per family run
+    over = dedupe.heldout_overflow(heldout)
+    if over:
+        raise SystemExit(f"the held-out files hold more tasks than the pinned held-out list covers ({dedupe.HELDOUT_N} per family): "
+                         f"{', '.join(f'{f} {c}' for f, c in over.items())}. Tasks beyond the list may be in training data; regenerate with "
+                         f"`--seed {dedupe.HELDOUT_SEED} --n <= {dedupe.HELDOUT_N}` per family")
     for t in json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"] + heldout:
         check_mode(t)       # ValueError on an unknown score mode now, not half way through a paid run
     calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu in todo]
@@ -225,6 +246,14 @@ def main(only: str = ""):
         (dest / f"{name}.meta.json").write_text(json.dumps(res["meta"], indent=1))
         (dest / "pseudocode.json").write_text(json.dumps(res["pseudocode"], indent=1))
         rec = [r for r in res["records"] if r["arm"] == "recipe"]; ag = [r for r in res["records"] if r["arm"] == "agent"]
-        ho = [r for r in res["records"] if r["arm"] == "heldout"]
-        print(f"{name}: heldout {sum(r['pass'] for r in ho)}/{len(ho)}  recipe {sum(r['pass'] for r in rec)}/{len(rec)}  agent {sum(r['pass'] for r in ag)}/{len(ag)}  "
+        print(f"{name}: fixed questions: recipe {sum(r['pass'] for r in rec)}/{len(rec)}  agent {sum(r['pass'] for r in ag)}/{len(ag)}  "
               f"invalid {sum(r['invalid_tool_calls'] for r in ag)}  {res['meta']['gpu']} {res['meta']['wall_s']}s")
+        hs = outputs.heldout_summary(res["records"])
+        (dest / f"{name}.heldout.json").write_text(json.dumps(hs, indent=1))
+        if hs:
+            a = hs["ALL"]
+            print(f"{name}: generated held-out set (separate from the fixed questions): strict {a['strict']}/{a['n']}  "
+                  f"format-insensitive control {a['control']}/{a['n']}  errors {a['errors']}")
+            for kind, row in sorted(hs.items()):
+                if kind != "ALL":
+                    print(f"    {kind:10s} strict {row['strict']:3d}/{row['n']:<3d} control {row['control']:3d}/{row['n']:<3d}" + (f"  errors {row['errors']}" if row["errors"] else ""))

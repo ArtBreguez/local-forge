@@ -380,13 +380,14 @@ class ModalScripts(unittest.TestCase):
         import types
         seen = {}
 
-        def fake_starmap(tasks):
+        def fake_starmap(tasks, **kw):
             seen["tasks"] = tasks
             return [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _seed in tasks]
 
+        ok = types.SimpleNamespace(returncode=0, stdout="", stderr="")
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
-            with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", types.SimpleNamespace(run=mock.MagicMock())), \
+            with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", types.SimpleNamespace(run=mock.MagicMock(return_value=ok))), \
                     mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
                     contextlib.redirect_stdout(io.StringIO()):
                 self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc", local_gate=False)
@@ -403,11 +404,11 @@ class ModalScripts(unittest.TestCase):
         from unittest import mock
         import types
 
-        def fake_starmap(tasks):
+        def fake_starmap(tasks, **kw):
             return [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _tag in tasks]
 
         remote = mock.MagicMock(return_value={"sft": [{"task": "x"}], "stats": {"tasks": 1}})
-        fake_subprocess = types.SimpleNamespace(run=mock.MagicMock())
+        fake_subprocess = types.SimpleNamespace(run=mock.MagicMock(return_value=types.SimpleNamespace(returncode=0, stdout="", stderr="")))
         run = fake_subprocess.run
         with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", fake_subprocess), \
                 mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \

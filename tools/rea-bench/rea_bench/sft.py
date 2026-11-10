@@ -69,3 +69,20 @@ class Stats:
     def as_dict(self) -> dict:
         row = lambda c: {f: c[f] for f in self.FIELDS}
         return {**row(self.total), "by_kind": {k: row(c) for k, c in sorted(self.by_kind.items())}}
+
+
+def assemble(tasks: list, results: dict, model: str, messages_for) -> tuple:
+    """(SFT records, stats dict) from the K replies of every task. `results` = {task id: {"outs": [[reply, scored right], ...]}} (the
+    sample stage's checkpoint format); `messages_for(task)` = the system and user message. A task without a result is skipped."""
+    st, kept = Stats(), []
+    for t in tasks:
+        rec = results.get(t["id"])
+        if rec is None:
+            continue
+        outs = [(o, bool(ok)) for o, ok in rec["outs"]]
+        records, reason = select(outs, t)
+        st.add(t, outs, records, reason)
+        for r in records:
+            kept.append({"messages": [*messages_for(t), {"role": "assistant", "content": r["text"]}], "task": t["id"], "kind": t["kind"],
+                         "model": model, "truncated": r["truncated"]})
+    return kept, st.as_dict()
