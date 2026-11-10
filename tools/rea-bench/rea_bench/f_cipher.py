@@ -9,7 +9,7 @@ TEA and XTEA vectors).
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, c_u32s, dec, rword
+from .core import Task, c_bytes, c_u32s, dec, rword, with_decoys
 
 FAMILY = "cipher"
 M = 0xFFFFFFFF
@@ -161,6 +161,7 @@ def v_rc4(rng):
         buf[k] ^= S[(S[i] + S[j]) & 255];
     }}
 }}"""
+    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]))
     data = bytes(rng.randrange(256) for _ in range(rng.randint(10, 24)))
     main = f"""int main(void) {{
     uint8_t buf[] = {{{c_bytes(data)}}};
@@ -216,6 +217,7 @@ def _tea_task(rng, alg, direction):
     v[0] = v0;
     v[1] = v1;
 }}"""
+    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]))
     main = f"""int main(void) {{
     uint32_t v[2] = {{0x{v[0]:08x}u, 0x{v[1]:08x}u}};
     proc(v);
@@ -235,12 +237,13 @@ def _tea_task(rng, alg, direction):
 
 
 def _stream_task(rng, alg):
-    rounds = rng.choice([20, 20, 12, 8, 6, 10, 14, 16, 24])
+    rounds = rng.choice([20, 20, 12, 8] + list(range(4, 41, 2)))
     key = [rng.getrandbits(32) for _ in range(8)]
     counter = rng.getrandbits(32)
     nonce = [rng.getrandbits(32) for _ in range(3 if alg == "chacha" else 2)]
-    style = rng.randrange(2)
-    loop_head = (f"for (int i = 0; i < {rounds}; i += 2)" if style == 0 else f"for (int i = 0; i < {rounds // 2}; i++)")
+    style = rng.randrange(3)
+    loop_head = [f"for (int i = 0; i < {rounds}; i += 2)", f"for (int i = 0; i < {rounds // 2}; i++)",
+                 f"for (int i = {rounds}; i > 0; i -= 2)"][style]
     inline_sigma = rng.random() < 0.5
     sig = ("    static const uint32_t sigma[4] = {0x61707865u, 0x3320646eu, 0x79622d32u, 0x6b206574u};\n" if not inline_sigma else "")
     s = (lambda i: f"sigma[{i}]") if not inline_sigma else (lambda i: f"0x{SIGMA[i]:08x}u")
@@ -294,6 +297,7 @@ def _stream_task(rng, alg):
     }}
     for (int i = 0; i < 16; i++) out[i] = x[i] + w[i];
 }}"""
+    body = with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]))
     main = f"""int main(void) {{
     static const uint32_t key[8] = {{{c_u32s(key)}}};
     static const uint32_t nonce[{nn}] = {{{c_u32s(nonce)}}};

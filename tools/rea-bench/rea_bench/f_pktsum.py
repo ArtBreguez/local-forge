@@ -9,7 +9,7 @@ stored bytes must fail (so the byte order is proven), a wrong magic or a truncat
 """
 from __future__ import annotations
 
-from .core import Task, dec
+from .core import Task, dec, with_decoys
 from .f_crc import crc_ref
 
 FAMILY = "pktsum"
@@ -163,7 +163,7 @@ QUESTIONS = {
 
 def _make(rng, variant, kind, endian=None, len_field=False):
     spec = Spec(rng, kind, endian, len_field)
-    body = _len_body(spec) if len_field else _flat_body(spec)
+    body = with_decoys(_len_body(spec) if len_field else _flat_body(spec), rng, rng.choice([1, 1, 2]), {spec.magic})   # core.decoys
     asks = ["len_offset", "len_start"] if len_field else ["start", "tail"] + (["endian"] if spec.W == 2 else [])
     ask = rng.choice(asks)
     if ask == "endian":

@@ -30,6 +30,7 @@ if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
+from rea_bench import dedupe, families  # noqa: E402  (stdlib-only)
 from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib-only, unit-tested without Modal; same scorer modal_rea.py uses)
 
 image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
@@ -144,16 +145,23 @@ def sample_answers(name: str, repo: str, fname: str, k: int, seed: int = 7) -> d
 
 
 @app.local_entrypoint()
-def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "", k: int = 6, family: str = "legacy", cc: str = "mix"):
+def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "", k: int = 6, family: str = "legacy", cc: str = "mix",
+         exclude_seed: int = -1):
+    """exclude_seed: tasks of that seed never enter this run (-1: the held-out seed 1001 for any other seed, 0: none)."""
     dest = ROOT / "results" / "phase6" / "rea-data"
     dest.mkdir(parents=True, exist_ok=True)
     if stage == "decompile":
-        import tempfile
         # one seed dir per run: a new family needs its own --seed (or --family all), otherwise this wipes the previous one
         subprocess.run(["modal", "volume", "rm", "-r", "lf-rea-data", f"/decompiled-seed{seed}"], capture_output=True)
-        d = tempfile.mkdtemp()
-        subprocess.run([sys.executable, str(RB), "gen", "--family", family, "--n", str(n), "--seed", str(seed), "--cc", cc, "--out", d], check=True)
-        tasks = [(json.loads(pathlib.Path(d, f"{p.stem}.json").read_text()), p.read_text(), seed) for p in sorted(pathlib.Path(d).glob("*.c"))]
+        names = list(families.modules()) if family == "all" else family.split(",")
+        unknown = [x for x in names if x not in families.modules()]
+        if unknown:
+            raise SystemExit(f"unknown family {unknown}; known: {', '.join(families.modules())} (or 'all')")
+        kept, dropped = dedupe.training_tasks(names, n, seed, cc, exclude_seed)
+        if dropped:
+            print(f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed "
+                  f"{dedupe.exclusion_seed(seed, exclude_seed)}): {', '.join(sorted({t.kind for t in dropped}))}")
+        tasks = [(t.meta(), t.source(), seed) for t in kept]
         for task, _src, _seed in tasks:
             check_mode(task)
         ok = err = 0

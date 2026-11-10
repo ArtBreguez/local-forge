@@ -5,7 +5,10 @@
     gen  --family crc,cipher --n 120 --seed 1001 --cc clang     a list; --cc gcc|clang|mix (default mix)
     list                                                       families and their variants
     check --family all --n 330 --seed 1001                     compile every task at -O0..-O3/-Os with -Wall -Werror (gcc, and
-                                                               clang if installed) and run its harness; exit 1 on any problem
+                                                               clang if installed), run its harness, report duplicate tasks inside
+                                                               the seed; exit 1 on any problem
+    heldout [--write]                                          verify (or regenerate) the pinned list of held-out tasks (seed 1001)
+    stats --seed 7 --n 3000                                    per family: distinct programs and overlap with the held-out list
 
 The old invocation `gen_rea_tasks.py --n N --seed S --out D` still works (it means `gen --family legacy`).
 """
@@ -16,20 +19,20 @@ import pathlib
 import re
 import sys
 
-from . import families
+from . import dedupe, families
 from .core import write_tasks
 
 
 TASK_FILE = re.compile(r"^[a-z]+-\d+-\d{4}\.(c|json)$")
 
 
-def pick_families(a) -> list:
+def pick_families(a, allow_small: bool = False) -> list:
     mods = families.modules()
     names = list(mods) if a.family == "all" else a.family.split(",")
     for nm in names:
         if nm not in mods:
             raise SystemExit(f"unknown family {nm!r}; known: {', '.join(mods)} (or 'all')")
-    if a.n < len(names):
+    if a.n < len(names) and not allow_small:
         raise SystemExit(f"--n {a.n} is smaller than the {len(names)} families asked for: some would get 0 tasks (use --n >= {len(names)})")
     return names
 
@@ -60,6 +63,7 @@ def cmd_check(a) -> None:
     for nm, c in zip(names, families.split_counts(a.n, len(names))):
         problems = []
         tasks = families.generate(nm, c, a.seed, "mix")
+        problems += [f"{b} duplicates {first} (same program and question)" for first, b in dedupe.duplicates(tasks)]
         for t in tasks:
             problems += verify.check_task(t, ubsan)
         print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems", flush=True)
@@ -69,6 +73,30 @@ def cmd_check(a) -> None:
     if bad:
         raise SystemExit(f"{bad} problems")
     print("all tasks compile clean and their harnesses prove the truth")
+
+
+def cmd_heldout(a) -> None:
+    if a.write:
+        print(f"{dedupe.write_heldout()} held-out keys -> {dedupe.HELDOUT_FILE}")
+        return
+    now = [line.split()[1] for line in dedupe.heldout_lines()]
+    pinned = dedupe.load_heldout()
+    gone = len(pinned - set(now))
+    print(f"{len(pinned)} pinned keys, {len(set(now))} regenerated; {gone} pinned keys are no longer produced by seed {dedupe.HELDOUT_SEED}")
+    if gone or len(pinned) != len(set(now)):
+        raise SystemExit("the generator no longer reproduces the pinned held-out list; if the change is intended run: "
+                         "python3 tools/rea-bench heldout --write (and say so in the commit)")
+
+
+def cmd_stats(a) -> None:
+    held = dedupe.heldout_keys()
+    print(f"seed {a.seed}, n={a.n} per family; held-out list: {len(held)} keys ({dedupe.HELDOUT_N} per family at seed {dedupe.HELDOUT_SEED})")
+    print(f"{'family':10s} {'bodies':>7s} {'programs':>8s} {'overlap':>8s}   (bodies: distinct C text; programs: distinct normalized body+question;"
+          f" overlap: tasks whose program is held out)")
+    for nm in pick_families(a, allow_small=True):
+        tasks = families.generate(nm, a.n, a.seed, "mix")
+        keys = [dedupe.task_key(t) for t in tasks]
+        print(f"{nm:10s} {len({t.body for t in tasks}):7d} {len(set(keys)):8d} {sum(k in held for k in keys):8d}")
 
 
 def cmd_list(_a) -> None:
@@ -98,5 +126,13 @@ def main(argv=None) -> None:
     c.add_argument("--seed", type=int, default=1)
     c.add_argument("--no-ubsan", action="store_true")
     c.set_defaults(fn=cmd_check)
+    h = sub.add_parser("heldout", help="verify or regenerate the pinned held-out list")
+    h.add_argument("--write", action="store_true")
+    h.set_defaults(fn=cmd_heldout)
+    st = sub.add_parser("stats", help="distinct programs and held-out overlap of a generated seed")
+    st.add_argument("--family", default="all")
+    st.add_argument("--n", type=int, default=3000, help="tasks PER FAMILY")
+    st.add_argument("--seed", type=int, default=7)
+    st.set_defaults(fn=cmd_stats)
     a = ap.parse_args(argv)
     a.fn(a)

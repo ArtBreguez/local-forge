@@ -19,6 +19,11 @@ def generate(family: str, n: int, seed: int, cc: str = "mix") -> list:
     return build(m.FAMILY, m.VARIANTS, n, seed, cc)
 
 
+def generate_many(names: list, n: int, seed: int, cc: str = "mix") -> list:
+    """n tasks over the named families (split_counts), in family order."""
+    return [t for nm, c in zip(names, split_counts(n, len(names))) for t in generate(nm, c, seed, cc)]
+
+
 def split_counts(n: int, k: int) -> list:
     """n tasks over k families: n//k each, the remainder to the first ones."""
     return [n // k + (1 if i < n % k else 0) for i in range(k)]

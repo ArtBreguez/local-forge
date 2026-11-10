@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import pathlib
 import random
+import re
 import string
 from dataclasses import dataclass, field
 
@@ -41,6 +42,47 @@ def hx(v: int, digits: int = 0) -> list:
 def dec(v: int) -> list:
     """Spellings of a decimal answer; the 0x form of the same value is unambiguous so it is accepted too."""
     return [str(v), f"0x{v:x}"] if v >= 0 else [str(v)]
+
+
+DECOY_NAMES = ["pad", "tmp", "seed", "salt", "tick", "stat", "mark", "hint", "slot", "note", "gap", "spin"]
+
+
+def decoys(rng, count: int, forbidden=()) -> str:
+    """`count` harmless statements for the top of a function: volatile locals and static counters that survive every -O level, so
+    the compiled function has extra, unrelated constants (real code is full of them). Each carries random constants, which is what
+    keeps small templates (a standard CRC, a base64 encoder, ChaCha) from being the same program in every task. No constant equals
+    a value in `forbidden` (the answer must not be matched by a decoy)."""
+    out, names = [], rng.sample(DECOY_NAMES, count)
+    for k, base in enumerate(names):
+        n = f"{base}{k}"
+        c = rng.randrange(0x1000, 0x10000)
+        while c in forbidden:
+            c = rng.randrange(0x1000, 0x10000)
+        kind, s = rng.randrange(5), rng.randint(1, 7)
+        if kind == 0:
+            out += [f"volatile unsigned {n} = 0x{c:x}u;", f"{n} ^= {n} >> {s};"]
+        elif kind == 1:
+            out += [f"static volatile unsigned {n};", f"{n} += 0x{c:x}u;"]
+        elif kind == 2:
+            m = rng.randint(4, 16)
+            out += [f"volatile unsigned char {n}[{m}] = {{0}};", f"{n}[{rng.randrange(m)}] = (unsigned char)({n}[{rng.randrange(m)}] + 0x{c & 0xff:02x});"]
+        elif kind == 3:
+            out += [f"volatile unsigned {n} = {c}u;", f"{n} = ({n} << {s}) | ({n} >> {32 - s});"]
+        else:
+            out += [f"static volatile unsigned short {n} = 0x{c:x};", f"{n} = (unsigned short)({n} + {rng.randint(1, 999)});"]
+    return "".join(f"    {line}\n" for line in out)
+
+
+_PROC_OPEN = re.compile(r"\bproc\s*\([^)]*\)\s*\{\n")
+
+
+def with_decoys(body: str, rng, count: int, forbidden=()) -> str:
+    """`body` with `count` decoy statements as the first lines of proc."""
+    if not count:
+        return body
+    m = _PROC_OPEN.search(body)
+    assert m, "no proc( ... ) { to put decoys in"
+    return body[:m.end()] + decoys(rng, count, forbidden) + body[m.end():]
 
 
 def c_bytes(bs) -> str:

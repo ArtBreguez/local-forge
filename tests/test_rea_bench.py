@@ -23,7 +23,7 @@ from .helpers import ROOT
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, families, scoring, verify  # noqa: E402
+from rea_bench import core, dedupe, families, scoring, verify  # noqa: E402
 from rea_bench.verify import CLANG, compile_check, run_harness  # noqa: E402
 
 
@@ -346,6 +346,29 @@ class ModalScripts(unittest.TestCase):
             scoring.check_mode(t)
             self.assertTrue(self.rea.score(scoring.canonical(t) if t["score"] != "any" else t["accept"][0], t), t["id"])
 
+    def test_decompile_stage_drops_heldout_tasks_and_writes_the_rest(self):
+        from unittest import mock
+        import types
+        seen = {}
+
+        def fake_starmap(tasks):
+            seen["tasks"] = tasks
+            return [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _seed in tasks]
+
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data.subprocess, "run"), \
+                    mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)):
+                self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc")
+                out = [json.loads(l) for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed7.jsonl").read_text().splitlines()]
+        held = dedupe.heldout_keys()
+        kept, dropped = dedupe.training_tasks(["legacy", "crc"], 600, 7)
+        self.assertEqual([r["id"] for r in out], [t.id for t in kept])
+        self.assertGreater(len(dropped), 0)
+        self.assertEqual(len(seen["tasks"]), len(kept))
+        self.assertFalse({t.id for t in dropped} & {r["id"] for r in out})
+        self.assertTrue(held)
+
     def test_main_stops_on_an_unknown_score_mode_before_renting_a_gpu(self):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
@@ -361,6 +384,59 @@ class ModalScripts(unittest.TestCase):
                     self.rea.main("")
             finally:
                 self.rea.ROOT = old
+
+
+class Disjointness(unittest.TestCase):
+    """B2: seed 1001 (held-out) was mostly a copy of training data for antidebug (30/30 against a seed-7 n=3000 set), encoding, crc, cipher."""
+
+    def test_normalize_ignores_invented_names_only(self):
+        a = "int proc(const uint8_t *p, size_t n) {\n    uint32_t sum = 0x1234u;\n    return memcmp(p, \"id\", n) + sum;\n}"
+        b = "int proc(const uint8_t *buf, size_t len) {\n  uint32_t acc =  0x1234u;\n  return memcmp(buf, \"id\", len) + acc;\n}"
+        self.assertEqual(dedupe.normalize(a), dedupe.normalize(b))
+        self.assertNotEqual(dedupe.normalize(a), dedupe.normalize(b.replace("0x1234u", "0x1235u")))
+        self.assertNotEqual(dedupe.normalize(a), dedupe.normalize(a.replace('"id"', '"ie"')), "string literals are kept")
+        self.assertNotEqual(dedupe.normalize(a), dedupe.normalize(a.replace("memcmp", "memcpy")), "library calls are kept")
+        self.assertNotEqual(dedupe.normalize("int proc(int a, int b) { return a + b; }"), dedupe.normalize("int proc(int a, int b) { return a + a; }"))
+
+    def test_duplicates_are_reported(self):
+        ts = families.generate("crc", 6, 5)
+        self.assertEqual(dedupe.duplicates(ts), [])
+        self.assertEqual(dedupe.duplicates(ts + [ts[2]]), [(ts[2].id, ts[2].id)])
+
+    def test_the_pinned_list_is_what_the_generator_makes(self):
+        self.assertEqual(sorted(dedupe.load_heldout()), sorted({line.split()[1] for line in dedupe.heldout_lines()}),
+                         "seed 1001 changed: run `python3 tools/rea-bench heldout --write` and say why in the commit")
+        text = dedupe.HELDOUT_FILE.read_text().splitlines()
+        self.assertEqual(len([l for l in text if not l.startswith("#")]), dedupe.HELDOUT_N * len(families.modules()))
+        r = subprocess.run([sys.executable, str(RB), "heldout"], capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+
+    def test_new_families_are_distinct_and_disjoint_from_the_heldout_split(self):
+        held = dedupe.heldout_keys()
+        for fam in families.modules():
+            if fam == "legacy":
+                continue          # frozen: the exclusion in the pipeline handles it (test below)
+            tasks = families.generate(fam, 3000, 7)
+            keys = [dedupe.task_key(t) for t in tasks]
+            self.assertGreaterEqual(len({t.body for t in tasks}), 2960, f"{fam}: distinct C bodies per 3000")
+            self.assertGreaterEqual(len(set(keys)), 2960, f"{fam}: distinct programs per 3000")
+            self.assertEqual(sum(k in held for k in keys), 0, f"{fam}: seed-7 tasks identical to a held-out task")
+
+    def test_training_tasks_drop_the_heldout_ones(self):
+        held = dedupe.heldout_keys()
+        kept, dropped = dedupe.training_tasks(["legacy"], 1500, 7)
+        self.assertGreater(len(dropped), 0, "frozen legacy templates repeat held-out programs; they must be dropped")
+        self.assertFalse([t for t in kept if dedupe.task_key(t) in held])
+        self.assertTrue(all(dedupe.task_key(t) in held for t in dropped))
+        kept, dropped = dedupe.training_tasks(["crc", "legacy"], 90, 1001)       # the held-out seed itself is not filtered
+        self.assertEqual((len(kept), len(dropped)), (90, 0))
+        kept, dropped = dedupe.training_tasks(["crc"], 30, 7, exclude_seed=1001)
+        self.assertEqual((len(kept), len(dropped)), (30, 0))
+        kept, dropped = dedupe.training_tasks(["crc"], 30, 1001, exclude_seed=1001)
+        self.assertEqual((len(kept), len(dropped)), (0, 30), "an explicit exclusion applies even to the seed itself")
+        self.assertEqual(dedupe.exclusion_seed(7), 1001)
+        self.assertIsNone(dedupe.exclusion_seed(1001))
+        self.assertIsNone(dedupe.exclusion_seed(7, 0))
 
 
 def sample_tasks(family: str, seeds=(101, 202)) -> list:

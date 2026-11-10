@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import string
 
-from .core import Task, c_bytes
+from .core import Task, c_bytes, with_decoys
 
 FAMILY = "encoding"
 
@@ -221,6 +221,9 @@ def _make(rng, base, direction):
         calls = "".join(f'    n = proc({c_str(e)}, out);\n    for (size_t i = 0; i < n; i++) printf("%02x", out[i]);\n    printf("\\n");\n' for e in encoded)
         main = f"int main(void) {{\n    uint8_t out[128];\n    size_t n;\n{calls}    return 0;\n}}"
         expect = "".join(v.hex() + "\n" for v in vecs)
+    # a standard alphabet leaves almost nothing random in the source: those always carry decoys (core.decoys), so two tasks are the
+    # same program only by accident
+    body = with_decoys(body, rng, rng.choice([0, 1, 1, 2]) if custom else rng.choice([1, 1, 2, 2, 3]))
     ask_alpha = custom and rng.random() < 0.6
     if ask_alpha:
         n = RADIX[base]

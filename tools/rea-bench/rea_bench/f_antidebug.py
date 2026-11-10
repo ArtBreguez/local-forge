@@ -6,10 +6,14 @@ asks for one detail: the value returned on detection (ptrace, tracerpid), the en
 nanoseconds or microseconds (timing). The harness does not touch the real process: a preamble swaps the libc call for a fake
 (`#define ptrace fake_ptrace`, a fake clock that moves by exactly D, a fake fopen on an in-memory status file), so the
 test proves the request code, the syscall number, the path, the threshold and its unit, not just that the code compiles.
+
+Every variant draws its constants from a wide range (return values 1..250, thresholds, work sizes, environment names from ~150
+spellings), writes the test in several equivalent forms and starts with 1..3 decoy statements (core.decoys), so two tasks are
+the same program only by accident (tools/rea-bench `check` reports duplicates).
 """
 from __future__ import annotations
 
-from .core import HDR, Task, dec
+from .core import HDR, Task, dec, with_decoys
 
 FAMILY = "antidebug"
 HEADERS = (HDR.rstrip("\n") + "\n#include <unistd.h>\n#include <time.h>\n#include <sys/time.h>\n#include <sys/ptrace.h>\n"
@@ -18,8 +22,21 @@ HEADERS = (HDR.rstrip("\n") + "\n#include <unistd.h>\n#include <time.h>\n#includ
 TECH = {"ptrace": ["ptrace", "ptrace_traceme", "traceme"], "timing": ["timing", "time-based", "clock_gettime", "gettimeofday", "rdtsc"],
         "env": ["env", "environment", "getenv"], "tracerpid": ["tracerpid"]}
 OPTIONS = "one of: ptrace, timing, env, tracerpid"
-RETURNS = [1, 2, 3, 7, 42, 99, 113, 255]
-ENV_VARS = ["LD_PRELOAD", "LD_AUDIT", "LD_DEBUG", "LD_LIBRARY_PATH", "LD_BIND_NOW", "PYTHONINSPECT", "MALLOC_PERTURB_", "MALLOC_CHECK_"]
+
+# Environment variable names: none is an English word on its own (a reply that merely contains "lines" must not pass), all have an
+# underscore or are long. About 25 real ones plus PREFIX_WORD[_N] combinations.
+REAL_ENV = ["LD_PRELOAD", "LD_AUDIT", "LD_DEBUG", "LD_LIBRARY_PATH", "LD_BIND_NOW", "LD_BIND_NOT", "LD_PROFILE", "LD_SHOW_AUXV",
+            "LD_ASSUME_KERNEL", "LD_DEBUG_OUTPUT", "LD_ORIGIN_PATH", "GLIBC_TUNABLES", "MALLOC_PERTURB_", "MALLOC_CHECK_", "MALLOC_TRACE",
+            "MALLOC_ARENA_MAX", "PYTHONINSPECT", "PYTHONDEBUG", "PYTHONFAULTHANDLER", "JAVA_TOOL_OPTIONS", "NODE_OPTIONS", "ASAN_OPTIONS",
+            "UBSAN_OPTIONS", "VALGRIND_OPTS", "STRACE_LOG"]
+ENV_PREFIX = ["APP", "SVC", "SYS", "RT", "DBG", "CFG", "SEC", "NET", "GUARD", "AGENT"]
+ENV_WORD = ["TRACE", "ATTACH", "HOOK", "PROBE", "WATCH", "INSPECT", "DEBUGGER", "DUMP", "VERBOSE", "PROFILE", "TAP", "SPY", "LOGLEVEL", "SANDBOX"]
+ENV_VARS = REAL_ENV + [f"{p}_{w}" for p in ENV_PREFIX for w in ENV_WORD]
+
+
+def env_name(rng) -> str:
+    name = rng.choice(REAL_ENV) if rng.random() < 0.3 else f"{rng.choice(ENV_PREFIX)}_{rng.choice(ENV_WORD)}"
+    return name + (f"_{rng.randint(1, 99)}" if rng.random() < 0.3 and not name.endswith("_") else "")
 
 
 def truth(tech, detail_alts):
@@ -31,14 +48,23 @@ def question(detail):
     return f"Which anti-debugging technique does proc implement ({OPTIONS}), and {detail}"
 
 
+def returns(rng) -> int:
+    return rng.randint(1, 250)
+
+
+def _decoys(rng, body, forbidden):
+    return with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]), forbidden)
+
+
 def _ptrace(rng, raw):
-    rv = rng.choice(RETURNS)
-    form = rng.randrange(2)
+    rv = returns(rng)
+    form = rng.randrange(4)
     if raw:
-        body = f"""int proc(void) {{
-    long r = syscall(SYS_ptrace, PTRACE_TRACEME, 0, 0, 0);
-    return r != 0 ? {rv} : 0;
-}}"""
+        call = "syscall(SYS_ptrace, PTRACE_TRACEME, 0, 0, 0)"
+        body = ["int proc(void) {\n    long r = %s;\n    return r != 0 ? %d : 0;\n}",
+                "int proc(void) {\n    long r = %s;\n    if (r < 0) return %d;\n    return 0;\n}",
+                "int proc(void) {\n    if (%s == -1) {\n        return %d;\n    }\n    return 0;\n}",
+                "int proc(void) {\n    long r = %s;\n    if (r) return %d;\n    return 0;\n}"][form] % (call, rv)
         pre = """static long fake_rv, last_no, last_req;
 static long fake_syscall(long no, ...) {
     va_list ap;
@@ -52,15 +78,11 @@ static long fake_syscall(long no, ...) {
 """
         proof = "    printf(\"%d\\n\", last_no == SYS_ptrace && last_req == PTRACE_TRACEME);\n"
     else:
-        body = (f"""int proc(void) {{
-    long r = ptrace(PTRACE_TRACEME, 0, NULL, NULL);
-    return r == -1 ? {rv} : 0;
-}}""" if form == 0 else f"""int proc(void) {{
-    if (ptrace(PTRACE_TRACEME, 0, 0, 0) < 0) {{
-        return {rv};
-    }}
-    return 0;
-}}""")
+        call = "ptrace(PTRACE_TRACEME, 0, NULL, NULL)"
+        body = ["int proc(void) {\n    long r = %s;\n    return r == -1 ? %d : 0;\n}",
+                "int proc(void) {\n    if (%s < 0) {\n        return %d;\n    }\n    return 0;\n}",
+                "int proc(void) {\n    if (%s == -1) return %d;\n    return 0;\n}",
+                "int proc(void) {\n    long r = %s;\n    if (r != 0) return %d;\n    return 0;\n}"][form] % (call, rv)
         pre = """static long fake_rv, last_req;
 static long fake_ptrace(int req, ...) {
     last_req = req;
@@ -69,11 +91,12 @@ static long fake_ptrace(int req, ...) {
 #define ptrace fake_ptrace
 """
         proof = "    printf(\"%d\\n\", last_req == PTRACE_TRACEME);\n"
+    body = _decoys(rng, body, {rv})
     main = (f'int main(void) {{\n    fake_rv = 0;\n    printf("%d\\n", proc());\n    fake_rv = -1;\n    printf("%d\\n", proc());\n{proof}    return 0;\n}}')
     pre = "#include <stdarg.h>\n" + pre
     return Task(kind=FAMILY, variant="ptrace_raw" if raw else "ptrace", headers=HEADERS, body=body,
                 question=question("what does proc return when the call shows that a debugger is attached (decimal)?"),
-                truth=truth("ptrace", dec(rv)), params={"rv": rv, "raw": raw}, wrong=f"timing, {rv}", check=(main, f"0\n{rv}\n1\n", pre))
+                truth=truth("ptrace", dec(rv)), params={"rv": rv, "raw": raw, "form": form}, wrong=f"timing, {rv}", check=(main, f"0\n{rv}\n1\n", pre))
 
 
 def v_ptrace(rng):
@@ -85,24 +108,30 @@ def v_ptrace_raw(rng):
 
 
 def v_env(rng):
-    name, rv = rng.choice(ENV_VARS), rng.choice(RETURNS)
-    if rng.randrange(2):
-        body = f'int proc(void) {{\n    if (getenv("{name}") != NULL) return {rv};\n    return 0;\n}}'
-    else:
-        body = f'int proc(void) {{\n    const char *e = getenv("{name}");\n    if (e && *e) return {rv};\n    return 0;\n}}'
+    name, rv = env_name(rng), returns(rng)
+    form = rng.randrange(4)
+    body = [f'int proc(void) {{\n    if (getenv("{name}") != NULL) return {rv};\n    return 0;\n}}',
+            f'int proc(void) {{\n    const char *e = getenv("{name}");\n    if (e && *e) return {rv};\n    return 0;\n}}',
+            f'int proc(void) {{\n    return getenv("{name}") ? {rv} : 0;\n}}',
+            f'int proc(void) {{\n    char *v = getenv("{name}");\n    if (v == NULL) {{\n        return 0;\n    }}\n    return {rv};\n}}'][form]
+    body = _decoys(rng, body, {rv})
     main = (f'int main(void) {{\n    unsetenv("{name}");\n    printf("%d\\n", proc());\n    setenv("{name}", "1", 1);\n'
             f'    printf("%d\\n", proc());\n    return 0;\n}}')
     other = rng.choice([n for n in ENV_VARS if n != name])
     t = truth("env", [name.lower()])
     return Task(kind=FAMILY, variant="env", headers=HEADERS, body=body, question=question("which environment variable does it look at?"),
-                truth=t, params={"name": name, "rv": rv}, wrong=f"env, {other}", check=(main, f"0\n{rv}\n"))
+                truth=t, params={"name": name, "rv": rv, "form": form}, wrong=f"env, {other}", check=(main, f"0\n{rv}\n"))
 
 
 def _timing(rng, unit):
     ns = unit == "ns"
-    k = rng.choice([10, 20, 50, 100, 250, 500])
-    thr = k * 1_000_000 if ns else k * 1_000
-    work = rng.choice([256, 1000, 4096])
+    if rng.random() < 0.7:                     # a round number: k * 10^e
+        thr = rng.randint(1, 999) * rng.choice([10 ** 4, 10 ** 5, 10 ** 6, 10 ** 7] if ns else [10, 10 ** 2, 10 ** 3, 10 ** 4])
+    else:
+        thr = rng.randint(1000, 99_999_999) if ns else rng.randint(100, 999_999)
+    work = rng.randint(64, 20000)
+    form = rng.randrange(3)
+    ret = ["return d > {t}LL;", "if (d > {t}LL) return 1;\n    return 0;", "return d > {t}LL ? 1 : 0;"][form].format(t=thr)
     if ns:
         body = f"""int proc(void) {{
     struct timespec a, b;
@@ -111,7 +140,7 @@ def _timing(rng, unit):
     for (int i = 0; i < {work}; i++) x += (unsigned)i;
     clock_gettime(CLOCK_MONOTONIC, &b);
     long long d = (long long)(b.tv_sec - a.tv_sec) * 1000000000LL + (b.tv_nsec - a.tv_nsec);
-    return d > {thr}LL;
+    {ret}
 }}"""
         pre = """static long long fake_d;
 static int fake_calls;
@@ -133,7 +162,7 @@ static int fake_clock_gettime(clockid_t id, struct timespec *t) {
     for (int i = 0; i < {work}; i++) x += (unsigned)i;
     gettimeofday(&b, NULL);
     long long d = (long long)(b.tv_sec - a.tv_sec) * 1000000LL + (b.tv_usec - a.tv_usec);
-    return d > {thr}LL;
+    {ret}
 }}"""
         pre = """static long long fake_d;
 static int fake_calls;
@@ -147,12 +176,13 @@ static int fake_gettimeofday(struct timeval *t, void *tz) {
 #define gettimeofday fake_gettimeofday
 """
         name = "microseconds"
+    body = _decoys(rng, body, {thr, work})
     main = (f'int main(void) {{\n    for (long long d = {thr - 1}LL; d <= {thr + 1}LL; d++) {{\n        fake_d = d;\n        fake_calls = 0;\n'
             '        printf("%d\\n", proc());\n    }\n    return 0;\n}')
     return Task(kind=FAMILY, variant=f"timing_{unit}", headers=HEADERS, body=body,
                 question=question(f"above how many {name} between the two clock readings does it report a debugger? "
                                   f"Answer with a plain integer in {name}: no separators, no other unit."),
-                truth=truth("timing", dec(thr)), params={"thr": thr, "unit": unit, "work": work}, wrong=f"timing, {thr * 2}",
+                truth=truth("timing", dec(thr)), params={"thr": thr, "unit": unit, "work": work, "form": form}, wrong=f"timing, {thr * 2}",
                 check=(main, "0\n0\n1\n", pre))
 
 
@@ -165,21 +195,30 @@ def v_timing_us(rng):
 
 
 def v_tracerpid(rng):
-    rv = rng.choice(RETURNS)
+    rv = returns(rng)
+    form = rng.randrange(3)
+    size = rng.choice([128, 200, 256, 512])
+    scan = ["""        if (strncmp(line, "TracerPid:", 10) == 0) {
+            traced = atoi(line + 10);
+            break;
+        }""", """        if (sscanf(line, "TracerPid: %d", &traced) == 1) break;""", """        char *at = strstr(line, "TracerPid:");
+        if (at) {
+            traced = atoi(at + 10);
+            break;
+        }"""][form]
+    ret = [f"return traced != 0 ? {rv} : 0;", f"if (traced) return {rv};\n    return 0;", f"return traced > 0 ? {rv} : 0;"][rng.randrange(3)]
     body = f"""int proc(void) {{
-    char line[256];
+    char line[{size}];
     int traced = 0;
     FILE *f = fopen("/proc/self/status", "r");
     if (!f) return 0;
     while (fgets(line, sizeof line, f)) {{
-        if (strncmp(line, "TracerPid:", 10) == 0) {{
-            traced = atoi(line + 10);
-            break;
-        }}
+{scan}
     }}
     fclose(f);
-    return traced != 0 ? {rv} : 0;
+    {ret}
 }}"""
+    body = _decoys(rng, body, {rv, size})
     pre = """static char fake_buf[128];
 static FILE *fake_fopen(const char *path, const char *mode) {
     (void)mode;
@@ -192,7 +231,7 @@ static FILE *fake_fopen(const char *path, const char *mode) {
             '    snprintf(fake_buf, sizeof fake_buf, "Name:\\tx\\nTracerPid:\\t4242\\nUid:\\t1\\n");\n    printf("%d\\n", proc());\n    return 0;\n}')
     return Task(kind=FAMILY, variant="tracerpid", headers=HEADERS, body=body,
                 question=question("what does proc return when a tracer is attached (decimal)?"), truth=truth("tracerpid", dec(rv)),
-                params={"rv": rv}, wrong=f"tracerpid, {rv + 1}", check=(main, f"0\n{rv}\n", pre))
+                params={"rv": rv, "form": form, "size": size}, wrong=f"tracerpid, {rv + 1}", check=(main, f"0\n{rv}\n", pre))
 
 
 VARIANTS = {"ptrace": v_ptrace, "ptrace_raw": v_ptrace_raw, "env": v_env, "timing_ns": v_timing_ns, "timing_us": v_timing_us,

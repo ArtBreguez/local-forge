@@ -8,7 +8,7 @@ the outputs at the edges) so an off-by-one in the source text fails the test.
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, dec
+from .core import Task, c_bytes, dec, with_decoys
 
 FAMILY = "bounds"
 
@@ -94,7 +94,7 @@ def v_loop_iterations(rng):
     s = rng.randint(2, 9)
     loop = {"up_lt": f"for (int i = {a}; i < n; i += {s}) c++;", "up_le": f"for (int i = {a}; i <= n; i += {s}) c++;",
             "down_gt": f"for (int i = n; i > {a}; i -= {s}) c++;", "down_ge": f"for (int i = n; i >= {a}; i -= {s}) c++;"}[form]
-    body = f"int proc(int n) {{\n    int c = 0;\n    {loop}\n    return c;\n}}"
+    body = with_decoys(f"int proc(int n) {{\n    int c = 0;\n    {loop}\n    return c;\n}}", rng, rng.choice([1, 1, 2]), {a, s})
     n0 = a + rng.randint(5 * s, 60 * s)
     probes = [n0, 0, a, a + 1, n0 + 7]
     main = "int main(void) {\n" + "".join(f'    printf("%d\\n", proc({p}));\n' for p in probes) + "    return 0;\n}"
