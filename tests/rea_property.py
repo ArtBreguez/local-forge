@@ -10,11 +10,18 @@ For each task the canonical answer (first spelling of every group) is changed in
 Every mutation is built from values that are NOT the key's (checked against every spelling of every group), so a mutated reply is wrong by
 construction and the scorer must reject all of them. The separators the grammar allows (`, ; / and : whitespace`) are not "operators" here.
 
+The name groups of a task (algorithm, direction, base, technique) may be written in any order, the numeric groups keep theirs, so a second pass
+repeats every mutation above on a base whose name groups are permuted (`order`), and two more kinds are checked:
+  permuted    RIGHT replies: every permutation of the name groups of a run, joined by `, `, ` `, `; `, ` and `, in the first spelling and in a
+              random spelling of each group; all must be accepted (the data scorer and, outside `legacy`, the evaluation scorer)
+  misordered  right values in an order that is not allowed: a number moved relative to the names, two numbers swapped; all must be rejected
+
     python3 -m tests.rea_property [tasks per family] [seed] [templates per task (0 = all, at every position)]
 """
 from __future__ import annotations
 
 import collections
+import itertools
 import random
 import re
 import sys
@@ -50,6 +57,59 @@ def vocabulary(tasks) -> list:
     return sorted(x for x in out if re.fullmatch(r"[a-z][a-z0-9_-]+", x))
 
 
+def name_blocks(t: dict) -> list:
+    """[[group index, ...]]: the runs of at least two consecutive name groups of a task, the groups whose order is free."""
+    t = strict_task(t)
+    if t["score"] != "tokens":
+        return []
+    sp = grammar.Spec(t)
+    runs = collections.defaultdict(list)
+    for i, b in enumerate(sp.block):
+        if i not in sp.numeric:
+            runs[b].append(i)
+    return [r for r in runs.values() if len(r) >= 2]
+
+
+def written_orders(t: dict) -> list:
+    """Every order of the groups in which the name groups of a run are permuted and the numeric groups stay put (the identity left out)."""
+    n = len(t["accept"])
+    blocks = name_blocks(t)
+    out = []
+    for combo in itertools.product(*[list(itertools.permutations(b)) for b in blocks]):
+        order = list(range(n))
+        for b, perm in zip(blocks, combo):
+            for slot, g in zip(b, perm):
+                order[slot] = g
+        if order != list(range(n)):
+            out.append(order)
+    return out
+
+
+def permuted_replies(t: dict, rng: random.Random) -> list:
+    """RIGHT replies: the name groups in every other order, first spellings and random spellings, four separators."""
+    t = strict_task(t)
+    out = []
+    for order in written_orders(t):
+        for sep in (", ", " ", "; ", " and "):
+            out.append(sep.join(t["accept"][k][0] for k in order))
+            out.append(sep.join(rng.choice(t["accept"][k]) if k not in grammar.Spec(t).numeric else t["accept"][k][0] for k in order))
+    return out
+
+
+def misordered_replies(t: dict) -> list:
+    """Right values in an order the grammar does not allow: every order of the groups that is not a permutation of the names within a run. A
+    task whose groups share a spelling is skipped (the swapped text could be the canonical one)."""
+    t = strict_task(t)
+    if t["score"] != "tokens" or not 2 <= len(t["accept"]) <= 4:
+        return []
+    spellings = [{a.lower() for a in g} for g in t["accept"]]
+    if any(spellings[a] & spellings[b] for a in range(len(spellings)) for b in range(a)):
+        return []
+    n = len(t["accept"])
+    allowed = {tuple(range(n))} | {tuple(o) for o in written_orders(t)}
+    return [", ".join(t["accept"][k][0] for k in order) for order in itertools.permutations(range(n)) if order not in allowed]
+
+
 def _spell(v: int, like: str) -> str:
     return f"0x{v:x}" if like.startswith("0x") and v >= 0 else str(v)
 
@@ -58,8 +118,10 @@ def _apply(tmpl: str, text: str) -> str:
     return tmpl.format(k=text)
 
 
-def mutations(t: dict, vocab: list, rng: random.Random, templates: int = 12, separators: int = 0) -> list:
-    """[(kind, reply)] of wrong replies for one task. templates=0: every template at every position; separators=0: every separator."""
+def mutations(t: dict, vocab: list, rng: random.Random, templates: int = 12, separators: int = 0, order: list = None) -> list:
+    """[(kind, reply)] of wrong replies for one task. templates=0: every template at every position; separators=0: every separator.
+    `order`: the groups in the order they are written (name groups permuted within a run; the numeric groups never move, so a numeric
+    group's index is its position)."""
     t = strict_task(t)
     out = []
     if t["score"] != "tokens":
@@ -76,7 +138,8 @@ def mutations(t: dict, vocab: list, rng: random.Random, templates: int = 12, sep
         return out
     sp = grammar.Spec(t)
     groups = t["accept"]
-    parts = [g[0] for g in groups]
+    order = order or list(range(len(groups)))
+    parts = [groups[k][0] for k in order]
     spellings = [{a.lower() for a in g} for g in groups]
     allvals = {v for nums, _l in sp.groups for v in nums}
     # number: +-1 on one numeric group
@@ -87,10 +150,10 @@ def mutations(t: dict, vocab: list, rng: random.Random, templates: int = 12, sep
                 continue
             out.append(("number", ", ".join(_spell(new, parts[i]) if j == i else p for j, p in enumerate(parts))))
     # name: swap a non-numeric group for another name of the family
-    for i in [j for j in range(len(groups)) if j not in sp.numeric]:
-        alts = [v for v in vocab if v not in spellings[i] and not any(v in s for s in spellings)]
+    for pos in [j for j in range(len(groups)) if order[j] not in sp.numeric]:
+        alts = [v for v in vocab if v not in spellings[order[pos]] and not any(v in s for s in spellings)]
         if alts:
-            out.append(("name", ", ".join(rng.choice(alts) if j == i else p for j, p in enumerate(parts))))
+            out.append(("name", ", ".join(rng.choice(alts) if j == pos else p for j, p in enumerate(parts))))
     # second candidate: another number or another name
     base = ", ".join(parts)
     if sp.numeric:
@@ -124,19 +187,41 @@ def mutations(t: dict, vocab: list, rng: random.Random, templates: int = 12, sep
 
 
 def run(n: int = 2000, seed: int = 31337, templates: int = 12, separators: int = 0, evaluation_too: bool = True) -> dict:
-    """{family: {"tasks", "rows", "by_kind": {kind: rows}, "accepted": [(task id, kind, reply)]}}"""
+    """{family: {"tasks", "rows", "by_kind": {kind: rows}, "accepted": [(task id, kind, reply)],
+                 "permuted": right replies tried, "permuted_rejected": [...], "misordered": tried, "misordered_accepted": [...]}}
+    The permuted pass draws from its own random stream, so the rows of the canonical order are the same as before the name groups were free."""
     rng = random.Random(seed)
+    prng = random.Random(seed + 1)
     res = {}
+
+    def accepted(reply, t, fam) -> bool:
+        return bool(score_strict(reply, t) or (evaluation_too and fam != "legacy" and score(reply, t)))
+
     for fam in families.modules():
         tasks = [t.meta() for t in families.generate(fam, n, seed)]
         vocab = vocabulary(tasks)
-        row = {"tasks": len(tasks), "rows": 0, "by_kind": collections.Counter(), "accepted": []}
+        row = {"tasks": len(tasks), "rows": 0, "by_kind": collections.Counter(), "accepted": [], "permuted": 0, "permuted_rejected": [],
+               "misordered": 0, "misordered_accepted": []}
         for t in tasks:
             for kind, reply in mutations(t, vocab, rng, templates, separators):
                 row["rows"] += 1
                 row["by_kind"][kind] += 1
-                if score_strict(reply, t) or (evaluation_too and fam != "legacy" and score(reply, t)):
+                if accepted(reply, t, fam):
                     row["accepted"].append((t["id"], kind, reply))
+            for order in written_orders(t)[:3]:                    # every mutation again on a base with the name groups permuted
+                for kind, reply in mutations(t, vocab, prng, templates, separators, order):
+                    row["rows"] += 1
+                    row["by_kind"][kind] += 1
+                    if accepted(reply, t, fam):
+                        row["accepted"].append((t["id"], "permuted-base " + kind, reply))
+            for reply in permuted_replies(t, prng):
+                row["permuted"] += 1
+                if not (score_strict(reply, t) and (not evaluation_too or fam == "legacy" or score(reply, t))):
+                    row["permuted_rejected"].append((t["id"], reply))
+            for reply in misordered_replies(t):
+                row["misordered"] += 1
+                if accepted(reply, t, fam):
+                    row["misordered_accepted"].append((t["id"], reply))
         res[fam] = row
     return res
 
@@ -148,9 +233,14 @@ if __name__ == "__main__":
     res = run(n, seed, tpl)                                    # every separator; the unit test samples 3 per task
     total = sum(r["rows"] for r in res.values())
     acc = sum(len(r["accepted"]) for r in res.values())
+    perm = sum(r["permuted"] for r in res.values())
+    mis = sum(r["misordered"] for r in res.values())
     print(f"property test: {n} tasks per family, seed {seed}, {'all templates at every position' if tpl == 0 else f'{tpl} templates per task'}: "
-          f"{total} mutated replies, {acc} accepted")
+          f"{total} mutated replies, {acc} accepted; {perm} right replies with the name groups permuted, "
+          f"{sum(len(r['permuted_rejected']) for r in res.values())} rejected; {mis} right values in a forbidden order, "
+          f"{sum(len(r['misordered_accepted']) for r in res.values())} accepted")
     for fam, r in res.items():
-        print(f"  {fam:10s} {r['tasks']} tasks, {r['rows']:7d} replies ({', '.join(f'{k} {v}' for k, v in sorted(r['by_kind'].items()))}), {len(r['accepted'])} accepted")
-        for a in r["accepted"][:8]:
+        print(f"  {fam:10s} {r['tasks']} tasks, {r['rows']:7d} replies ({', '.join(f'{k} {v}' for k, v in sorted(r['by_kind'].items()))}), {len(r['accepted'])} accepted; "
+              f"permuted {r['permuted']} ({len(r['permuted_rejected'])} rejected), misordered {r['misordered']} ({len(r['misordered_accepted'])} accepted)")
+        for a in r["accepted"][:8] + r["permuted_rejected"][:8] + r["misordered_accepted"][:8]:
             print("     ", a)

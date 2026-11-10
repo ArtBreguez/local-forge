@@ -8,8 +8,11 @@ does not look for bad words. It asks whether the WHOLE headline is an answer, an
 after normalisation: unicode quotes, apostrophes, dashes, the minus sign and full-width characters become ASCII, markdown and backticks
 are gone, one trailing `. , ; : !` is removed (a `?` or `...` is not removed: it is hesitation). Then, token by token:
 
-  group_i      a spelling of the i-th accept group (a number by value: `0x08` = `8` = `eight`; a name or a bare hex byte as written). The
-               groups must come in the order of `accept`; a group may be written twice in a row in two spellings (`0x28 (40)`).
+  group_i      a spelling of the i-th accept group (a number by value: `0x08` = `8` = `eight`; a name or a bare hex byte as written). Every
+               group is written exactly once; a group may be written twice in a row in two spellings (`0x28 (40)`). The NAME groups (no
+               number in `accept`: algorithm, direction, base, technique) of one run may come in any order (`decrypt, XTEA, 32` = `XTEA,
+               decrypt, 32`, `Base64 encode` = `encode, base64`); the numeric groups keep the order of `accept` (bounds lo..hi), and a
+               number stays where `accept` puts it relative to the names (`32, XTEA, decrypt` is still a leftover). Spec.block numbers the runs.
   separator    `,` `;` `/` `:` the word `and`, whitespace, quotes, balanced parentheses.
   filler       a fixed vocabulary of function words (`the`, `is`, `with`, ...), the generic words `answer`/`result`, the question's own unit
                words (`bytes`, `rounds`, `iterations`, `states`, `ns`, ... per question, see UNITS), and, for a task with at most one
@@ -210,6 +213,15 @@ class Spec:
             self.groups.append((nums, lits))
         self.numeric = [i for i, (nums, _l) in enumerate(self.groups) if nums]
         self.multi_num = len(self.numeric) >= 2
+        # A block is a run of consecutive NAME groups (algorithm, direction, base, technique) or one numeric group. The groups of a block may be
+        # written in any order; the blocks, and with them every number, keep the order of `accept`.
+        self.block, prev_name, b = [], False, -1
+        for i in range(len(self.groups)):
+            is_name = i not in self.numeric
+            if not (is_name and prev_name):
+                b += 1
+            self.block.append(b)
+            prev_name = is_name
         kind, variant = t.get("kind", ""), t.get("variant", "")
         self.interval = self.multi_num and (kind in ("bounds", "threshold") or bool(t.get("interval")))
         self.nouns_ok = not self.multi_num
@@ -275,7 +287,8 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         return [g for g, (nums, lits) in enumerate(groups)
                 if (tok.kind == "num" and (tok.val in nums or tok.text in lits)) or (tok.kind == "word" and tok.text in lits)]
 
-    expected, current, depth, pending, last_hit, last_ctx, last_ret = 0, None, 0, None, -9, -9, -9
+    used, expected = set(), 0                                      # the groups written so far, and the lowest group not written yet
+    current, depth, pending, last_hit, last_ctx, last_ret = None, 0, None, -9, -9, -9
     lo_i = sp.numeric[0] if sp.interval else None
     hi_i = sp.numeric[-1] if sp.interval else None
     i = 0
@@ -303,15 +316,17 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         if cands:
             if sp.interval and depth > 0:
                 ok = [g for g in cands if g == current]            # in parentheses only a second spelling of the same bound
-            else:
-                ok = [g for g in cands if g == expected] or [g for g in cands if g == current]
+            else:                                              # a group not written yet in the block of the lowest one (a number: that group only), or a respelling
+                ok = [g for g in cands if g not in used and expected < n and sp.block[g] == sp.block[expected]] or [g for g in cands if g == current]
             if not ok:
                 return False
             g = ok[0]
             if pending is not None and not (g == expected and g == (lo_i if pending == "lo" else hi_i)):
                 return False                                       # "lowest 1751": a label must sit on its own bound
-            if g == expected:
-                expected += 1
+            if g not in used:
+                used.add(g)
+                while expected in used:
+                    expected += 1
             current, pending, last_hit = g, None, here
             continue
         if tok.kind == "ctx":
@@ -350,7 +365,7 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         if m and int(m.group(1)) in sp.crc:
             continue
         return False
-    return expected == n and depth == 0 and pending is None
+    return len(used) == n and depth == 0 and pending is None
 
 
 # ---- exact strings -----------------------------------------------------------------------------------------------------------

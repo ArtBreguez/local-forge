@@ -7,8 +7,9 @@
                   cost of the design ("yield cost is acceptable, poison is not"), pinned so the list in the README stays exact.
 Rows that the review marked "info" (policy questions) are not counted either way. Where a round changed the policy the old expectation
 is flipped on purpose: a key followed by a parenthesis, spaced-out alphabets, upper-cased plaintexts and `X or Y` over two accepted answers
-(round 2); a number followed by `approximately` (a hedge), a unit the question did not use, a name group written in another order than the
-question asked, a second line that is not a sentence (round 3).
+(round 2); a number followed by `approximately` (a hedge), a unit the question did not use, a second line that is not a sentence (round 3).
+The name groups (algorithm, direction, base, technique) may be written in any order (round 3, owner's decision), so `Base64 encode` and
+`decrypt, XTEA, 32` are right formats; a number moved relative to the names (`32, XTEA, decrypt`) is still given up and listed as yield.
 
     python3 -m tests.rea_attack_matrix [seed] [per-variant]        the numbers of the final report, with the right-format pass rate per family
 """
@@ -151,7 +152,10 @@ def family_attacks(t) -> list:
             right = [f"{alg}, {d}, {rounds}", f"{alg} {dd}, {rounds} iterations", f"It's {alg} ({d}), {rounds} rounds.", f"**{alg}**, {d}, {rounds} rounds",
                      f"{alg}: {d}, {rounds}", f"The function is {alg} {dd} running {rounds} rounds.", f"{alg} {d}s with {rounds} iterations of the main loop",
                      f"{alg}, {d}, {rounds} rounds (128-bit key)"]
-            yields = [f"{alg} {d}, {rounds} iterations (a 128-bit key, 64-bit blocks)"]          # 64-bit blocks: the question says 8-byte
+            right += [f"{d}, {alg}, {rounds}", f"{d} {alg} {rounds} rounds", f"It {d}s with {alg}, {rounds} rounds.", f"**{d}**: {alg}, {rounds} iterations",
+                      f"{d.capitalize()}, {alg} ({rounds} rounds)"]                              # the direction before the algorithm: names in any order
+            yields = [f"{alg} {d}, {rounds} iterations (a 128-bit key, 64-bit blocks)",          # 64-bit blocks: the question says 8-byte
+                      f"{alg}, {rounds} rounds, {d}"]                                          # the number moves between the names: given up
         elif v == "rc4":
             right = [f"{alg}, {rounds}", f"{alg}: {rounds} bytes", f"**{alg}**, {rounds}", f"{alg}, {rounds} bytes ({int(rounds) * 8} bits)"]
             yields = [f"{alg} with a {rounds}-byte key",                                          # `N-byte` is a context form, not a hit
@@ -175,7 +179,14 @@ def family_attacks(t) -> list:
                     ("tea plain 'TEA' for XTEA key", f"TEA, {d}, {rounds}" if alg == "XTEA" else f"XTEA, {d}, {rounds}", False),
                     ("tea words: a block cipher after the number (yield)", f"{alg} {d}, {rounds}, a block cipher", "yield"),
                     ("tea (TEA not XTEA) mis-identification", f"TEA (not XTEA), {d}, {rounds}", False if alg == "XTEA" else None),
-                    ("tea key negated, number negated", f"{alg}, {d}, not {rounds}", False)]
+                    ("tea key negated, number negated", f"{alg}, {d}, not {rounds}", False),
+                    ("tea permuted wrong-direction", f"{other}, {alg}, {rounds}", False), ("tea permuted wrong alg", f"{d}, {twin}, {rounds}", False),
+                    ("tea permuted both dirs", f"encrypt/decrypt, {alg}, {rounds}", False), ("tea permuted 'not <dir>'", f"not {other}, {alg}, {rounds}", False),
+                    ("tea permuted not-right-dir", f"not {d}, {alg}, {rounds}", False), ("tea permuted XTEA or TEA", f"{d}, {alg} or {twin}, {rounds}", False),
+                    ("tea permuted alg list", f"{d}, {alg}, {twin}, {rounds}", False), ("tea permuted alg list, key last", f"{d}, {twin}, {alg}, {rounds}", False),
+                    ("tea permuted wrong rounds", f"{d}, {alg}, {int(rounds) + 1}", False), ("tea permuted rounds negated", f"{d}, {alg}, not {rounds}", False),
+                    ("tea permuted dir twice", f"{d}, {alg}, {d}, {rounds}", False), ("tea permuted alg twice", f"{alg}, {d}, {alg}, {rounds}", False),
+                    ("tea permuted direction absent", f"{alg}, {alg}, {rounds}", False), ("tea permuted both names then dir", f"{alg} {other} {d} {rounds}", False)]
         if v in ("chacha", "salsa"):
             other_alg = "Salsa20" if alg == "ChaCha20" else "ChaCha20"
             x_alg = "XSalsa20" if alg == "Salsa20" else "XChaCha20"
@@ -194,20 +205,30 @@ def family_attacks(t) -> list:
         opp = "decode" if direction == "encode" else "encode"
         other_base = "base32" if base != "base32" else "base64"
         right = [f"It {direction}s {base}", f"{direction.capitalize()}s {base}", f"{direction}, {base}"]
-        yields = [f"{base.capitalize()} {direction}", f"{base} {direction}r", f"{base}-{direction}", f"It {direction}s data in {base}.",
-                  f"Base-{re.sub('[^0-9]', '', base)} {direction}"]                              # base first, or a hyphen word, or a word the grammar does not know
-        out += [("enc right", r, True) for r in right] + [("enc right (reversed order, yield)", r, "yield") for r in yields if not r.endswith("decoder") or direction == "decode"]
+        right_base_first = [f"{base.capitalize()} {direction}", f"{base} {direction}r", f"Base-{re.sub('[^0-9]', '', base)} {direction}", f"It is a {base.capitalize()} {direction}r.",
+                            f"{base}, {direction}", f"{base}: {direction}"]                       # the base before the direction: names in any order
+        yields = [f"{base}-{direction}", f"It {direction}s data in {base}."]                     # a hyphen word, or a word the grammar does not know
+        out += [("enc right", r, True) for r in right] + [("enc right (base first)", r, True) for r in right_base_first]
+        out += [("enc right (yield)", r, "yield") for r in yields]
         out += [("enc wrong dir", f"{base} {opp}", False), ("enc wrong dir sentence", f"It {opp}s {base}", False), ("enc wrong base", f"{other_base} {direction}", False),
                 ("enc both dirs", f"{base} encode/decode", False), ("enc 'not <dir>'", f"{base}, not {direction}", False), ("enc dir absent", f"{base}", False),
                 ("enc base absent", f"{direction}", False), ("enc ascii85", f"ascii85 {direction}", False), ("enc base16", f"base16 {direction}", False),
                 ("enc or other base", f"{base} {direction} or base36 {direction}", False), ("enc negated other base", f"{base} {direction} (not base45)", False),
                 ("enc list of bases", f"{base}, {other_base} {direction}", False), ("enc base36 list", f"{base}, base36 {direction}", False),
-                ("enc 'base64, not encode'", f"{base}, not {direction}", False)]
+                ("enc 'base64, not encode'", f"{base}, not {direction}", False),
+                ("enc base first, wrong dir", f"{base} {opp}r", False), ("enc base first, both dirs", f"{base}, encode and decode", False),
+                ("enc base first, wrong base", f"{other_base}, {direction}", False), ("enc base first, dir twice", f"{base}, {direction}, {direction}s {base}", False), ("enc base first, other base list", f"{other_base}, {base}, {direction}", False),
+                ("enc base first, 'not <dir>'", f"{base}, not {direction}", False), ("enc base first, only dirs", f"{direction}, {direction}s", False),
+                ("enc base first, base negated", f"{direction}, not {base}", False)]
     elif kind == "antidebug":
         tech, det = acc[0][0], acc[1][0]
         out += [("ad right", r, True) for r in (f"{tech}, {det}", f"{tech} ({det})", f"**{tech}**: {det}", f"It's a {tech} check; {det}",
                                                 f"{tech.upper()}, {det.upper()}" if not det.isdigit() else f"{tech.upper()}, {det}")]
         oth = {"ptrace": "timing", "timing": "ptrace", "env": "ptrace", "tracerpid": "env"}.get(tech, "timing")
+        if not det.isdigit():                                                                     # two name groups: any order
+            out += [("ad right (names swapped)", r, True) for r in (f"{det}, {tech}", f"{det.upper()} ({tech})", f"**{det}**: {tech}")]
+            out += [("ad wrong tech, names swapped", f"{det}, {oth}", False), ("ad both techs, names swapped", f"{det}, {tech}/{oth}", False),
+                    ("ad tech twice, names swapped", f"{tech}, {det}, {tech}", False), ("ad names swapped, only var", f"{det}", False)]
         out += [("ad wrong tech", f"{oth}, {det}", False), ("ad both techs", f"{tech}/{oth}, {det}", False),
                 ("ad tech or tech", f"{tech} or tracerpid, {det}" if tech != "tracerpid" else f"{tech} or ptrace, {det}", False)]
         if det.isdigit():

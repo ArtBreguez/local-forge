@@ -80,15 +80,57 @@ class M1(unittest.TestCase):
         for r in ("bbb or bbh", "not bbb", "bbb, hhh", "bb", "bbbb", "xbbb", "bbb?", "b b b b", "bbb.bbh", "b b b h h h"):
             self.assertFalse(S(r, bb), r)
 
-    def test_the_groups_come_in_the_order_of_the_question(self):
-        cip = {"score": "tokens", "accept": [["xtea"], ["decrypt"], core.dec(32)], "allow": ["extended tea"], "kind": "cipher", "variant": "xtea_dec",
-               "question": "This function transforms an 8-byte block with a 128-bit key: cipher, direction, iterations?"}
+    cip = {"score": "tokens", "accept": [["xtea"], ["decrypt"], core.dec(32)], "allow": ["extended tea"], "kind": "cipher", "variant": "xtea_dec",
+           "question": "This function transforms an 8-byte block with a 128-bit key: cipher, direction, iterations?"}
+
+    def test_the_name_groups_come_in_any_order_the_numbers_keep_theirs(self):
+        cip = self.cip
         for r in ("XTEA, decrypt, 32", "xtea decrypt 32 rounds", "XTEA (decrypt), 32 iterations", "XTEA, decrypt, 32 (128-bit key)", "extended TEA: XTEA, decrypt, 32",
-                  "XTEA, decrypt, thirty-two"):
+                  "XTEA, decrypt, thirty-two",
+                  "decrypt, XTEA, 32", "decrypt XTEA 32 rounds", "Decrypt, XTEA: 32", "decrypt (XTEA), 32 iterations", "decrypt with XTEA, 32 rounds.",
+                  "decrypt and XTEA and 32", "decrypt, XTEA (extended TEA), 32", "decrypt, XTEA, 0x20", "decrypt / XTEA / 32 (128-bit key)"):
             self.assertTrue(S(r, cip), r)
-        for r in ("decrypt, XTEA, 32", "32, XTEA, decrypt", "XTEA, 32, decrypt", "XTEA, decrypt", "XTEA, encrypt, 32", "TEA, decrypt, 32", "XTEA, decrypt, 33",
-                  "XTEA, decrypt, 32 bytes", "XTEA, decrypt, 32 bits", "XTEA, decrypt, 32 (64-bit key)", "XTEA decrypt or encrypt, 32", "XTEA, decrypt, 32, 32.0"):
+        for r in ("32, XTEA, decrypt", "XTEA, 32, decrypt", "decrypt, 32, XTEA", "32, decrypt, XTEA", "32 rounds, decrypt XTEA", "XTEA, decrypt",
+                  "decrypt, 32", "XTEA, 32", "XTEA, encrypt, 32", "encrypt, XTEA, 32", "TEA, decrypt, 32", "decrypt, TEA, 32", "XTEA, decrypt, 33", "decrypt, XTEA, 33",
+                  "XTEA, decrypt, 32 bytes", "decrypt, XTEA, 32 bits", "decrypt, XTEA, 32 (64-bit key)", "XTEA decrypt or encrypt, 32", "decrypt or encrypt, XTEA, 32",
+                  "XTEA, decrypt, 32, 32.0", "decrypt, XTEA, 32, 32.0"):
             self.assertFalse(S(r, cip), r)
+
+    def test_every_group_exactly_once_and_nothing_left_over_in_any_name_order(self):
+        cip = self.cip
+        for r in ("XTEA, XTEA, 32", "decrypt, decrypt, 32", "decrypt, XTEA, decrypt, 32", "XTEA, decrypt, XTEA, 32", "decrypt, XTEA, 32, decrypt", "decrypt, XTEA, 32, XTEA",
+                  "decrypt, XTEA, XTEA decrypt, 32", "decrypt, XTEA, not 32", "not decrypt, XTEA, 32", "decrypt, not XTEA, 32", "decrypt, XTEA (not TEA), 32",
+                  "decrypt, XTEA, 32 or 33", "decrypt or XTEA, 32", "decrypt, XTEA; maybe 32", "decrypt, XTEA, 32?", "decrypt, XTEA, 32...", "decrypt, XTEA, rabbit, 32",
+                  "decrypt, XTEA, encrypt, 32", "decrypt, TEA, XTEA, 32", "decrypt/encrypt, XTEA, 32"):
+            self.assertFalse(S(r, cip), r)
+        for r in ("decrypt decrypt, XTEA, 32", "XTEA XTEA decrypt 32"):
+            self.assertTrue(S(r, cip), r)                  # a group written twice in a row is one group in two spellings, as before
+
+    def test_a_block_is_a_run_of_name_groups_a_number_is_a_block_of_its_own(self):
+        sp = grammar.Spec(self.cip)
+        self.assertEqual(sp.block, [0, 0, 1])
+        enc = {"score": "tokens", "accept": [["encode", "encodes"], ["base64", "base-64"]]}
+        self.assertEqual(grammar.Spec(enc).block, [0, 0])
+        mixed = {"score": "tokens", "accept": [["tea"], core.dec(8), ["encrypt"], ["xtea"], core.dec(9)], "kind": "x"}
+        self.assertEqual(grammar.Spec(mixed).block, [0, 1, 2, 2, 3])
+        for r in ("tea, 8, encrypt, xtea, 9", "tea, 8, xtea, encrypt, 9", "tea 8 xtea encrypt 9"):
+            self.assertTrue(grammar.headline_ok(r, mixed), r)
+        for r in ("encrypt, 8, tea, xtea, 9", "tea, encrypt, 8, xtea, 9", "8, tea, encrypt, xtea, 9", "tea, 8, encrypt, 9, xtea", "tea, 9, encrypt, xtea, 8",
+                  "tea, 8, encrypt, xtea", "tea, 8, encrypt, xtea, 8"):
+            self.assertFalse(grammar.headline_ok(r, mixed), r)
+
+    def test_name_groups_of_a_block_never_share_a_spelling_in_the_families(self):
+        """A token that two unwritten name groups both spell could be given to the wrong one; none of the generated tasks has such a pair."""
+        for fam in families.modules():
+            for t in families.generate(fam, 300, 7):
+                m = scoring.strict_task(t.meta())
+                if m["score"] != "tokens":
+                    continue
+                sp = grammar.Spec(m)
+                for a in range(len(sp.groups)):
+                    for b in range(a):
+                        if a not in sp.numeric and b not in sp.numeric and sp.block[a] == sp.block[b]:
+                            self.assertFalse(sp.groups[a][1] & sp.groups[b][1], (fam, m["accept"]))
 
 
 class M2Bounds(unittest.TestCase):
@@ -240,8 +282,9 @@ class ExactStrings(unittest.TestCase):
 
 class PropertyMutations(unittest.TestCase):
     """2,000 random tasks per family: the canonical answer with one number moved, a name swapped, a second candidate added or a negation / limit /
-    operator template put around it. Not one mutated reply is accepted, under the evaluation scorer and the data scorer (families.py, all eleven
-    families). `python3 -m tests.rea_property 2000 31337 12` runs it with every separator (1.5 million replies, about 2 minutes); `... 100 31337 0` puts
+    operator template put around it, on the canonical order and again on a base whose name groups are permuted. Not one mutated reply is accepted,
+    under the evaluation scorer and the data scorer (families.py, all eleven families); every permutation of the name groups is accepted and every
+    number moved relative to the names or swapped with another number is rejected. `python3 -m tests.rea_property 2000 31337 12` runs it with every separator (1.5 million replies, about 2 minutes); `... 100 31337 0` puts
     every template at every position."""
 
     def test_nothing_mutated_is_accepted(self):
@@ -250,15 +293,41 @@ class PropertyMutations(unittest.TestCase):
         for fam, row in res.items():
             self.assertEqual(row["tasks"], 2000, fam)
             self.assertEqual(row["accepted"], [], fam)
+            self.assertEqual(row["permuted_rejected"], [], fam)
+            self.assertEqual(row["misordered_accepted"], [], fam)
             self.assertGreater(row["rows"], 20000, fam)
             self.assertTrue({"second", "token"} <= set(row["by_kind"]), fam)
         self.assertGreater(sum(r["rows"] for r in res.values()), 400000)
+        for fam in ("cipher", "encoding", "antidebug"):            # the families with two name groups: permutations were tried, all accepted
+            self.assertGreater(res[fam]["permuted"], 1000, fam)
+        self.assertGreater(sum(r["misordered"] for r in res.values()), 2000)
 
     def test_every_template_at_every_position_on_a_sample(self):
         res = rp.run(60, 4242, templates=0, separators=0)
         for fam, row in res.items():
             self.assertEqual(row["accepted"], [], fam)
+            self.assertEqual(row["permuted_rejected"], [], fam)
+            self.assertEqual(row["misordered_accepted"], [], fam)
         self.assertGreater(sum(r["rows"] for r in res.values()), 150000)
+        self.assertGreater(sum(r["permuted"] for r in res.values()), 500)
+
+    def test_the_permutation_check_has_teeth(self):
+        """The ordered grammar (every name group once, in the order of `accept`) rejects the permuted right replies the property test sends, and a
+        grammar that frees the numbers too accepts the misordered ones: both checks can fail."""
+        res = rp.run(30, 4242, templates=1, separators=1)
+        self.assertEqual(sum(len(r["permuted_rejected"]) for r in res.values()), 0)
+        orig = grammar.Spec.__init__
+
+        def flat(self, t):
+            orig(self, t)
+            self.block = [0] * len(self.groups)
+
+        grammar.Spec.__init__ = flat
+        try:
+            loose = rp.run(30, 4242, templates=1, separators=1)
+        finally:
+            grammar.Spec.__init__ = orig
+        self.assertGreater(sum(len(r["misordered_accepted"]) for r in loose.values()), 0)
 
 
 if __name__ == "__main__":

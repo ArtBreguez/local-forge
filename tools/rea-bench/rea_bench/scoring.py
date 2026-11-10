@@ -15,8 +15,9 @@ Legacy modes (the original ten templates, evaluation only):
   all_groups        every group must have one spelling in the answer
 
 Headline modes (the generated families, and every family on the data path):
-  tokens            the HEADLINE must parse completely as the task's answer grammar (grammar.py): the accept groups in order, separated
-                    by `, ; / and` or whitespace, with units, `allow` phrases and a short vocabulary of function words around them.
+  tokens            the HEADLINE must parse completely as the task's answer grammar (grammar.py): every accept group exactly once (the name
+                    groups in any order, the numeric groups in the order of `accept`), separated by `, ; / and` or whitespace, with units,
+                    `allow` phrases and a short vocabulary of function words around them.
                     Anything else is a leftover and rejects: any other word, operator, symbol or number, however it is spelled.
                     Bounds take `lo to hi`, `lo..hi`, `[lo, hi]`, `lo <= x <= hi` and nothing exclusive.
   exact_case        the whole headline is the key: after quotes, backticks, markdown, a short lead-in phrase ("The string is",
