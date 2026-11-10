@@ -209,11 +209,18 @@ class Scorer(unittest.TestCase):
             self.assertTrue(scoring.score(scoring.canonical(t), t), t)
 
     def test_modal_module_uses_the_package_scorer(self):
-        src = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
-        self.assertIn("from rea_bench.scoring import _score, _variants", src)
-        self.assertNotIn("def _score", src)
-        self.assertIn("task.get(\"cc\", \"gcc\")", src)
-        self.assertIn('"clang"', (ROOT / "tools" / "modal" / "modal_rea.py").read_text())
+        data = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
+        self.assertIn("from rea_bench.scoring import check_mode, score", data)
+        self.assertNotIn("def _score", data)
+        self.assertIn("task.get(\"cc\", \"gcc\")", data)
+        rea = (ROOT / "tools" / "modal" / "modal_rea.py").read_text()
+        self.assertIn("from rea_bench.scoring import check_mode, score", rea)
+        self.assertIn('add_local_dir(str(RB / "rea_bench"), "/root/rea_bench")', rea, "the container needs the package mounted")
+        self.assertRegex(rea, r"(?m)^def sh\(")
+        self.assertNotRegex(rea, r"(?m)^def (score|_variants)\(", "modal_rea.py must not keep a private copy of the scorer")
+        self.assertIn('"clang"', rea)
+        body = data[data.index("def sample_answers"):data.index("srv = subprocess.Popen")]
+        self.assertLess(body.index("check_mode(t)"), body.index("hf_hub_download(repo"), "validate the tasks before the model download")
 
 
 class ContentFreeReplies(unittest.TestCase):
@@ -292,6 +299,68 @@ class Regressions(unittest.TestCase):
             self.assertIn("smaller than the 11 families", r.stderr)
             self.assertEqual(list(pathlib.Path(d).glob("*")), [])
             self.assertNotEqual(self.run_cli("check", "--family", "all", "--n", "5").returncode, 0)
+
+
+class ModalScripts(unittest.TestCase):
+    """M1: modal_rea.py kept its own scorer and every `tokens` task crashed it. Imported here against a stub `modal` module."""
+
+    @classmethod
+    def setUpClass(cls):
+        from unittest import mock
+        fake = mock.MagicMock(name="modal")
+        fake.App.return_value.function.side_effect = lambda *a, **k: (lambda f: f)
+        fake.App.return_value.local_entrypoint.side_effect = lambda *a, **k: (lambda f: f)
+        cls.patch = mock.patch.dict(sys.modules, {"modal": fake})
+        cls.patch.start()
+        sys.path.insert(0, str(ROOT / "tools" / "modal"))
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+            sys.modules.pop(name, None)
+        import modal_rea, modal_rea_data
+        cls.rea, cls.data = modal_rea, modal_rea_data
+
+    @classmethod
+    def tearDownClass(cls):
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+            sys.modules.pop(name, None)
+        sys.path.remove(str(ROOT / "tools" / "modal"))
+        cls.patch.stop()
+
+    def test_one_scorer_everywhere(self):
+        self.assertIs(self.rea.score, scoring.score)
+        self.assertIs(self.data.score, scoring.score)
+        self.assertIs(self.rea.check_mode, scoring.check_mode)
+
+    def test_tokens_and_exact_case_tasks_no_longer_crash_or_misscore(self):
+        for t in families.generate("crc", 12, 99) + families.generate("encoding", 12, 99):
+            meta = t.meta()
+            self.assertTrue(self.rea.score(scoring.canonical(t.truth), meta), t.id)      # TypeError before: accept is a list of lists
+            self.assertFalse(self.rea.score(t.wrong, meta), t.id)
+        case = {"score": "exact_case", "accept": ["aBcD"]}
+        self.assertFalse(self.rea.score("abcd", case), "the old copy case-folded alphabets")
+        self.assertTrue(self.rea.score("aBcD", case))
+
+    def test_fixed_questions_keep_their_legacy_scoring(self):
+        fixed = json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"]
+        self.assertTrue(fixed)
+        for t in fixed:
+            scoring.check_mode(t)
+            self.assertTrue(self.rea.score(scoring.canonical(t) if t["score"] != "any" else t["accept"][0], t), t["id"])
+
+    def test_main_stops_on_an_unknown_score_mode_before_renting_a_gpu(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "tools" / "modal" / "rea-bench").mkdir(parents=True)
+            shutil.copy(ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json", root / "tools" / "modal" / "rea-bench")
+            held = root / "results" / "phase6" / "rea-data"
+            held.mkdir(parents=True)
+            (held / "decompiled-seed1001.jsonl").write_text(json.dumps({"id": "x-1", "kind": "x", "score": "fuzzy", "accept": ["x"],
+                                                                         "pseudocode": "void f(void) {}"}) + "\n")
+            old, self.rea.ROOT = self.rea.ROOT, root
+            try:
+                with self.assertRaisesRegex(ValueError, "unknown score mode 'fuzzy' in task x-1"):
+                    self.rea.main("")
+            finally:
+                self.rea.ROOT = old
 
 
 def sample_tasks(family: str, seeds=(101, 202)) -> list:

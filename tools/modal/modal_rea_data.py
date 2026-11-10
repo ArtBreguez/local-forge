@@ -30,11 +30,9 @@ if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
-from rea_bench.scoring import _score, _variants  # noqa: E402,F401  (stdlib-only, unit-tested without Modal)
+from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib-only, unit-tested without Modal; same scorer modal_rea.py uses)
 
-image = image.add_local_python_source("modal_rea")
-if (RB / "rea_bench").is_dir():
-    image = image.add_local_dir(str(RB / "rea_bench"), "/root/rea_bench")
+image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
 app = modal.App("lf-rea-data", image=image)
 data_vol = modal.Volume.from_name("lf-rea-data", create_if_missing=True)
 
@@ -85,13 +83,18 @@ def decompile_task(task: dict, src: str, seed: int = 7) -> dict:
     return rec
 
 
-# _score / _variants live in tools/rea-bench/rea_bench/scoring.py (imported above) so they can be unit-tested without Modal.
+# `score` lives in tools/rea-bench/rea_bench/scoring.py (imported above) so it can be unit-tested without Modal.
 
 
 @app.function(gpu=["L40S", "A100-40GB"], volumes={"/models": models_vol, "/data": data_vol}, timeout=5 * 3600)
 def sample_answers(name: str, repo: str, fname: str, k: int, seed: int = 7) -> dict:
     from huggingface_hub import hf_hub_download
     import urllib.request
+    data_vol.reload()
+    tasks = [json.loads(p.read_text()) for p in sorted(pathlib.Path(f"/data/decompiled-seed{seed}").glob("*.json"))]
+    tasks = [t for t in tasks if "pseudocode" in t]
+    for t in tasks:
+        check_mode(t)       # an unknown score mode must stop the run before the model download and the server start
     path = hf_hub_download(repo, fname, cache_dir="/models")
     srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(8192 * 4),
                             "--parallel", "4", "-fa", "off"], stdout=subprocess.DEVNULL, stderr=open("/tmp/server.log", "w"))
@@ -101,9 +104,6 @@ def sample_answers(name: str, repo: str, fname: str, k: int, seed: int = 7) -> d
                 break
         except Exception:
             time.sleep(1)
-    data_vol.reload()
-    tasks = [json.loads(p.read_text()) for p in sorted(pathlib.Path(f"/data/decompiled-seed{seed}").glob("*.json"))]
-    tasks = [t for t in tasks if "pseudocode" in t]
     kept, stats = [], {"tasks": len(tasks), "answers": 0, "correct": 0, "solved_tasks": 0}
     from concurrent.futures import ThreadPoolExecutor
 
@@ -124,7 +124,7 @@ def sample_answers(name: str, repo: str, fname: str, k: int, seed: int = 7) -> d
                 txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
             except Exception as e:
                 txt = f"[error {e!r}]"
-            outs.append((txt, _score(txt, t)))
+            outs.append((txt, score(txt, t)))
         return t, outs
 
     try:
@@ -154,6 +154,8 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         d = tempfile.mkdtemp()
         subprocess.run([sys.executable, str(RB), "gen", "--family", family, "--n", str(n), "--seed", str(seed), "--cc", cc, "--out", d], check=True)
         tasks = [(json.loads(pathlib.Path(d, f"{p.stem}.json").read_text()), p.read_text(), seed) for p in sorted(pathlib.Path(d).glob("*.c"))]
+        for task, _src, _seed in tasks:
+            check_mode(task)
         ok = err = 0
         with open(dest / f"decompiled-seed{seed}.jsonl", "w") as out:
             for rec in decompile_task.starmap(tasks):

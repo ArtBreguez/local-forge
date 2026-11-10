@@ -194,5 +194,3 @@ def canonical(t: dict) -> str:
         return ", ".join(acc)
     return acc[0]
 
-
-_score, _variants = score, variants   # names modal_rea_data.py used before the move

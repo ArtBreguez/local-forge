@@ -6,7 +6,7 @@ Two arms per model, on 10 questions about 8 functions in one stripped Linux bina
            the model answers. Measures reading ability, which is what REA needs from a model.
   agent  : the model gets a shell with `rea`, the binary and the question, and must find the function itself (up to 8 tool
            calls, JSON tool protocol enforced by the harness). Measures tool use.
-Scoring is exact/any/all substring match, recorded with the full transcript in results/phase6/rea/<model>.jsonl.
+Scoring is rea_bench.scoring.score (substring modes for the fixed questions, headline-only modes for generated families), recorded with the full transcript in results/phase6/rea/<model>.jsonl.
 
     modal run tools/modal_rea.py --only heretic-9b,qwen35-35b-a3b-heretic
 """
@@ -24,7 +24,11 @@ import modal
 _HERE = pathlib.Path(__file__).resolve()
 ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 import sys; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+RB = ROOT / "tools" / "rea-bench"          # the generator package; inside the container it is mounted at /root/rea_bench
+if (RB / "rea_bench").is_dir():
+    sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
+from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib only; the one scorer the data pipeline and the unit tests use)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 # Our own GGUFs (base and LoRA quantized by the same path, tools/modal_lora.py): repo "vol:" = file inside the lf-lora volume
 LOCAL_MODELS = [
@@ -56,6 +60,8 @@ image = (
     .add_local_dir(ROOT / "tools" / "modal" / "rea-bench", "/bench")
     .add_local_python_source("modal_qbench")
 )
+if (RB / "rea_bench").is_dir():
+    image = image.add_local_dir(str(RB / "rea_bench"), "/root/rea_bench")   # last layer, like modal_rea_data.py had it
 app = modal.App("lf-rea", image=image)
 
 SYSTEM_RECIPE = ("You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a "
@@ -82,31 +88,8 @@ def chat(messages, max_tokens=400, temperature=0.0):
     return txt, d.get("usage", {})
 
 
-def _variants(x: str) -> list:
-    """An integer answer may be given in decimal or hex, signed or as the 32-bit pattern (0x97c59b7a == -0x683a6486); accept all."""
-    out = [x]
-    m = re.fullmatch(r"-?\d+", x)
-    if m:
-        v = int(x)
-        if abs(v) > 9:
-            out += [format(abs(v), "x") if v > 0 else "-0x" + format(-v, "x"), "0x" + format(v & 0xffffffff, "x")]
-            if v > 0:
-                out.append("0x" + format(v, "x"))
-    elif re.fullmatch(r"[0-9a-f]{8}", x):
-        v = int(x, 16)
-        if v >= 0x80000000:
-            out.append("-0x" + format(0x100000000 - v, "x"))
-    return out
-
-
-def score(answer: str, task: dict) -> bool:
-    a = re.sub(r"\s+", "", answer.lower())
-    if task["score"] == "all_groups":
-        return all(any(re.sub(r"\s+", "", x.lower()) in a for x in g) for g in task["accept"])
-    acc = [[re.sub(r"\s+", "", v.lower()) for v in _variants(x)] for x in task["accept"]]
-    if task["score"] == "all":
-        return all(any(v in a for v in g) for g in acc)
-    return any(v in a for g in acc for v in g)
+# `score` is rea_bench.scoring.score (imported above): legacy modes for the 10 fixed questions and the old templates, headline modes for
+# the generated families. An unknown mode raises, so main() checks every task before a GPU is rented.
 
 
 def sh(cmd: str, timeout=300) -> str:
@@ -229,8 +212,10 @@ def main(only: str = ""):
     dest.mkdir(parents=True, exist_ok=True)
     todo = [m for m in MODELS + LOCAL_MODELS if not only or m[0] in only.split(",")]
     hf = dest.parent / "rea-data" / "decompiled-seed1001.jsonl"
-    heldout = [json.loads(l) for l in open(hf) if l.strip()] if hf.exists() else []
+    heldout = [json.loads(l) for l in hf.read_text().splitlines() if l.strip()] if hf.exists() else []
     heldout = [t for t in heldout if "pseudocode" in t]
+    for t in json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"] + heldout:
+        check_mode(t)       # ValueError on an unknown score mode now, not half way through a paid run
     calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu in todo]
     for call, name in calls:
         try:
