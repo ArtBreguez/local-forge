@@ -65,10 +65,24 @@ def _sh(cmd, cwd, timeout=900):
     return p.stdout + p.stderr
 
 
+def _sh_rc(cmd, cwd, timeout=900):
+    """(return code, stdout + stderr): a failed command is told apart from one that printed nothing (round 4, m10)."""
+    try:
+        p = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True, timeout=timeout, cwd=cwd)
+    except subprocess.TimeoutExpired:
+        return 124, f"[timeout after {timeout}s] {cmd[:80]}"
+    return p.returncode, p.stdout + p.stderr
+
+
 def _decompile_fn(d: str, name: str):
     """Pseudocode of function `name`: its address comes from the unstripped t.sym, the decompile from the stripped t.
-    Returns (code, None) or (None, error-fields dict)."""
-    line = [l for l in _sh(f"nm t.sym | grep ' T {name}$'", d).splitlines()]
+    Returns (code, None) or (None, error-fields dict). Only the STDOUT of nm is read: a missing or empty t.sym prints `nm: 't.sym': No such file` on
+    stderr, which used to become the address `0xnm:` and the error "no pseudocode"."""
+    try:
+        nm = subprocess.run(["bash", "-lc", f"nm t.sym | grep ' T {name}$'"], capture_output=True, text=True, timeout=900, cwd=d).stdout
+    except subprocess.TimeoutExpired:
+        return None, {"error": f"{name} not found", "raw": "[timeout after 900s] nm"}
+    line = [l for l in nm.splitlines() if re.fullmatch(r"[0-9a-fA-F]+\s+T\s+" + re.escape(name), l.strip())]
     if not line:
         return None, {"error": f"{name} not found"}
     addr = "0x" + line[0].split()[0].lstrip("0")
@@ -92,7 +106,9 @@ def _decompile_task(task: dict, src: str, tag: str) -> dict:
     d = tempfile.mkdtemp()
     pathlib.Path(d, "t.c").write_text(src)
     cc, opt = task.get("cc", "gcc"), task["opt"]
-    _sh(f"{cc} {opt} -fno-lto -o t.sym t.c && {cc} {opt} -fno-lto -s -o t t.c", d)
+    rc, out = _sh_rc(f"{cc} {opt} -fno-lto -o t.sym t.c && {cc} {opt} -fno-lto -s -o t t.c", d)
+    if rc != 0:             # a compile error or a missing compiler is told as such, not as a decompile problem (round 4, m10)
+        return {**task, "error": f"compile failed ({cc} {opt}, exit {rc}): " + " | ".join(out.strip().splitlines()[-3:])[:300]}
     if task.get("facts"):   # the generator checked this with ITS compilers; these are the ones that built the binary
         try:
             ok, why = survive.check(task["facts"], src, cc, opt)
@@ -134,8 +150,9 @@ def _messages(t: dict) -> list:
 @app.function(gpu=["L40S", "A100-40GB"], volumes={"/models": models_vol, "/data": data_vol}, timeout=5 * 3600)
 def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False) -> dict:
     """K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
-    with resume=True instead of paid for twice. The SFT records are built at the end from all replies (rea_bench.sft: the stored text is
-    the headline plus one sentence, a task of chance >= 0.2 needs two right samples); the stats come per family."""
+    with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those. The SFT
+    records are built at the end from all replies (rea_bench.sft: the teacher's headline is a filter, the stored text is rendered from the truth, a
+    task of chance >= 0.05 needs two right samples); the stats come per family."""
     from huggingface_hub import hf_hub_download
     import urllib.request
     data_vol.reload()
@@ -151,12 +168,15 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
         check_target(t)     # so must a task without a truth template, or one whose rendered target its own scorer rejects
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, tag)}.partial.jsonl")
     results = outputs.load_partial(partial, resume)
-    todo = [t for t in tasks if t["id"] not in results]
+    todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k)) for t in tasks]
+    todo = [(t, ask) for t, ask in todo if ask]
     if results:
-        print(f"resuming: {len(results)} of {len(tasks)} tasks already sampled")
+        redo = sum(len(ask) for t, ask in todo if t["id"] in results)
+        print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask ({redo} failed or missing samples of checkpointed tasks)")
     path = hf_hub_download(repo, fname, cache_dir="/models")
+    server_log = open("/tmp/server.log", "w")
     srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(8192 * 4),
-                            "--parallel", "4", "-fa", "off"], stdout=subprocess.DEVNULL, stderr=open("/tmp/server.log", "w"))
+                            "--parallel", "4", "-fa", "off"], stdout=subprocess.DEVNULL, stderr=server_log)
     for _ in range(600):
         try:
             if urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2).status == 200:
@@ -165,10 +185,12 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
             time.sleep(1)
     from concurrent.futures import ThreadPoolExecutor
 
-    def work(t):
+    def work(item):
+        t, ask = item
         msgs = _messages(t)
-        outs = []
-        for i in range(k):
+        outs = [tuple(o) for o in results[t["id"]]["outs"]] if t["id"] in results else []
+        outs += [("", False)] * (k - len(outs))                    # a checkpointed task keeps its answers; only the samples in `ask` are asked
+        for i in ask:
             try:
                 body_seed = 1234 + i
                 import urllib.request as ur
@@ -180,8 +202,8 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                 txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
                 ok = score_strict(txt, t)
             except Exception as e:
-                txt, ok = f"[error {e!r}]", False       # the text of a failed request is never scored (B1) and never stored; stats count it
-            outs.append((txt, ok))
+                txt, ok = f"[error {e!r}]", False       # the text of a failed request is never scored (B1) and never stored; stats count it; --resume asks it again
+            outs[i] = (txt, ok)
         return t, outs
 
     try:
@@ -195,6 +217,7 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                     data_vol.commit()
     finally:
         srv.kill()
+        server_log.close()
         data_vol.commit()
     kept, stats = sft.assemble(tasks, results, name, _messages)
     return {"stats": stats, "sft": kept}
@@ -246,6 +269,8 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
     clang on PATH; without them the draws it cannot check are counted and warned about, and only the Modal-side re-check applies).
     resume: continue a sample stage that timed out from its checkpoint on the volume.
     Outputs are keyed by seed and family (rea_bench.outputs); an existing output is never overwritten without --force."""
+    if stage not in ("decompile", "sample"):         # `--stage decompil` used to rent a GPU for a sample stage (round 4, m4)
+        raise SystemExit(f"unknown stage {stage!r}; known: decompile, sample")
     dest = ROOT / "results" / "phase6" / "rea-data"
     dest.mkdir(parents=True, exist_ok=True)
     tag = outputs.run_tag(seed, family)

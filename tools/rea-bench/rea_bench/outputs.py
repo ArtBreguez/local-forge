@@ -15,6 +15,8 @@ import pathlib
 import re
 import subprocess
 
+from . import scoring
+
 
 def run_tag(seed: int, family: str) -> str:
     return f"seed{seed}-{re.sub(r'[^a-z0-9+]+', '+', family.lower()).strip('+')}"
@@ -96,6 +98,8 @@ def as_record(task: dict, result) -> dict:
 def error_reason(rec: dict) -> str:
     """A short reason class for an error record (fact gate, decompile timeout, ...), for the summary of a decompile run."""
     e = rec.get("error", "")
+    if e.startswith("compile failed"):
+        return "compile failed (Modal compilers)"
     if e.startswith("fact not in the compiled code"):
         return "fact gate (Modal compilers)"
     if e.startswith("gate failed"):
@@ -150,6 +154,16 @@ def load_partial(path: pathlib.Path, resume: bool) -> dict:
             continue                  # a line cut by a timeout
         out[rec["id"]] = rec
     return out
+
+
+def samples_to_ask(rec, k: int) -> list:
+    """The sample indexes (0..k-1) of one task that a resumed sample stage must ask: all of them for a task that is not in the checkpoint (`rec` is None),
+    otherwise the samples that failed (`[error ...]`, a dead server or a timeout) or are missing. A failed request is checkpointed like an answer so that the
+    run can finish and count it, but it is not an answer: `--resume` is the remedy the failure warning prints, so it must ask again (round 4, M3)."""
+    if rec is None:
+        return list(range(k))
+    outs = rec["outs"]
+    return [i for i in range(k) if i >= len(outs) or scoring.is_error_reply(outs[i][0])]
 
 
 def heldout_summary(records) -> dict:

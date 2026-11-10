@@ -83,6 +83,117 @@ class SampleSelection(unittest.TestCase):
         self.assertEqual(len(kept), 1)
 
 
+class ResumeAsksFailedRequestsAgain(ModalCase):
+    """Round 4, M3: `--resume` is the remedy the failure warning prints, so it must ask again the samples that failed, and only those. The real body
+    of `sample_answers` runs against a scripted fake llama-server (urlopen) and a temporary stand-in for the /data volume."""
+
+    def setUp(self):
+        import urllib.error
+        import urllib.request
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        root = pathlib.Path(self.tmp.name)
+        self.tag = outputs.run_tag(7, "legacy")
+        src = root / "data" / outputs.decompiled_stem(self.tag)
+        src.mkdir(parents=True)
+        self.tasks = {}
+        for t in families.generate("legacy", 12, 7):
+            m = {**t.meta(), "pseudocode": f"/* {t.id} */ void f(void) {{}}"}
+            self.tasks[t.id] = m
+            (src / f"{t.id}.json").write_text(json.dumps(m))
+        self.root, self.k = root, 3
+        self.requests, self.lock = [], __import__("threading").Lock()
+        self.fail = lambda tid, i: False
+        real = pathlib.Path
+        shim = types.SimpleNamespace(Path=lambda p, *a: real(str(self.root / "data" / str(p)[len("/data/"):]) if str(p).startswith("/data/") else p, *a))
+        popen = types.SimpleNamespace(Popen=lambda *a, **k: types.SimpleNamespace(kill=lambda: None), DEVNULL=subprocess.DEVNULL, run=subprocess.run,
+                                      TimeoutExpired=subprocess.TimeoutExpired)
+
+        class Resp:
+            def __init__(self, body):
+                self.body, self.status = body, 200
+
+            def read(self, *a):
+                return self.body
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        def urlopen(req, timeout=None):
+            if isinstance(req, str):
+                return Resp(b"ok")
+            body = json.loads(req.data)
+            tid = next(i for i in self.tasks if i in body["messages"][-1]["content"])
+            i = body["seed"] - 1234
+            with self.lock:
+                self.requests.append((tid, i))
+            if self.fail(tid, i):
+                raise urllib.error.URLError("connection refused")
+            return Resp(json.dumps({"choices": [{"message": {"content": right(self.tasks[tid])}}]}).encode())
+
+        patches = [mock.patch.object(self.data, "pathlib", shim), mock.patch.object(self.data, "subprocess", popen),
+                   mock.patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(hf_hub_download=lambda *a, **k: "/tmp/fake.gguf")}),
+                   mock.patch.object(urllib.request, "urlopen", urlopen)]
+        for p in patches:
+            p.start()
+            self.addCleanup(p.stop)
+
+    def run_stage(self, resume):
+        self.requests.clear()
+        with contextlib.redirect_stdout(io.StringIO()) as printed:
+            res = self.data.sample_answers("m", "repo", "f.gguf", self.k, self.tag, resume=resume)
+        self.printed = printed.getvalue()
+        return res
+
+    def test_a_dead_server_then_a_live_one_resume_asks_every_failed_request_again(self):
+        n = len(self.tasks)
+        self.fail = lambda tid, i: True
+        res = self.run_stage(resume=False)
+        st = res["stats"]
+        self.assertEqual((st["answers"], st["errors"], st["correct"], st["kept_records"]), (n * self.k, n * self.k, 0, 0))
+        self.assertIn("MORE THAN 5%", sft.error_warning(st))
+        self.fail = lambda tid, i: False
+        res = self.run_stage(resume=True)
+        st = res["stats"]
+        self.assertEqual(len(self.requests), n * self.k, "every failed sample is asked again (it used to be 0 requests)")
+        self.assertEqual(st["errors"], 0)
+        self.assertGreater(st["kept_records"], 0)
+        self.assertTrue(all(scoring.score_strict(r["messages"][-1]["content"], self.tasks[r["task"]]) for r in res["sft"]))
+        self.assertEqual(len(self.run_stage(resume=True)["sft"]), len(res["sft"]))
+        self.assertEqual(self.requests, [], "a complete checkpoint asks nothing")
+
+    def test_only_the_failed_samples_of_a_task_are_asked_and_the_others_are_kept(self):
+        n = len(self.tasks)
+        self.fail = lambda tid, i: i == 1
+        first = self.run_stage(resume=False)["stats"]
+        self.assertEqual((first["answers"], first["errors"]), (n * self.k, n))
+        self.fail = lambda tid, i: False
+        res = self.run_stage(resume=True)
+        self.assertEqual(sorted(i for _t, i in self.requests), [1] * n, "sample 1 of every task, nothing else")
+        self.assertEqual(res["stats"]["errors"], 0)
+        part = [json.loads(l) for l in (self.root / "data" / f"{outputs.sft_stem('m', self.tag)}.partial.jsonl").read_text().splitlines()]
+        last = {r["id"]: r for r in part}
+        self.assertTrue(all(len(r["outs"]) == self.k and not any(scoring.is_error_reply(o) for o, _ in r["outs"]) for r in last.values()))
+        self.assertIn("to ask", self.printed)
+
+    def test_without_resume_the_old_checkpoint_is_moved_aside_and_everything_is_asked(self):
+        self.run_stage(resume=False)
+        self.run_stage(resume=False)
+        self.assertEqual(len(self.requests), len(self.tasks) * self.k)
+        self.assertEqual(len(list((self.root / "data").glob("*.old-*"))), 1)
+
+    def test_samples_to_ask(self):
+        ask = outputs.samples_to_ask
+        self.assertEqual(ask(None, 3), [0, 1, 2])
+        self.assertEqual(ask({"outs": [["a", True], ["[error URLError('x')]", False], ["b", False]]}, 3), [1])
+        self.assertEqual(ask({"outs": [["a", True]]}, 3), [1, 2], "a missing sample is asked")
+        self.assertEqual(ask({"outs": [["a", True], ["b", False], ["c", False]]}, 3), [])
+        self.assertEqual(ask({"outs": [["a", True], ["b", False], ["c", False], ["d", False]]}, 3), [], "a checkpoint with more samples than k is complete")
+
+
 class Robustness(ModalCase):
     """m6."""
 
@@ -125,6 +236,34 @@ class Robustness(ModalCase):
             self.run_main(root, stage="decompile", n=4, seed=7, family="crc")           # no --force needed
             self.assertEqual(len((rd / "decompiled-seed7-crc.jsonl").read_text().splitlines()), 4)
             self.assertFalse(list(rd.glob("*.part")))
+
+    def test_m4_an_unknown_stage_is_refused_before_anything_is_rented(self):
+        with tempfile.TemporaryDirectory() as d:
+            for stage in ("decompil", "Sample", "", "samples"):
+                with self.assertRaisesRegex(SystemExit, "unknown stage"):
+                    self.run_main(pathlib.Path(d), stage=stage, model=self.data.MODELS[0][0], seed=7, family="crc")
+            self.assertFalse((pathlib.Path(d) / "results").exists(), "nothing was created")
+
+    def test_m10_a_compile_failure_is_reported_as_one_and_nm_stderr_is_not_an_address(self):
+        task = {"id": "x-1", "kind": "x", "opt": "-O2", "cc": "gcc", "score": "tokens", "accept": [["1"]]}
+        with mock.patch.object(self.data, "_sh_rc", return_value=(1, "t.c:3:5: error: expected ';'\nt.c:9: error: unknown type name 'foo'\n2 errors generated.")), \
+                mock.patch.object(self.data, "_sh") as sh:
+            rec = self.data._decompile_task(task, "int proc(void){return 0}", "seed7-crc")
+        self.assertTrue(rec["error"].startswith("compile failed (gcc -O2, exit 1):"), rec)
+        self.assertIn("unknown type name", rec["error"])
+        sh.assert_not_called()                                       # no decompile of a binary that was never built
+        self.assertEqual(outputs.error_reason(rec), "compile failed (Modal compilers)")
+        missing = types.SimpleNamespace(stdout="", stderr="nm: 't.sym': No such file\n", returncode=1)
+        with mock.patch.object(self.data.subprocess, "run", return_value=missing), mock.patch.object(self.data, "_sh") as sh:
+            code, err = self.data._decompile_fn(".", "proc")
+        self.assertEqual((code, err), (None, {"error": "proc not found"}))
+        sh.assert_not_called()                                       # `rea decompile --procedure 0xnm: ...` never runs
+        listing = types.SimpleNamespace(stdout="0000000000001139 T proc\n", stderr="", returncode=0)
+        with mock.patch.object(self.data.subprocess, "run", return_value=listing), \
+                mock.patch.object(self.data, "_sh", return_value='{"normalized_result": "int proc(void){return 1;}"}') as sh:
+            code, err = self.data._decompile_fn(".", "proc")
+        self.assertEqual((code, err), ("int proc(void){return 1;}", None))
+        self.assertIn("--procedure 0x1139", sh.call_args.args[0])
 
     def test_decompile_task_returns_an_error_record_for_a_hang_or_a_crash(self):
         task = {"id": "x-1", "kind": "x", "opt": "-O2", "cc": "gcc", "score": "tokens", "accept": [["1"]]}
@@ -292,7 +431,7 @@ class Round3Pipeline(ModalCase):
 
     def test_b1_the_sampler_does_not_score_a_failed_request(self):
         src = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
-        body = src[src.index("    def work(t):"):src.index("    try:\n        with ThreadPoolExecutor")]
+        body = src[src.index("    def work(item):"):src.index("    try:\n        with ThreadPoolExecutor")]
         self.assertIn('txt, ok = f"[error {e!r}]", False', body)
         self.assertNotIn("score(txt, t))", body.split("except Exception")[1], "no scoring of the error text")
 

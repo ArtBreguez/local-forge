@@ -35,7 +35,7 @@ if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
 from rea_bench import dedupe, outputs  # noqa: E402  (stdlib only)
-from rea_bench.scoring import check_mode, score, score_any_line  # noqa: E402  (stdlib only; the one scorer the data pipeline and the unit tests use)
+from rea_bench.scoring import check_mode, score, score_any_line  # noqa: E402  (stdlib only; the EVALUATION scorers: the data pipeline scores with score_strict, see modal_rea_data.py)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 # Our own GGUFs (base and LoRA quantized by the same path, tools/modal_lora.py): repo "vol:" = file inside the lf-lora volume
 LOCAL_MODELS = [
