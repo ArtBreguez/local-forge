@@ -12,10 +12,12 @@ through `c.run`, which caches by program text. A group that no claim reads fails
 """
 from __future__ import annotations
 
+import contextlib
 import itertools
 import os
 import random
 import re
+import signal
 import struct
 import subprocess
 import sys
@@ -43,6 +45,32 @@ def claim(fn):
 def need(ok, why="") -> None:
     if not ok:
         raise ClaimFailed(why)
+
+
+@contextlib.contextmanager
+def time_limit(seconds: float):
+    """Round 7, m4: a claim must FAIL, not hang, on a sentence that is false. A number of a swapped sentence (the rounds of a loop that became the multiplier, 1,103,515,245
+    iterations) made `lcg_reference` run for minutes; now a claim that does not return within `seconds` is a failed claim with that reason (SIGALRM: the main thread of
+    the process, which is where `exercise` runs, also in the workers of the claims test)."""
+    def alarm(_signum, _frame):
+        raise ClaimFailed(f"the claim did not return within {seconds:g} s: a number of the sentence makes it loop")
+    try:
+        old = signal.signal(signal.SIGALRM, alarm)
+    except ValueError:                                               # not the main thread: no limit
+        yield
+        return
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old)
+
+
+def small(value: int, lo: int, hi: int, what: str) -> int:
+    """A number of the sentence that a claim loops on or uses as an exponent must be in the range the generators draw from (round 7, m4): otherwise the sentence is false."""
+    need(lo <= value <= hi, f"{what} {value} is not in {lo} .. {hi}, the range of this kind of task: the sentence cannot be true")
+    return value
 
 
 class Ctx:
@@ -451,6 +479,7 @@ def _opcode_sweep(c: Ctx, vec: list, equal: bool) -> int:
 
 def _eval_expr(expr: str, a: int, b: int) -> int:
     need(re.fullmatch(r"[ab0-9 ^&|+*()<>-]+", expr) is not None, f"{expr!r} is not an expression over a and b")
+    need("**" not in expr and all(int(n) <= 64 for n in re.findall(r"<<\s*(\d+)", expr)), f"{expr!r}: an exponent or a shift that is not small would make eval run for ever")
     return eval(expr, {"__builtins__": {}}, {"a": a, "b": b}) & M32
 
 
@@ -598,7 +627,7 @@ def tea_reference(c: Ctx):
         need(len(key) * 32 == s["key_bits"], f"the key has {len(key) * 32} bits, the sentence says {s['key_bits']}")
     if "block" in s:
         need(re.search(r"proc\(uint32_t v\[2\]\)", b) and 2 * 4 == s["block"], f"the block is two 32-bit words, the sentence says {s['block']} bytes")
-    rounds = s["rounds"]
+    rounds = small(s["rounds"], 1, 1024, "the iterations")
     rng = random.Random(c.t.id)
     blocks = [(rng.getrandbits(32), rng.getrandbits(32)) for _ in range(4)]
     main = ("int main(void) {\n" + "".join(
@@ -643,7 +672,7 @@ def stream_reference(c: Ctx):
     s, b = c.s, c.body
     alg = s.get("alg", {"chacha": "ChaCha", "salsa": "Salsa"}[c.key.split("/")[1]])
     need(alg in STREAM_REF, f"{alg} is no stream cipher of this family")
-    rounds = s["rounds"]
+    rounds = small(s["rounds"], 1, 1024, "the rounds")
     if "rot0" in s:
         need((s["rot0"], s["rot1"], s["rot2"], s["rot3"]) == STREAM_ROT[alg], f"the rotation amounts of {alg} are {STREAM_ROT[alg]}, the sentence says "
              f"{(s['rot0'], s['rot1'], s['rot2'], s['rot3'])}")
@@ -738,9 +767,10 @@ def encoding_reference(c: Ctx):
     need(len(set(alpha)) == len(alpha) == s["radix"], f"the alphabet has {len(alpha)} characters, the sentence says {s['radix']}")
     _enc_matches(c, alpha)
     if "bits" in s:
-        need(2 ** s["bits"] == s["radix"], f"{s['bits']} bits do not make a radix of {s['radix']}")
+        need(2 ** small(s["bits"], 0, 64, "the bits per character") == s["radix"], f"{s['bits']} bits do not make a radix of {s['radix']}")
         need(direction in ("encode", "decode") and base in ("base64", "base32"), "only base64 and base32 have a fixed number of bits per character")
     if "gin" in s:
+        small(s["gin"], 1, 64, "the group of input bytes")
         bits = s.get("bits", s["radix"].bit_length() - 1)
         need(2 ** bits == s["radix"], f"a character of {bits} bits is not one of {s['radix']}")
         need(s["gin"] * 8 == s["gout"] * bits, f"{s['gin']} bytes are {s['gin'] * 8} bits, {s['gout']} characters of {bits} bits are {s['gout'] * bits}")
@@ -1280,12 +1310,28 @@ def password_equal_only(c: Ctx):
     need(bad == 0, f"proc returns {ret} for {bad} of the {tried} inputs one edit away from the password")
 
 
+def key_lines(k: str) -> list:
+    """Every shape of one line (round 7, m3: the domain `lines`): 5 prefixes (none, a space, a tab, `#`, a letter) x 5 spellings of the key (itself, a longer one, a shorter
+    one, in upper case, with a letter before it) x 4 separators (`=`, `:`, a space, none) x 8 values (empty, one character, a space, several characters, an equals sign,
+    an equals sign inside, a carriage return): 800 lines."""
+    spellings = [k, k + "x", k[:-1], k.upper() if k.upper() != k else k + "X", "x" + k]
+    return [p + kv + sep + v for p in ("", " ", "\t", "#", "x") for kv in spellings for sep in ("=", ":", " ", "") for v in ("", "1", "v", " ", "  x", "=", "a=b", "\r")]
+
+
 @claim
 def keycount_lines(c: Ctx):
     k = c.s["s"] if "s" in c.s else c.answer[0]
     text = f"{k}=1\\n#{k}=2\\n{k}=\\n{k}x=3\\n{k}=4\\n x{k}=5\\n"
     out = ints(c.run(f'int main(void) {{ printf("%d %d %d %d\\n", proc("{text}"), proc("{k}="), proc("{k}=v"), proc("#{k}=v")); return 0; }}'))
     need(out == [2, 0, 1, 0], f"proc counts {out} lines: key=1 and key=4 count, key= with nothing after, a comment, another key and an indented line do not")
+    # the whole domain of line shapes, one line at a time and all together: a line is counted when it begins with the key and an equals sign and has something after it
+    lines = key_lines(k)
+    want = [int(ln.startswith(k + "=") and len(ln) > len(k) + 1) for ln in lines]
+    out = ints(c.run("int main(void) {\n" + "".join(f'    printf("%d\\n", proc({c_bytes_str(ln.encode())}));\n' for ln in lines)
+                     + f'    printf("%d\\n", proc({c_bytes_str(chr(10).join(lines).encode())}));\n    return 0;\n}}'))
+    bad = [ln for ln, w, g in zip(lines, want, out) if w != g]
+    need(not bad and len(out) == len(lines) + 1, f"proc counts {len(bad)} of the {len(lines)} line shapes wrongly, e.g. {bad[:2]!r}: a line is counted when it begins with the key and an equals sign and has something after it")
+    need(out[-1] == sum(want), f"proc counts {out[-1]} of the lines of the whole text, {sum(want)} begin with the key and an equals sign and have something after it")
     if "len" in c.s:
         need(c.s["len"] == len(k), f"the key has {len(k)} characters, the sentence says {c.s['len']}")
 
@@ -1307,7 +1353,8 @@ def alphabet_position(c: Ctx):
 @claim
 def magic_header(c: Ctx):
     s = c.s
-    m, v, e = s["m"], s["v"], s.get("e", "little")
+    m, v, e = s["m"], small(s["v"], 0, 1024, "the highest version"), s.get("e", "little")
+    need(0 <= m < 2 ** 32, f"the magic {m:#x} is not a 32-bit word")
     mb = m.to_bytes(4, e)
     def hdr(magic_bytes, ver, n=8):
         return (magic_bytes + struct.pack("<I", ver))[:n]
@@ -1335,7 +1382,7 @@ def magic_header(c: Ctx):
 
 @claim
 def lcg_reference(c: Ctx):
-    a, r = c.s["a"], c.s["r"]
+    a, r = c.s["a"], small(c.s["r"], 1, 64, "the rounds")
     mm = re.search(r"seed = \(seed \* \d+u \+ (\d+)u\) & 0x7fffffffu;", c.t.body)
     need(mm, "the loop of the C is not a linear congruential step")
     add = int(mm.group(1))

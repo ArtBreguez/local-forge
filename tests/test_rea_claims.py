@@ -21,7 +21,7 @@ held-out seed), every code form of the variant included, and EVERY sentence of t
   * REFERENCES       `References`: the Python references the checkers use are anchored to the standard library or to published vectors (MurmurHash2 against Austin
                      Appleby's C, FNV-1a, RC4, ChaCha against RFC 8439, Salsa20, the CRCs against zlib and binascii, base64/base32 against base64, base58 against the
                      Bitcoin vectors).
-  * MUTATIONS        tests/test_rea_claims_mutations.py: 201 one-edit false sentences, headlines and facts (rounds 6 and 7) are applied to a copy of targets.py; the claims
+  * MUTATIONS        tests/test_rea_claims_mutations.py: 233 one-edit false sentences, headlines and facts (rounds 6 and 7) are applied to a copy of targets.py; the claims
                      machinery (not the golden file) must reject every one.
 
     REA_CLAIMS_N=8 python3 -m unittest tests.test_rea_claims      a quick run (the full run compiles about 30,000 programs)
@@ -40,8 +40,10 @@ import re
 import shutil
 import string
 import sys
+import time
 import unittest
 import zlib
+from unittest import mock
 
 from .helpers import ROOT
 from . import rea_claims as RC
@@ -55,6 +57,7 @@ from rea_bench import core, f_cipher, f_crc, f_encoding, f_pktsum, families, tar
 N = int(os.environ.get("REA_CLAIMS_N", "200"))
 WORKERS = int(os.environ.get("REA_CLAIMS_WORKERS", "2"))
 SEEDS = (4241, core.HELDOUT_SEED)
+CLAIM_SECONDS = float(os.environ.get("REA_CLAIM_SECONDS", "120"))      # a claim that runs longer fails (round 7, m4)
 GCC = bool(shutil.which("gcc"))
 GOLDEN = ROOT / "tests" / "golden" / "rea_sentences.txt"
 TABLE = RS.TABLE
@@ -129,7 +132,8 @@ def exercise(task, T=targets, affected=None, stop=False):
         ok = True
         for name in claims:
             try:
-                RC.CLAIMS[name](ctx)
+                with RC.time_limit(CLAIM_SECONDS):
+                    RC.CLAIMS[name](ctx)
                 res.append((key, name, None))
             except RC.ClaimFailed as e:
                 ok = False
@@ -702,6 +706,16 @@ class Teeth(unittest.TestCase):
         self.check("threshold_values", self.task("legacy", "threshold"), below=lambda b: b + 1, d1="Above", lb="upper")
         self.check("writes_exact_string", self.task("strobf", "xor_const"), len=lambda n: n + 1)
 
+    def test_a_number_that_would_make_a_claim_loop_fails_fast(self):
+        """Round 7, m4: the numbers of a swapped sentence (rounds <-> multiplier, a delta as the rounds, a huge group) are out of range: the claim fails in a moment."""
+        cases = [("lcg_reference", self.task("legacy", "lcg"), "r", 1103515245), ("tea_reference", self.task("cipher", "xtea_dec"), "rounds", 2 ** 31),
+                 ("stream_reference", self.task("cipher", "chacha"), "rounds", 2 ** 31), ("encoding_reference", self.task("encoding", "base64_encode"), "bits", 10 ** 9),
+                 ("encoding_reference", self.task("encoding", "base64_encode"), "gin", 10 ** 9), ("magic_header", self.task("legacy", "magic"), "v", 2 ** 31)]
+        for claim, t, group, v in cases:
+            t0 = time.time()
+            self.assertFalse(self.holds(claim, t, group, v), f"{claim} {group}={v} passes")
+            self.assertLess(time.time() - t0, 10, f"{claim} {group}={v} took {time.time() - t0:.1f} s to fail")
+
     def test_structs_encoding_antidebug_fsm_multi(self):
         self.check("stride_records", self.task("structs", "array_stride"), n=lambda n: n + 8)
         self.check("field_read_offset", self.task("structs", "field_read"), off=lambda o: o + 1, flag="zero")
@@ -756,6 +770,105 @@ class HeadTeeth(unittest.TestCase):
         self.assertGreater(n, 1000)
         self.assertEqual(survivors, [], "a wrong value in a headline that no claim rejects")
         self.assertEqual(slow, [], "a claim that hangs on a wrong value instead of failing")
+
+
+@unittest.skipUnless(GCC, "gcc is needed")
+class Guards(unittest.TestCase):
+    """Round 7, m4: a claim FAILS on a false sentence, it does not hang. A number of a swapped sentence (the rounds of an LCG that became its multiplier: 1,103,515,245
+    iterations of a Python loop) made `ClaimsHold` and the mutation test run for minutes; a claim now rejects a number outside the range of its kind of task, and a
+    claim that still does not return within CLAIM_SECONDS is a failed claim with that reason."""
+
+    def test_a_claim_that_does_not_return_fails_with_the_reason(self):
+        t0 = time.time()
+        with self.assertRaises(RC.ClaimFailed) as cm:
+            with RC.time_limit(0.3):
+                while True:
+                    pass
+        self.assertIn("did not return within 0.3 s", str(cm.exception))
+        self.assertLess(time.time() - t0, 3)
+
+    def test_the_limit_is_lifted_when_the_claim_returns(self):
+        with RC.time_limit(0.3):
+            pass
+        time.sleep(0.6)                                    # an alarm that was left armed would raise here
+
+    def test_exercise_turns_a_hang_into_a_failed_claim(self):
+        task = next(t for t in families.generate("legacy", 12 * 5, 99) if t.kind == "lcg")
+
+        def slow(_ctx):
+            time.sleep(30)
+        with mock.patch.dict(RC.CLAIMS, {"lcg_reference": slow}), mock.patch.object(sys.modules[__name__], "CLAIM_SECONDS", 0.5):
+            t0 = time.time()
+            res = exercise(task, stop=True)
+        self.assertLess(time.time() - t0, 10)
+        self.assertEqual([r[1] for r in res if r[2]], ["lcg_reference"])
+        self.assertIn("did not return within 0.5 s", [r[2] for r in res if r[2]][0])
+
+    def test_an_expression_with_an_exponent_or_a_huge_shift_is_not_evaluated(self):
+        self.assertEqual(RC._eval_expr("a ^ b", 6, 3), 5)
+        for bad in ("a ** b", "a ** 99999999", "1 << 99999999999", "a<<4000000000"):
+            with self.assertRaises(RC.ClaimFailed, msg=bad):
+                RC._eval_expr(bad, 2, 3)
+
+
+class _Stub:
+    """A task that is only a program: the claims that read nothing but `source` and the groups run on it."""
+    id = "stub"
+
+    def __init__(self, proc: str):
+        self.proc = proc
+
+    def source(self, main: str, pre: str = "") -> str:
+        return "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <strings.h>\n" + pre + self.proc + "\n" + main
+
+
+@unittest.skipUnless(GCC, "gcc is needed")
+class KeycountDomain(unittest.TestCase):
+    """Round 7, m3: `keycount_lines` covers every shape of one line (800 lines: 5 prefixes x 5 spellings of the key x 4 separators x 8 values), not 6 probe lines. The
+    legacy proc passes; seven wrong counters fail: five that the 6 probe lines of round 6 accepted (they skip a leading space or tab, accept a colon, ignore the case of
+    the key, do not count a value that is one space) and two that those probes caught as well (a longer key, a comment line)."""
+
+    KEY = "port"
+
+    def proc(self, cond: str) -> str:
+        return ('int proc(const char *text) { int k = 0; const char *line = text; while (*line) { const char *nl = strchr(line, 10); '
+                'size_t len = nl ? (size_t)(nl - line) : strlen(line); if (' + cond + ') k++; line += len + (nl ? 1 : 0); } return k; }')
+
+    def holds(self, cond: str, key: str = None) -> bool:
+        key = key or self.KEY
+        c = RC.Ctx(_Stub(self.proc(cond)), {}, RS.Caps({"s": key}), "keycount")
+        try:
+            RC.CLAIMS["keycount_lines"](c)
+            return True
+        except RC.ClaimFailed:
+            return False
+
+    def test_the_domain_is_800_lines_of_every_shape(self):
+        lines = RC.key_lines(self.KEY)
+        self.assertEqual(len(lines), 800)
+        self.assertGreater(len(set(lines)), 700, "the shapes are distinct lines")
+        self.assertEqual(sum(ln.startswith("port=") and len(ln) > len("port=") for ln in lines), 7,
+                         "no prefix, the key itself, an equals sign, and any of the 7 values that are not empty")
+
+    def test_the_proc_of_the_generator_passes(self):
+        n = len(self.KEY) + 1
+        self.assertTrue(self.holds(f'len > {n} && line[0] != 35 && strncmp(line, "{self.KEY}=", {n}) == 0'))
+        self.assertTrue(self.holds('len > 10 && line[0] != 35 && strncmp(line, "host_name=", 10) == 0', "host_name"))
+
+    def test_every_wrong_counter_fails_including_five_that_the_probe_lines_of_round_6_accepted(self):
+        n = len(self.KEY) + 1
+        base = f'strncmp(line + OFF, "{self.KEY}=", {n}) == 0 && len > {n}'
+        wrong = {
+            "skips one leading space": base.replace("OFF", "(line[0] == 32)"),
+            "skips a tab or a space": base.replace("OFF", "(line[0] == 32 || line[0] == 9)"),
+            "accepts a colon": f'len > {n} && strncmp(line, "{self.KEY}", {n - 1}) == 0 && (line[{n - 1}] == 61 || line[{n - 1}] == 58)',
+            "ignores the case of the key": f'len > {n} && strncasecmp(line, "{self.KEY}=", {n}) == 0',
+            "does not count a value that is a single space": f'len > {n} && strncmp(line, "{self.KEY}=", {n}) == 0 && !(len == {n + 1} && line[{n}] == 32)',
+            "counts a longer key": f'len > {n} && strncmp(line, "{self.KEY}", {n - 1}) == 0 && strchr(line, 61) != NULL',
+            "counts a comment line": f'len > {n} && strstr(line, "{self.KEY}=") != NULL',
+        }
+        for why, cond in wrong.items():
+            self.assertFalse(self.holds(cond), f"a counter that {why} is accepted")
 
 
 def _family_test(fam):

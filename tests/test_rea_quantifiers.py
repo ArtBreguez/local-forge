@@ -2,6 +2,12 @@
 claims something about a whole domain, and a checker that tries one value of it proves nothing (round 6, B1: "Changing any byte ... makes the checksum
 fail" was false for every Fletcher-16 task, because the checker flipped bytes with one XOR mask).
 
+Round 7, m3: the word list missed the universal sentences that do not use one of those words: `the other indexes give -1`, `gives 0 for the rest`, `whether it
+allocates a single structure or several`, `A value below lo becomes lo`, `repeated along the whole buffer`, `A header is valid when`, `the checksum follows that many
+payload bytes`, `in between ... it returns`, `The lines that are counted`, `The position of a character`. The list now holds `other`, `rest`, `whether`, `whole`, `that
+many`, `valid when`, `in between`, `counted when` and the generic singulars `a value`, `a character`, `a line`, `a header`, `the lines`; every sentence that has one of
+them is registered with the claim that backs it and the domain that claim covers, or does not say it.
+
   * the sentences that still use such a word are exactly the keys of QUANTIFIED, each with the claim that backs it and the domain that claim covers;
   * a sentence that is not in the list uses none (so a new quantifier cannot come in without an entry and a checker);
   * the B1 counterexample is pinned: the Fletcher-16 checksum does not see a covered byte go from 0x00 to 0xFF.
@@ -10,7 +16,9 @@ Domains: `all256` every byte value; `printable` every printable ASCII character;
 one, then a breadth-first search; `memory` the whole output buffer; `sweep` the integers from -2**17 to 2**17 one by one, then 2**32 in strides of 8191, then
 the extremes; `positions` every byte value at every position of a long buffer; `lengths` every length from 0 to 89 with three fill bytes; `neighbours` every
 input one edit away from the accepted one (each position x each byte: replaced, inserted, deleted), the empty string and an extension; `bits` every single-bit
-change of the accepted header. A domain of 2**32 integers is swept, not enumerated: the one that is enumerated is reported by the claim's own message.
+change of the accepted header; `lines` every shape of one line (round 7: 5 prefixes x 5 spellings of the key x 4 separators x 8 values = 800 lines, one at a time and
+all together); `allocations` every call to malloc or calloc that proc makes (a fake allocator records the element size and the count of each). A domain of 2**32 integers
+is swept, not enumerated: the one that is enumerated is reported by the claim's own message.
 """
 from __future__ import annotations
 
@@ -25,7 +33,8 @@ sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
 from rea_bench import families, f_pktsum, targets  # noqa: E402
 
-WORDS = re.compile(r"\b(any|every|all|always|never|only|each|none|no|exactly|nothing|everything)\b", re.I)
+WORDS = re.compile(r"\b(any|every|all|always|never|only|each|none|no|exactly|nothing|everything|other|rest|whether|whole|that many|valid when|in between|counted when|"
+                   r"a value|a character|a line|a header|the lines)\b", re.I)
 
 # sentence (as stored in targets.py) -> (claim that backs it, domain it covers)
 QUANTIFIED = {
@@ -60,8 +69,24 @@ QUANTIFIED = {
     "The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.": ("skip_one_value", "all256"),
     "Exactly one byte value does not count in the sum, and it is 0x{b:02x}.": ("skip_one_value", "all256"),
     "The function returns {inside} for every v from {lo} to {hi}, {below} for a smaller v and {above} for a larger v.": ("threshold_values", "sweep"),
+    # round 7, m3: universal in disguise (each is backed by the claim and the domain of its registered sibling, or of its own)
+    "A structure that proc allocates is {n} bytes long, whether it allocates a single structure or several.": ("alloc_structure_size", "allocations"),
+    "proc tells {n} different opcodes apart and gives {dflt} for the rest.": ("opcode_default", "sweep"),
+    "The indexes from {lo} to {hi} are accepted: for them proc returns a byte value, and the other indexes give -1.": ("index_limit_range", "sweep"),
+    "The smallest index for which proc returns something other than -1 is {lo}, and the largest is {hi}.": ("index_limit_range", "sweep"),
+    "A value below {lo} becomes {lo} and a value above {hi} becomes {hi}.": ("clamp_interval", "sweep"),
+    "Below {lo} it returns {below}, above {hi} it returns {above}, and in between, both bounds included, it returns {inside}.": ("threshold_values", "sweep"),
+    "proc writes {magic:#x} into the field at byte offset {off:#x}, together with the other fields that it initialises.": ("init_other_fields", "memory"),
+    "The key is a string of {len} characters that is repeated along the whole buffer.": ("xor_key_repeats", "positions"),
+    "The function counts the lines that start with this key followed by an equals sign and a value that is not empty, and it skips comment lines.":
+        ("keycount_lines", "lines"),
+    "A line is counted when it begins with this key and an equals sign and has something after it.": ("keycount_lines", "lines"),
+    "The lines that are counted begin with this {len}-character key and an equals sign, and have something after it.": ("keycount_lines", "lines"),
+    "The position of a character in this string of {len} characters is the value that proc returns for it.": ("alphabet_position", "printable"),
+    "A header is valid when its first four bytes, read as a little-endian 32-bit value, are 0x{m:08x} and its version is at most {v}.": ("magic_header", "bits"),
+    "The length byte is read from offset {n} of the packet, and the checksum follows that many payload bytes.": ("pkt_length_byte", "positions"),
 }
-DOMAINS = {"all256", "printable", "machine", "memory", "sweep", "positions", "lengths", "neighbours", "bits"}
+DOMAINS = {"all256", "printable", "machine", "memory", "sweep", "positions", "lengths", "neighbours", "bits", "lines", "allocations"}
 
 
 def quantified_sentences() -> dict:

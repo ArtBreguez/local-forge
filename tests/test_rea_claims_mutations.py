@@ -9,6 +9,11 @@ headlines that the mutation changes on the sampled tasks (compared render by ren
 claims run (`test_rea_claims.exercise`). The claims machinery alone must fail: the golden file (which sees any edit of a template) is not consulted, and a fact or
 a constant edit changes no template text at all. A mutation that passes is a sentence, a headline or a fact that can be false and stay in the data.
 
+Round 7, m5: the sample is TASKS_PER_KEY (12) tasks per key or more: the first task of every code form of the key (test_rea_claims.form_keys, the forms that
+`ClaimsHold` counts), then the next ones. With 3 tasks per key, 6 of the reviewer's 40 partial runs (a fact that is wrong for the tasks whose id has sum(ord) % 5 == r)
+were not even exercised and the hash name and offset mutations (NL3, NL4) changed nothing on the 3 sampled hash tasks. The 8 partial mutations run at the 5 residues
+r = 0..4: 40 runs.
+
 EXTRA are mutations of the same kinds on sentences the reviewer did not touch (a unit, a request name, a field, a byte order, a count word, the two sentences
 that were false in rounds 5 and 6).
 
@@ -22,6 +27,7 @@ import os
 import pathlib
 import sys
 import tempfile
+import time
 import unittest
 
 from .helpers import ROOT
@@ -33,7 +39,8 @@ sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 from rea_bench import families, targets  # noqa: E402
 
 SRC = pathlib.Path(targets.__file__)
-TASKS_PER_KEY = 6
+TASKS_PER_KEY = 12          # at least this many tasks per key (round 7, m5: 3 left 6 of 40 partial mutations unexercised); the sample also covers every code form of the key
+POOL_PER_VARIANT = 60       # tasks drawn per variant to choose the sample from
 SEED = 4242
 
 EXTRA = [
@@ -57,6 +64,10 @@ FAMILY_OF_ID = {"S": "structs", "F": "fsm", "C": "crc", "H": "cipher", "E": "enc
                 "U": "multi", "L": "legacy"}
 FAMILIES = sorted(FAMILY_OF_ID.values())
 ROWS = [(mid, fam, kind, None, old, new) for mid, fam, kind, old, new in list(MUTATIONS) + EXTRA] + list(MUTATIONS_R7)    # (id, family, kind, ctx, old, new)
+# the partial mutations (NQ1-NQ8) are wrong for the tasks whose id has sum(ord) % 5 == 0; the other four residues are four more subsets of the draws (the reviewer's 40 runs)
+PARTIAL = [(f"{mid}r{r}", fam, kind + f" (residue {r})", ctx, old, new.replace("% 5 == 0", f"% 5 == {r}")) for mid, fam, kind, ctx, old, new in MUTATIONS_R7 if fam == "partial"
+           for r in (1, 2, 3, 4)]
+ROWS += PARTIAL
 _TASKS: dict = {}
 
 
@@ -86,15 +97,33 @@ def family_of(key: str) -> str:
     return key.split("/")[0] if "/" in key else "legacy"
 
 
+def choose(tasks: list) -> list:
+    """The sample of one key: the first task of every code form (the values of the generator's form parameters and the forms only the C shows, as `ClaimsHold` counts
+    them: test_rea_claims.form_keys), then the next tasks until there are TASKS_PER_KEY. A sentence that is false for one form only (or for the draws of one parameter
+    class) is rendered for a task of that form."""
+    chosen, covered = [], set()
+    for t in tasks:
+        new = set(T.form_keys(t)) - covered
+        if new:
+            chosen.append(t)
+            covered |= new
+    for t in tasks:
+        if len(chosen) >= TASKS_PER_KEY:
+            break
+        if t not in chosen:
+            chosen.append(t)
+    return chosen
+
+
 def sample(fam: str) -> dict:
-    """{key: the first TASKS_PER_KEY tasks of the family that are of this key}: the sample that every mutation of the family is rendered over."""
+    """{key: the tasks of the family that are of this key (`choose`)}: the sample that every mutation of the family is rendered over."""
     if fam not in _TASKS:
         mod = families.modules()[fam]
-        pool = families.generate(fam, TASKS_PER_KEY * 2 * len(mod.VARIANTS), SEED)
+        pool = families.generate(fam, POOL_PER_VARIANT * len(mod.VARIANTS), SEED)
         by_key: dict = collections.defaultdict(list)
         for t in pool:
             by_key[targets.key_of(t.meta()).split("#")[0]].append(t)
-        _TASKS[fam] = {k: v[:TASKS_PER_KEY] for k, v in by_key.items()}
+        _TASKS[fam] = {k: choose(v) for k, v in by_key.items()}
     return _TASKS[fam]
 
 
@@ -180,6 +209,7 @@ class MutationCorpus(unittest.TestCase):
         self.assertEqual(len(MUTATIONS), 79)
         self.assertEqual(len(MUTATIONS_R7), 109)
         self.assertEqual(len({r[0] for r in ROWS}), len(ROWS), "a mutation id is used twice")
+        self.assertEqual(len(PARTIAL), 32, "the partial mutations: 8 x 4 more residues of sum(ord(id)) % 5")
         text = SRC.read_text()
         for mid, fam, kind, ctx, old, new in ROWS:
             self.assertNotEqual(old, new, mid)
@@ -190,6 +220,34 @@ class MutationCorpus(unittest.TestCase):
         per = collections.Counter(fam for _i, fam, *_r in MUTATIONS_R7)
         self.assertEqual(sorted(per), sorted(FAMILIES + ["head", "partial"]))
         self.assertEqual((per["head"], per["partial"]), (12, 8))
+
+    def test_the_sample_has_at_least_the_minimum_per_key_and_covers_every_code_form_of_every_key(self):
+        """Round 7, m5: a form that the sample does not render could hide a sentence that is false for it. Every value of every domain of test_rea_claims.FORM_DOMAINS
+        (the code forms that `ClaimsHold` counts) is in the sample of its key, which has TASKS_PER_KEY tasks or more."""
+        for fam in FAMILIES:
+            for key, tasks in sample(fam).items():
+                self.assertGreaterEqual(len(tasks), TASKS_PER_KEY, key)
+                self.assertEqual(len({t.id for t in tasks}), len(tasks), key)
+        seen = collections.defaultdict(set)
+        for fam in FAMILIES:
+            for tasks in sample(fam).values():
+                for t in tasks:
+                    for k, name, v in T.form_keys(t):
+                        seen[(k, name)].add(v)
+        for (k, name), domain in T.FORM_DOMAINS.items():
+            self.assertTrue(domain <= seen[(k, name)], f"{k} {name}: the sample misses {sorted(domain - seen[(k, name)], key=str)}")
+
+    def test_a_swap_of_the_rounds_and_the_multiplier_is_rejected_in_seconds(self):
+        """Round 7, m4: L5 swaps the two numbers of the LCG sentence: the rounds become 22,695,477 or 1,103,515,245 and the claim looped in Python for 7 s to 6 minutes per
+        task instead of failing. It now rejects a number outside the rounds the generator draws, with that reason, in a moment."""
+        row = next(r for r in ROWS if r[0] == "L5")
+        t0 = time.time()
+        mod = load_mutated(row[4], row[5], row[3])
+        hit = caught_by(mod, affected_renders(mod, "legacy"))
+        self.assertIsNotNone(hit)
+        self.assertEqual(hit[1], "lcg_reference")
+        self.assertIn("the rounds", hit[2])
+        self.assertLess(time.time() - t0, 30, "the claim must fail, not run for minutes")
 
     def test_the_headline_mutations_edit_headlines_only(self):
         """NHD1-NHD12: the sentences of every template are the real ones and some headline differs, so that the only way to see them is to read a headline."""

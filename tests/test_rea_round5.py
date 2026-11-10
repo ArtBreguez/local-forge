@@ -160,6 +160,19 @@ class LegacySkipZero(unittest.TestCase):
         self.assertTrue(all(not self.zero(t) for t in kept))
         self.assertIsNone(families.untrainable(families.generate("crc", 1, 7)[0], 7))
 
+    def test_the_drop_report_counts_per_template_and_warns_of_a_template_with_none_left(self):
+        """Round 7, m1: at seed 7 every `skip` task is in the held-out list (all 6 programs with b != 0x00) and `keycount` keeps only `port`: the decompile stage says so."""
+        report: dict = {}
+        kept, held = dedupe.training_tasks(["legacy"], 600, 7, report=report)
+        lines = dedupe.dropped_summary(kept, held, 1001)
+        self.assertIn("skip 51 of 51", lines[0])
+        self.assertRegex(lines[0], r"keycount \d+ of \d+")
+        self.assertEqual([ln for ln in lines[1:] if "skip" in ln], ["warning: no task of skip is left to train on: every program that its generator drew is in the held-out list"])
+        self.assertEqual([t.kind for t in kept if t.kind in ("skip",)], [], "no skip task is trained on")
+        self.assertEqual({t.truth["accept"][0] for t in kept if t.kind == "keycount"}, {"port"}, "keycount keeps one key of its eight")
+        self.assertFalse([ln for ln in lines[1:] if "keycount" in ln], "keycount keeps some tasks: no warning")
+        self.assertEqual(dedupe.dropped_summary(kept, [], 1001), [])
+
     def test_the_cli_generator_and_the_pin_are_the_frozen_ones(self):
         self.assertTrue(any(self.zero(t) for t in families.generate("legacy", 3000, 7)), "families.generate and `gen` are not filtered")
 

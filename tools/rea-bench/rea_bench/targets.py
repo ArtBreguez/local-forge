@@ -41,7 +41,7 @@ rendered a sentence and nothing tied the words of the sentence to it. The rule i
   * a sentence uses a universal word (any, every, all, always, never, only, each, none, no other, exactly) only where tests/test_rea_quantifiers.py registers the
     claim that backs it and the domain it covers (round 6, B1: "changing any byte ... makes the checksum fail" was false for Fletcher-16: a byte 0x00 -> 0xFF is not seen);
   * every edit of a template shows in tests/golden/rea_sentences.txt (every headline and sentence with a named sentinel per placeholder), and
-    tests/test_rea_claims_mutations.py applies the reviewers' false sentences, false headlines and false facts (79 + 13 of round 6, 109 of round 7: 201 edits) to a
+    tests/test_rea_claims_mutations.py applies the reviewers' false sentences, false headlines and false facts (79 + 13 of round 6, 109 of round 7, and four more residues of its 8 partial ones: 233 edits) to a
     copy of this file: the claims machinery, without the golden file, must reject each one.
 
 THE HEADLINE IS READ LIKE THE SENTENCE (round 7, M1 and B1). The first line of the stored message is rendered from the truth too, and it says things: `It writes: <s>`

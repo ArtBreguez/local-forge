@@ -243,9 +243,8 @@ def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
         print(gate.summary())
     for why, count in report.get("untrainable", {}).items():
         print(f"dropped {count} generated tasks: {why}")
-    if dropped:
-        print(f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed "
-              f"{dedupe.exclusion_seed(seed, exclude_seed)}): {', '.join(sorted({t.kind for t in dropped}))}")
+    for line in dedupe.dropped_summary(kept, dropped, dedupe.exclusion_seed(seed, exclude_seed)):
+        print(line)
     tasks = [(t.meta(), t.source(), tag) for t in kept]
     for task, _src, _tag in tasks:
         check_mode(task)

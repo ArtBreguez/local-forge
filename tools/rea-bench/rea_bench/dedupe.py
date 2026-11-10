@@ -179,6 +179,26 @@ def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed
     return drop_heldout(tasks, heldout_keys(ex)) if ex else (tasks, [])
 
 
+def dropped_summary(kept: list, dropped: list, ex_seed: int) -> list:
+    """The lines a decompile run prints about the held-out exclusion, per TEMPLATE (round 7, m1): the held-out list holds every program that a frozen legacy template can
+    draw (all 6 `skip` programs with b != 0x00, 7 of the 8 `keycount` keys), so a template can lose all of its draws. Which ones, and a warning for a template with none
+    left, so that a data set that lacks a template is not a surprise."""
+    if not dropped:
+        return []
+    def name(t) -> str:
+        m = t.meta()
+        return f"{m['kind']}/{m['variant']}" if m.get("variant") else m["kind"]
+    gen, drop = {}, {}
+    for t in kept + dropped:
+        gen[name(t)] = gen.get(name(t), 0) + 1
+    for t in dropped:
+        drop[name(t)] = drop.get(name(t), 0) + 1
+    per = ", ".join(f"{k} {c} of {gen[k]}" for k, c in sorted(drop.items()))
+    out = [f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed {ex_seed}); per template (dropped of generated): {per}"]
+    out += [f"warning: no task of {k} is left to train on: every program that its generator drew is in the held-out list" for k in sorted(drop) if drop[k] == gen[k]]
+    return out
+
+
 def drop_heldout(tasks, keys: set) -> tuple:
     """(kept, dropped) - tasks whose key is held out go to `dropped`."""
     kept, dropped = [], []
