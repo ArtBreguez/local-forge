@@ -25,6 +25,11 @@ where it is guaranteed to be visible at every cc/opt of the task AND a mechanica
 A specific algorithm is named only where the code computes exactly that reference algorithm (TEA, XTEA, RC4, ChaCha, Salsa, base64, base32,
 base58, FNV-1a, djb2, sdbm: compared with a reference implementation in tests/rea_claims.py); the legacy murmur loop is "Murmur-style".
 
+WHAT A TEMPLATE TYPES IN (round 5, m7: the old docstring said "nothing in a template is typed in as a number or as the name of an algorithm", and templates did).
+Typed in, every one of them backed by a checker of tests/rea_claims.py: the return values 1 and -1 (`proc returns 1 for ...`, `any other index gives -1`);
+`state 0` and `numbered from 0` (the questions say so); the library and OS names `ptrace`, `PTRACE_TRACEME`, `TracerPid`, `/proc/self/status`; `NUL`; the
+words `little-endian`, `32-bit`, `four bytes`, `16-bit`, `two clock readings`; the algorithm names above. Everything else a sentence says is a fact of `facts(t)`.
+
 EVERY SENTENCE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence of every key, the names of the claims
 it makes, and for every claim a function that verifies it against the task's C source and its compiled behaviour (compile and run, a Python
 reference, a parsed C constant, `_Static_assert(offsetof ...)`) over at least 200 generated tasks of every variant at two seeds. A template
