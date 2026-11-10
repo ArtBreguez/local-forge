@@ -1,4 +1,4 @@
-"""The whitelist grammar of a headline (round 3: M1, M2, M3, m2, m9).
+"""The whitelist grammar of a headline (round 3: M1, M2, M3, m2, m9; round 4: M1, M4, m2, m3, m5).
 
 Rounds 1 to 3 each found a new word that turned a wrong reply into an answer in a scorer built on a list of hedge words. This module
 does not look for bad words. It asks whether the WHOLE headline is an answer, and rejects what it cannot parse.
@@ -13,15 +13,21 @@ are gone, one trailing `. , ; : !` is removed (a `?` or `...` is not removed: it
                number in `accept`: algorithm, direction, base, technique) of one run may come in any order (`decrypt, XTEA, 32` = `XTEA,
                decrypt, 32`, `Base64 encode` = `encode, base64`); the numeric groups keep the order of `accept` (bounds lo..hi), and a
                number stays where `accept` puts it relative to the names (`32, XTEA, decrypt` is still a leftover). Spec.block numbers the runs.
+               A number ASKED IN HEX (`Spec.bases`: the question says "(hex)", a legacy task says it per group) is written `0x..` or as a bare hex with
+               a letter: a plain decimal whose hex reading is another number (`18` for 0x12) is a leftover, unless it is the parenthesised respelling
+               of the 0x form (`0x12 (18)`); a single digit reads the same in both bases.
   separator    `,` `;` `/` `:` the word `and`, whitespace, quotes, balanced parentheses.
   filler       a fixed vocabulary of function words (`the`, `is`, `with`, ...), the generic words `answer`/`result`, the question's own unit
                words (`bytes`, `rounds`, `iterations`, `states`, `ns`, ... per question, see UNITS), and, for a task with at most one
-               numeric group, the nouns that name the quantity (`offset`, `size`, `key length`, ...) in the lead-in only, before the first
-               group (after it a noun could label the wrong number: `TEA, encrypt, key 48`); nouns that describe a name (`ptrace check`,
-               `TEA cipher`) may also follow a name. `allow` phrases of the task
-               ("extended tea" for XTEA) are removed first.
+               numeric group, a noun that names the quantity (`offset`, `size`, `value`, ...) in the lead-in only, before the first group, and
+               only if the QUESTION uses the word (after a group, or for a word the question does not use, it could label the wrong number:
+               `TEA, encrypt, key 48`, `size 0x8` for an offset); nouns that describe a name (`TEA cipher`, `ptrace check`) must stand directly beside a
+               name group (glue words and parentheses between, not a comma). `hex`/`hexadecimal` only beside a `0x` number or a bare hex with a
+               letter, `decimal` only beside plain digits. `returns`/`return value` only where the question asks what proc returns, right before the
+               number that is that value. `allow` phrases of the task ("extended tea" for XTEA, "main loop" where the question says it) are removed first.
   context      `128-bit`, `(88 bits)`, `CRC-32`: only where the question itself states that quantity (the key width, the block size, the CRC
-               width) or, for a byte count, eight times a group's value; never as a hit for a group, never as a free pass.
+               width) or, for a byte count, eight times a group's value; never as a hit for a group, never as a free pass; and with the label the
+               question gives it (`128-bit key`, `8-byte block`: `128-bit block` and `32-bit key` are leftovers).
   bounds       a task with two numeric groups that is a closed interval (`bounds` family, legacy `threshold`) also takes `lo to hi`,
                `lo..hi`, `lo-hi`, `[lo, hi]`, `from lo to hi`, `lo <= x <= hi`, `lowest lo, highest hi`, a trailing `inclusive`. Nothing
                exclusive: `<`, `>`, `(lo, hi)`, `[lo, hi)`, `between`, `exclusive`, `strictly`, `than` are not in the vocabulary.
@@ -29,9 +35,11 @@ are gone, one trailing `. , ; : !` is removed (a `?` or `...` is not removed: it
 Everything else is a leftover and rejects: any other word (`not`, `or`, `at least`, `unknown`, `except`, a second name, a number word that is not
 the key), operator, symbol or number. A number is a hit only where it is a group's value, so `40, forty-one`, `≠ 40`, `at least 40`,
 `(1570, 1751)` and `CRC-40` fail for the same reason: something is left over. The price is yield: a headline with a clause after the
-answer is rejected. Poison is not acceptable, yield is.
+answer is rejected. Poison is not acceptable, yield is. Digit separators are the C23 groups only (`1'000`, `1_000`, `0xdead'beef`); a run of more
+than MAX_DIGITS digits is not a number (and cannot crash the conversion).
 
-Exact-string keys (`exact_case`, `exact_head`) are compared as a whole after the same normalisation (`is_exact_answer`).
+Exact-string keys (`exact_case`, `exact_head`) are compared byte for byte (`is_exact_answer`): no normalisation, quotes and one trailing mark are stripped, and a
+lead-in must END in a colon, `=` or one of a closed list of verbs (`is`, `writes`, `reads`, `prints`, `decodes to`).
 """
 from __future__ import annotations
 

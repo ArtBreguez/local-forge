@@ -14,11 +14,12 @@ import unittest
 from unittest import mock
 
 from .helpers import ROOT
+from .rea_tasks import meta as real_task, right
 
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, dedupe, families, outputs, scoring, sft  # noqa: E402
+from rea_bench import core, dedupe, families, outputs, scoring, sft, targets  # noqa: E402
 
 
 class ModalCase(unittest.TestCase):
@@ -57,28 +58,29 @@ class ModalCase(unittest.TestCase):
 
 
 class SampleSelection(unittest.TestCase):
-    def test_the_stored_target_is_cut_and_a_contradiction_is_not_stored(self):
-        t = {"id": "s-1", "kind": "structs", "score": "tokens", "accept": [core.hx(8)], "chance": 0.07}
+    def test_the_stored_target_is_rendered_from_the_truth_and_a_contradiction_is_not_stored(self):
+        t = real_task("structs", "linked_next", chance=0.07)
+        k = right(t)
         msgs = lambda task: [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
-        results = {"s-1": {"outs": [["0x8\nThe pointer is at 0x8. Wait, actually it moves.\nMore text.", True], ["0x8\nIt is the next field. And another sentence.", True],
-                                    ["0x8\nWait, actually 0x70 in some builds of the code.", True], ["0x8\nWait, actually 0x70.", True], ["0x10", False]]}}
+        results = {t["id"]: {"outs": [[f"{k}\nThe pointer is at {k}. Wait, actually it moves.\nMore text.", True], [f"{k}\nIt is the next field. And another sentence.", True],
+                                      [f"{k}\nWait, actually 0x70 in some builds of the code.", True], [f"{k}\nWait, actually 0x70.", True], [f"0x{int(k, 16) + 0x40:x}", False]]}}
         kept, stats = sft.assemble([t], results, "m", msgs)
-        self.assertEqual([r["messages"][-1]["content"] for r in kept], ["0x8\nThe pointer is at 0x8.", "0x8\nIt is the next field.", "0x8"],
-                         "a justification that contradicts itself is dropped and the headline alone is stored; a second line that is no sentence makes a list")
-        self.assertEqual([r["sentence_dropped"] for r in kept], [False, False, True])
-        self.assertTrue(all(r["truncated"] for r in kept))
-        self.assertEqual((stats["correct"], stats["kept_records"], stats["truncated"], stats["sentence_dropped"]), (3, 3, 3, 1))
+        want = targets.render(t)["text"]
+        self.assertEqual([r["messages"][-1]["content"] for r in kept], [want], "one record per task, whatever the teacher wrote after the headline")
+        self.assertEqual((kept[0]["teacher_headline"], kept[0]["target_source"]), (k, "truth-template"))
+        self.assertEqual((stats["correct"], stats["kept_records"]), (3, 1), "a second line that is no sentence makes a list: that reply is not an answer")
         self.assertEqual(stats["by_kind"]["structs"]["kept_tasks"], 1)
 
     def test_high_chance_tasks_need_two_right_samples(self):
-        easy = {"id": "c-1", "kind": "crc", "score": "tokens", "accept": [core.hx(0xffff, 4)], "chance": 0.55}
+        easy = real_task("crc", "bitwise_init", chance=0.55)
+        ok = right(easy)
         msgs = lambda task: []
-        kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0x0", False], ["0x1", False]]}}, "m", msgs)
+        kept, st = sft.assemble([easy], {easy["id"]: {"outs": [[ok, True], ["0x6", False], ["0x7", False]]}}, "m", msgs)
         self.assertEqual((kept, st["agreement"]), ([], 1))
-        kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0xffff", True], ["0x1", False]]}}, "m", msgs)
-        self.assertEqual((len(kept), st["agreement"]), (1, 0), "two identical stored texts are one record")
-        kept, st = sft.assemble([easy], {"c-1": {"outs": [["0xffff", True], ["0xffff\nIt is the all-ones init of the register.", True]]}}, "m", msgs)
-        self.assertEqual(len(kept), 2)
+        kept, st = sft.assemble([easy], {easy["id"]: {"outs": [[ok, True], [ok, True], ["0x7", False]]}}, "m", msgs)
+        self.assertEqual((len(kept), st["agreement"]), (1, 0), "two agreeing samples are one record")
+        kept, st = sft.assemble([easy], {easy["id"]: {"outs": [[ok, True], [f"{ok}\nIt is the all-ones init of the register.", True]]}}, "m", msgs)
+        self.assertEqual(len(kept), 1)
 
 
 class Robustness(ModalCase):
@@ -153,8 +155,8 @@ class Robustness(ModalCase):
             self.assertEqual(outputs.load_partial(p, True), {})
 
     def test_stats_come_per_family_and_the_resume_flag_reaches_the_sampler(self):
-        stats = {"tasks": 3, "answers": 6, "correct": 2, "solved_tasks": 1, "kept_tasks": 1, "kept_records": 1, "agreement": 1, "vetoed": 0,
-                 "by_kind": {"crc": {"tasks": 2, "solved_tasks": 1, "kept_tasks": 1, "agreement": 1, "vetoed": 0}}}
+        stats = {"tasks": 3, "answers": 6, "correct": 2, "solved_tasks": 1, "kept_tasks": 1, "kept_records": 1, "agreement": 1,
+                 "by_kind": {"crc": {"tasks": 2, "solved_tasks": 1, "kept_tasks": 1, "agreement": 1}}}
         with tempfile.TemporaryDirectory() as d:
             remote, _ = self.run_main(pathlib.Path(d), stage="sample", model=self.data.MODELS[0][0], seed=7, family="crc", resume=True,
                                       remote_result={"sft": [{"task": "x"}], "stats": stats})
@@ -274,10 +276,10 @@ class Round3Pipeline(ModalCase):
         self.assertFalse(scoring.is_error_reply("0x0a"))
 
     def test_b1_errors_are_counted_per_family_and_a_dead_server_is_loud(self):
-        t = {"id": "a", "kind": "crc", "score": "tokens", "accept": [["1"]], "chance": 0.01}
-        u = {"id": "b", "kind": "bounds", "score": "tokens", "accept": [["1"]], "chance": 0.01}
+        t = real_task("crc", "bitwise_init", chance=0.01)
+        u = real_task("bounds", "char_class", chance=0.01)
         st = sft.Stats()
-        for task, outs in ((t, [(self.ERRORS[0], True), ("1", True), ("2", False)]), (u, [("1", True), ("1", True), ("1", True)])):
+        for task, outs in ((t, [(self.ERRORS[0], True), (right(t), True), ("0x7", False)]), (u, [(right(u), True), (right(u), True), (right(u), True)])):
             st.add(task, outs, *sft.select(outs, task))
         d = st.as_dict()
         self.assertEqual((d["errors"], d["answers"], d["correct"]), (1, 6, 4))

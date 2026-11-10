@@ -6,14 +6,17 @@ one stripped with the task's own compiler and -O level (`cc` and `opt` in its JS
 compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled.
     modal run tools/modal/modal_rea_data.py --stage decompile --n 300 [--family legacy|all|crc,cipher,...] [--cc mix|gcc|clang]
         [--exclude-seed 1001 (default for any other seed; 0 = none)] [--force]
-Stage 2 (GPU): an uncensored model answers each task K times at T=0.7; only answers whose HEADLINE parses completely as the task's answer
-(the whitelist grammar, rea_bench.scoring.score_strict, for EVERY family including legacy) are kept, and what is stored is the headline plus
-at most one justification sentence (the rest is cut off, `truncated: true`; a sentence that holds another number or name, or hesitates, is
-dropped, `sentence_dropped: true`, and the headline is stored alone; rea_bench.sft). A failed request (`[error ...]`) is never scored or stored
-and is counted per family; more than 5% of failed requests prints a warning. A task whose chance level is 0.1 or more (the best constant guess
-within its variant: CRC init and xorout, pktsum, fsm, TEA/XTEA, ChaCha/Salsa, several structs) is kept only when at least 2 of the K samples
-are right; every reply is scored again at the end, so a `--resume` never keeps the verdict of an older scorer. The stage checkpoints every
-task on the volume (`--resume` continues a run that timed out) and reports yield per family in `.stats.json`. The held-out seed 1001 is
+Stage 2 (GPU): an uncensored model answers each task K times at T=0.7. The model is a FILTER, not the author of the data (round 4): a task
+enters the data only when the HEADLINE of a reply parses completely as the task's answer (the whitelist grammar, rea_bench.scoring.score_strict,
+for EVERY family including legacy), which proves the task is answerable from the pseudocode. What is STORED is never the model's text: the assistant
+message is rendered from the task's own truth (rea_bench.targets: the canonical headline and one factual sentence from a per-variant set of 3-6
+phrasings, chosen by a seeded RNG from the task id); the record keeps `teacher_headline` (the model's raw headline, for analysis only) and
+`target_source: "truth-template"`. Free prose repeatedly carried a wrong fact past every filter, so none of it is stored. A failed request
+(`[error ...]`) is never scored or stored and is counted per family; more than 5% of failed requests prints a warning.
+A task whose chance level is 0.05 or more (the best constant guess within its variant: CRC, pktsum, fsm, TEA/XTEA,
+ChaCha/Salsa, several structs, legacy skip) is kept only when at least 2 of the K samples are right; every reply is scored again at the end,
+so a `--resume` never keeps the verdict of an older scorer. The stage checkpoints every task on the volume (`--resume` continues a run that timed
+out) and reports yield per family in `.stats.json`. The held-out seed 1001 is
 never sampled (the stage refuses it). Output: SFT pairs in results/phase6/rea-data/.
     modal run tools/modal/modal_rea_data.py --stage sample --model <name> [--seed 7 --family legacy] [--k 6] [--resume] [--force]
 A seed-1001 decompile run (the held-out split) may ask for at most 120 tasks per family: the list that keeps them out of training covers 120.
@@ -47,7 +50,7 @@ if (RB / "rea_bench").is_dir():
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
 from rea_bench import dedupe, families, outputs, sft, survive  # noqa: E402  (stdlib-only)
-from rea_bench.scoring import check_mode, score_strict  # noqa: E402  (stdlib-only, unit-tested without Modal; NOT modal_rea.py's evaluation scorer)
+from rea_bench.scoring import check_mode, check_target, score_strict  # noqa: E402  (stdlib-only, unit-tested without Modal; NOT modal_rea.py's evaluation scorer)
 
 image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
 app = modal.App("lf-rea-data", image=image)
@@ -145,6 +148,7 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
         raise SystemExit(f"no decompiled tasks in {src_dir} on the volume (run --stage decompile with the same --seed and --family first)")
     for t in tasks:
         check_mode(t)       # an unknown score mode must stop the run before the model download and the server start
+        check_target(t)     # so must a task without a truth template, or one whose rendered target its own scorer rejects
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, tag)}.partial.jsonl")
     results = outputs.load_partial(partial, resume)
     todo = [t for t in tasks if t["id"] not in results]
@@ -270,10 +274,10 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         outputs.write_atomic(out, (json.dumps(r) for r in res["sft"]))
         stats.write_text(json.dumps(res["stats"], indent=1))
         s = res["stats"]
-        print(name, tag, {f: s.get(f) for f in ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "agreement", "sentence_dropped")}, "->", out)
+        print(name, tag, {f: s.get(f) for f in ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "agreement")}, "->", out)
         warning = sft.error_warning(s)
         if warning:
             print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
         for kind, row in s.get("by_kind", {}).items():
             print(f"  {kind:10s} {row['solved_tasks']:4d}/{row['tasks']:<4d} solved, {row['kept_tasks']:4d} kept ({row['agreement']} dropped for lack of "
-                  f"agreement, {row.get('sentence_dropped', 0)} sentences dropped, {row.get('errors', 0)} failed requests)")
+                  f"agreement, {row.get('errors', 0)} failed requests)")

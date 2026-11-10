@@ -20,16 +20,18 @@ Headline modes (the generated families, and every family on the data path):
                     `allow` phrases and a short vocabulary of function words around them.
                     Anything else is a leftover and rejects: any other word, operator, symbol or number, however it is spelled.
                     Bounds take `lo to hi`, `lo..hi`, `[lo, hi]`, `lo <= x <= hi` and nothing exclusive.
-  exact_case        the whole headline is the key: after quotes, backticks, markdown, a short lead-in phrase ("The string is",
-  exact_head        "Alphabet:") and one trailing mark nothing but the key is left. Case and spaces are significant.
+  exact_case        the whole headline is the key, byte for byte: after quotes, backticks, markdown, a lead-in that ends in a colon or one of
+  exact_head        `is`/`writes`/`reads`/`prints`/`decodes to` ("The string is", "Alphabet:") and one trailing mark nothing but the key is left.
+                    The reply is not normalised: case, spacing and every character are significant.
 
-The headline (`parse_reply`): the first answer line (markdown removed, fences skipped; a bare lead-in line such as "Answer:" is skipped); if it
+The headline (`parse_reply`): the first answer line (markdown removed, fences skipped; a bare lead-in line made of function words and the question's own
+words, such as "Answer:", is skipped); if it
 holds several sentences the first one is the headline. What follows must be prose (a sentence of 4+ words): a second answer-shaped line
 ("K\\nW", a code block with two values, "Candidates:\\n...") makes the reply a list and rejects it.
 
-What is stored as an SFT target is the headline and at most ONE justification sentence (`sft_target`). A sentence that holds a number,
-name or string of the key's shape that is not the key's own spelling or a value the question itself states, or a hesitation word, is
-DROPPED, not stored (`sentence_dropped: true`): the headline alone is stored. The stored text always scores True itself.
+What is stored as an SFT target is NEVER the teacher's text (round 4): the teacher's headline is a filter (`accepted_headline`: does it parse as the
+task's answer?), and `sft_target` returns the target rendered from the task's own truth (targets.py: the canonical headline and one factual
+sentence of a per-variant template set). The raw headline of the teacher is returned as `teacher_headline`, for analysis only.
 """
 from __future__ import annotations
 
@@ -136,15 +138,6 @@ _MD_LEAD = re.compile(r"^\s*(?:#{1,6}\s+|•\s*|[-*+]\s+(?![\d-]))+")
 _SEPARATOR = re.compile(r"[-_=~\s]*")
 _FENCE = re.compile(r"^\s*(?:```|~~~)")
 
-# Words of a justification sentence that make it unusable beside the headline: hesitation, hedging, negation, contrast. Only used to DROP
-# a sentence (the headline is judged by the grammar, which has no list of bad words).
-HEDGE = re.compile(r"\b(?:or|either|nor|not|no|never|neither|cannot|instead|rather\s+than|vs|versus|maybe|perhaps|possibly|probably|likely|"
-                   r"unlikely|might|could|unsure|presumably|unlike|although|though|whereas|otherwise|alternatively|except|wrong|incorrect|"
-                   r"false)\b|n't\b", re.I)
-HESITATION = re.compile(r"\b(?:wait|actually|correction|however|hmm+|oops|sorry|mistake|scratch\s+that|on\s+second\s+thought|let\s+me|"
-                        r"re-?check|re-?compute|re-?evaluate|but)\b", re.I)
-UNCERTAIN = re.compile(r"\b(?:maybe|perhaps|possibly|probably|likely|might|could|guess|unsure|not\s+sure|i\s+think|i\s+believe)\b", re.I)
-
 _JUSTIFICATION_LEAD = frozenset("justification reason reasoning explanation because why note notes rationale".split())
 
 
@@ -208,16 +201,6 @@ def _boundary(text: str):
             continue
         return m.end()
     return None
-
-
-MAX_SENTENCE = 400
-
-
-def _first_sentence(text: str) -> tuple:
-    """(first sentence, rest). No sure end in the text: the whole text is the sentence (a reply that does not punctuate)."""
-    text = text.strip()
-    b = _boundary(text)
-    return (text, "") if b is None else (text[:b].strip(), text[b:].strip())
 
 
 class Reply(NamedTuple):
@@ -312,108 +295,39 @@ def score_any_line(answer: str, t: dict) -> bool:
 
 # ---- what is stored ----------------------------------------------------------------------------------------------------------
 
-def _is_hexlike(tok: str) -> bool:
-    """A bare hex constant: 2+ hex digits with a letter and a digit (3f, edb88320). Plain words never look like this."""
-    return len(tok) >= 2 and re.fullmatch(r"[0-9a-f]+", tok) is not None and re.search(r"[a-f]", tok) is not None and re.search(r"\d", tok) is not None
-
-
-def _sentence_values_ok(sentence: str, t: dict) -> bool:
-    """A justification of a `tokens` task holds no number except the key's own values and the numbers the question itself states, no
-    name of the family's vocabulary (`reject`) and no other string of the key's shape (`cand`, a bare hex constant, a word with digits)."""
-    sp = Spec(t)
-    reject = {r.lower() for r in t.get("reject", [])}
-    shape = re.compile(t["cand"]) if t.get("cand") else None
-    qtoks = set(re.findall(r"[a-z0-9_]+(?:-[a-z0-9_]+)*", t.get("question", "").lower()))
-    toks = lex(grammar._blank(normalise(sentence).lower(), sp.allow))
-    allowed = sp.values | sp.q_numbers
-    for i, tok in enumerate(toks):
-        if tok.kind == "num":
-            nxt = toks[i + 1] if i + 1 < len(toks) else None
-            if tok.val in allowed or (nxt is not None and nxt.text in ("bit", "bits") and tok.val in sp.bits_ok):
-                continue
-            return False
-        if tok.kind == "ctx":
-            if not grammar._ctx_ok(tok, sp):
-                return False
-            continue
-        if tok.kind != "word":
-            continue
-        w = tok.text
-        if w in reject:
-            return False
-        if w in sp.literals or w in qtoks:
-            continue
-        if re.search(r"\d", w) or _is_hexlike(w) or (shape is not None and shape.fullmatch(w)):
-            return False
-    return True
-
-
-def _edit_distance(a: str, b: str) -> int:
-    prev = list(range(len(b) + 1))
-    for i, ca in enumerate(a, 1):
-        cur = [i]
-        for j, cb in enumerate(b, 1):
-            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
-        prev = cur
-    return prev[-1]
-
-
-def _sentence_strings_ok(sentence: str, t: dict) -> bool:
-    """A justification of an exact-string task: after the key's own spelling is taken out, no token with a digit, a path or identifier
-    separator (`_ / \\ @ : . -` between characters) and no near copy of the key (`retriex` for `retries`): those are strings of the key's
-    shape, the second candidate of round 3's m2."""
-    text = normalise(sentence)
-    for k in sorted(t["accept"], key=len, reverse=True):
-        text = text.replace(k, " ")
-    text = re.sub(r"\b(?:e\.g\.|i\.e\.|etc\.|vs\.)", " ", text, flags=re.I)
-    keys = [k.lower() for k in t["accept"] if len(k) >= 4 and " " not in k]
-    for w in text.split():
-        w = w.strip(".,;:!?()\"'`*[]<>")
-        if w and (re.search(r"\d", w) or re.search(r"[_/\\@]", w) or re.search(r"[A-Za-z0-9][.:-][A-Za-z0-9]", w)):
-            return False
-        if any(0 < _edit_distance(w.lower(), k) <= (1 if len(k) <= 6 else 2) for k in keys):
-            return False
-    return True
-
-
-def justification_ok(sentence: str, t: dict) -> bool:
-    """May this sentence be stored next to a right headline? It must be one balanced sentence without hesitation, hedging or negation words
-    (see HEDGE, HESITATION, UNCERTAIN) and without a number, name or string of the key's shape other than the key's own spellings and the
-    values the question states. If not, `sft_target` drops it and stores the headline alone."""
-    t = strict_task(t)
-    s = normalise(sentence)
-    if HESITATION.search(s) or HEDGE.search(s) or UNCERTAIN.search(s):
-        return False
-    if s.count("(") != s.count(")") or s.count('"') % 2 or s.count("`") % 2:
-        return False
-    return _sentence_values_ok(s, t) if t["score"] == "tokens" else _sentence_strings_ok(s, t)
-
-
-def sft_target(reply: str, t: dict):
-    """The text to store for a reply: its headline (with the lead-in line it had, if any) and at most one justification sentence.
-    {"text", "headline", "sentence", "truncated", "sentence_dropped"}; None when the reply is not an answer: no headline, a headline that
-    does not parse as the task's answer (every family, legacy included: `strict_task`), or the text of a failed request. A justification
-    that is not storable is dropped (`sentence_dropped`), the headline stays. `truncated`: the reply had text that was not stored. The text
-    always scores True itself."""
+def accepted_headline(reply: str, t: dict):
+    """The teacher's headline (raw, markdown removed) when the data scorer accepts it as the task's answer, else None: no headline, a headline that
+    does not parse as the answer (every family, legacy included: `strict_task`), or the text of a failed request. This is the FILTER of the sample
+    stage; nothing of the reply is stored."""
     check_mode(t)
     if is_error_reply(reply):
         return None
     s = strict_task(t)
     r = parse_reply(reply, s)
-    if r is None or not _headline_ok(r.head, s):
+    return r.head if r is not None and _headline_ok(r.head, s) else None
+
+
+def check_target(t: dict) -> None:
+    """Fail fast on a task whose truth template is missing or renders a text its own scorer rejects (a GPU run must not find that out at the end)."""
+    from . import targets
+    r = targets.render(t)
+    if not score_strict(r["text"], t):
+        raise ValueError(f"the truth template of task {t.get('id', '?')} ({r['key']}) renders a text that score_strict rejects: {r['text']!r}")
+
+
+def sft_target(reply: str, t: dict):
+    """The target to store for a reply, or None when the reply is not an answer (see accepted_headline). The text is RENDERED FROM THE TRUTH
+    (targets.render): the canonical headline and one factual sentence; nothing of the reply is in it. {"text", "headline", "sentence", "template",
+    "teacher_headline", "target_source"}; `teacher_headline` is the raw headline of the reply, kept for analysis only."""
+    from . import targets
+    head = accepted_headline(reply, t)
+    if head is None:
         return None
-    rest = " ".join(r.pieces).strip()
-    sentence, more, dropped = "", rest, False
-    if rest:
-        sent, more = _first_sentence(rest)
-        if len(sent) > MAX_SENTENCE or not _is_prose(sent) or not justification_ok(sent, s):          # a stored line that is no sentence would read as a list
-            dropped, more = True, rest
-        else:
-            sentence = sent
-    text = "\n".join([x for x in (r.lead, r.head, sentence) if x])
-    if not score_strict(text, t):
-        return None
-    return {"text": text, "headline": r.head, "sentence": sentence, "truncated": bool(more.strip()), "sentence_dropped": dropped}
+    r = targets.render(t)
+    if not score_strict(r["text"], t):
+        raise ValueError(f"the truth template of task {t.get('id', '?')} ({r['key']}) renders a text that score_strict rejects: {r['text']!r}")
+    return {"text": r["text"], "headline": r["headline"], "sentence": r["sentence"], "template": r["template"], "teacher_headline": head,
+            "target_source": targets.TARGET_SOURCE}
 
 
 def canonical(t: dict) -> str:

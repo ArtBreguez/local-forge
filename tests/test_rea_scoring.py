@@ -1,4 +1,5 @@
-"""The scorer after round 3: the whitelist grammar (M1, M2, M3, m2, m9), the stored target (m1), the data path against the evaluation path (m10).
+"""The scorer after round 3: the whitelist grammar (M1, M2, M3, m2, m9), the data path against the evaluation path (m10); round 4: the stored target
+is rendered from the truth, the teacher's reply is only a filter (B2).
 
 Earlier rounds' attack scripts are in `tests/rea_attack_matrix.py` (round 2: right and wrong formats, plus the "yield" class of right
 answers the grammar does not parse) and `tests/rea_attacks_r3.py` (round 3: the reviewer's rows, which must all be rejected); the property
@@ -12,10 +13,15 @@ import unittest
 from . import rea_attack_matrix as am
 from . import rea_attacks_r3 as ra
 from .helpers import ROOT
+from .rea_tasks import meta as real_task, right
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import core, families, scoring, sft  # noqa: E402
+from rea_bench import core, families, scoring, sft, targets  # noqa: E402
+
+
+def wrong_of(k: str) -> str:
+    return f"0x{int(k, 16) + 0x40:x}"
 
 
 def task(fam: str, variant: str, seed: int = 99, n: int = 40):
@@ -108,11 +114,13 @@ class HeadlineRule(unittest.TestCase):
         self.assertEqual(scoring.headline("40. The stride of the array is 40 bytes."), "40.")
         self.assertEqual(scoring.headline("0x8\n0x10"), "", "no headline: the reply is a list")
 
-    def test_the_text_after_the_first_sentence_of_the_line_is_the_justification(self):
-        t = {"score": "tokens", "accept": [core.hx(8)]}
-        r = scoring.sft_target("0x8. The next pointer is read at offset 0x8 of the node.", t)
-        self.assertEqual((r["headline"], r["sentence"]), ("0x8.", "The next pointer is read at offset 0x8 of the node."))
-        self.assertIsNone(scoring.sft_target("0x8. Or maybe 0x10.", t), "a short second sentence is a second candidate, not a justification")
+    def test_the_first_sentence_of_the_line_is_the_headline_and_a_second_candidate_is_a_list(self):
+        t = real_task("structs", "linked_next")
+        k = t["accept"][0][0]
+        self.assertEqual(scoring.accepted_headline(f"{k}. The next pointer is read at offset {k} of the node.", t), f"{k}.")
+        r = scoring.sft_target(f"{k}. The next pointer is read at offset {k} of the node.", t)
+        self.assertEqual((r["teacher_headline"], r["text"]), (f"{k}.", targets.render(t)["text"]), "the stored text is the template, not the reply")
+        self.assertIsNone(scoring.sft_target(f"{k}. Or maybe {wrong_of(k)}.", t), "a short second sentence is a second candidate: the reply is a list")
 
     def test_the_any_line_control_is_format_insensitive_and_never_stricter(self):
         t = {"score": "tokens", "accept": [core.dec(32)]}
@@ -157,90 +165,57 @@ class HeadlineRule(unittest.TestCase):
 
 
 class StoredTarget(unittest.TestCase):
-    """What is stored is the headline and at most one justification sentence; a sentence that is not safe is dropped, never stored."""
+    """Round 4: nothing of the reply is stored. The teacher's headline is a filter; the text comes from the truth (targets.render)."""
 
     def setUp(self):
-        self.t = {"score": "tokens", "accept": [core.hx(8)], "kind": "structs", "question": "At which byte offset (hex, like 0x1c) of the node is the pointer?"}
+        self.t = real_task("structs", "linked_next")
+        self.k = self.t["accept"][0][0]
+        self.want = targets.render(self.t)["text"]
 
     def test_the_reviewers_contradiction_is_not_stored(self):
-        self.assertTrue(scoring.score("0x8\nWait, actually the next pointer is at 0x70.", self.t), "the headline alone is right")
-        r = scoring.sft_target("0x8\nWait, actually the next pointer is at 0x70.", self.t)
-        self.assertEqual((r["text"], r["sentence"], r["sentence_dropped"]), ("0x8", "", True))
+        self.assertTrue(scoring.score(f"{self.k}\nWait, actually the next pointer is at 0x70.", self.t), "the headline alone is right")
+        r = scoring.sft_target(f"{self.k}\nWait, actually the next pointer is at 0x70.", self.t)
+        self.assertEqual((r["text"], r["teacher_headline"], r["target_source"]), (self.want, self.k, "truth-template"))
+        self.assertNotIn("0x70", r["text"])
+        self.assertNotIn("sentence_dropped", r)
 
-    def test_truncation_keeps_headline_and_first_sentence(self):
-        r = scoring.sft_target("**0x8**\n\nThe next pointer is read at offset 0x8. It then follows the pointer. The loop ends at NULL.", self.t)
-        self.assertEqual(r["text"], "0x8\nThe next pointer is read at offset 0x8.")
-        self.assertTrue(r["truncated"] and not r["sentence_dropped"])
-        r = scoring.sft_target("0x8\nThe next pointer is read at offset 0x8.", self.t)
-        self.assertFalse(r["truncated"])
-        self.assertEqual(scoring.sft_target("0x8", self.t)["text"], "0x8")
-        self.assertEqual(scoring.sft_target("Answer:\n0x8\nIt is the first field of the node.", self.t)["text"], "Answer:\n0x8\nIt is the first field of the node.")
-        self.assertEqual(scoring.sft_target("0x8\n- It is the first field of the node.\n- It is read once.", self.t)["text"], "0x8\nIt is the first field of the node.")
-        self.assertEqual(scoring.sft_target("0x8\nThe loop, e.g. in the second block, reads it. More text.", self.t)["sentence"], "The loop, e.g. in the second block, reads it.")
+    def test_whatever_follows_the_headline_the_stored_text_is_the_same(self):
+        bodies = ("The next pointer is read at offset 0x8. It then follows the pointer. The loop ends at NULL.", "It is the first field of the node.",
+                  "The next pointer is at 0x70 in the node.", "It is stored at offset 0x8, not at the offset 0x10.", "It is 0x8 or maybe 0x10 in the node.",
+                  "However the field after it is at 12 in the node.", "Hmm, that is the tag of the node.", "It cannot be 0x8 for a packed struct.",
+                  "The struct is 8-byte aligned (x86-64) on this target.", "One field comes first and the pointer follows it.", "Offset is 0x8 (approx. the second word) of the node.",
+                  "He says \"it is 0x8.\" Then it moves on. And more.", "It is a doubly linked list so this is the prev pointer.", "This is the size of the struct.")
+        for body in bodies:
+            for reply in (f"{self.k}\n{body}", f"**{self.k}**\n\n{body}", f"Answer:\n{self.k}\n{body}", f"{self.k}\n- {body}\n- It is read once."):
+                r = scoring.sft_target(reply, self.t)
+                self.assertIsNotNone(r, reply)
+                self.assertEqual(r["text"], self.want, reply)
+                self.assertEqual(r["teacher_headline"], self.k)
+                self.assertNotIn(body, r["text"])
+        self.assertEqual(scoring.sft_target(self.k, self.t)["text"], self.want, "a bare headline is enough")
 
-    def test_a_justification_with_a_foreign_number_name_or_hesitation_is_dropped(self):
-        for body in ("The next pointer is at 0x70 in the node.", "It is stored at offset 0x8, not at the offset 0x10.", "It is 0x8 or maybe 0x10 in the node.",
-                     "However the field after it is at 12 in the node.", "The first guess was 0x4 but the code reads 0x8.", "Hmm, that is the tag of the node.",
-                     "Correction: it is at 0x8 in the node.", "It cannot be 0x8 for a packed struct.", "The struct is 8-byte aligned (x86-64) on this target.",
-                     "One field comes first and the pointer follows it."):
-            r = scoring.sft_target(f"0x8\n{body}", self.t)
-            self.assertIsNotNone(r, body)
-            self.assertEqual((r["text"], r["sentence_dropped"]), ("0x8", True), body)
-        for body in ("The next pointer sits after the tag of the node.", "It is the field read through p->next, at 0x8 in the struct.",
-                     "The pointer that proc follows to reach the next node is read from the second word."):
-            r = scoring.sft_target(f"0x8\n{body}", self.t)
-            self.assertIsNotNone(r, body)
-            self.assertFalse(r["sentence_dropped"], body)
+    def test_the_reply_is_only_a_filter(self):
+        wrong = f"0x{int(self.k, 16) + 0x40:x}"
+        for reply in (f"{wrong}\nThe next pointer is at {self.k}.", wrong, f"I think it is {self.k} but maybe not.", "Answer:", "", f"{self.k} or {wrong}", f"not {self.k}", "[error TimeoutError('x')]"):
+            self.assertIsNone(scoring.sft_target(reply, self.t), reply)
+            self.assertIsNone(scoring.accepted_headline(reply, self.t), reply)
 
     def test_names_and_strings(self):
-        xtea = {"score": "tokens", "accept": [["xtea"], ["encrypt"], core.dec(32)], "reject": ["tea", "xxtea", "aes"], "allow": ["extended tea"], "kind": "cipher",
-                "variant": "xtea_enc", "question": "This function transforms an 8-byte block with a 128-bit key: which cipher, direction and how many iterations"}
-        self.assertFalse(scoring.sft_target("XTEA, encrypt, 32\nIt is the eXtended TEA with a key-dependent index of the sum.", xtea)["sentence_dropped"])
-        self.assertTrue(scoring.sft_target("XTEA, encrypt, 32\nUnlike TEA it indexes the key with the sum of the delta.", xtea)["sentence_dropped"])
-        self.assertTrue(scoring.sft_target("XTEA, encrypt, 32\nIt uses the constant 0x9e3779b9 in every round of the loop.", xtea)["sentence_dropped"], "another number")
-        self.assertFalse(scoring.sft_target("XTEA, encrypt, 32\nThe loop runs 32 times over a 128-bit key and an 8-byte block.", xtea)["sentence_dropped"])
-        exact = {"score": "exact_head", "accept": ["admin_login42"], "kind": "strobf"}
-        self.assertFalse(scoring.sft_target("admin_login42\nEach byte is XORed with a constant before it is stored.", exact)["sentence_dropped"])
-        self.assertTrue(scoring.sft_target("admin_login42\nEach byte is XORed with 0x37 before it is stored.", exact)["sentence_dropped"])
-        self.assertTrue(scoring.sft_target("admin_login42\nIt could also read admin_login43 in a variant.", exact)["sentence_dropped"])
-        self.assertTrue(scoring.sft_target("admin_login42\nThe string is built from admin and login, i.e. admin.login42 in the end.", exact)["sentence_dropped"])
-        self.assertIsNone(scoring.sft_target("nope\nadmin_login42", exact))
+        xtea = real_task("cipher", "xtea_enc")
+        n = xtea["accept"][2][0]
+        want = targets.render(xtea)["text"]
+        for body in ("It is the eXtended TEA with a key-dependent index of the sum.", "Unlike TEA it indexes the key with the sum of the delta.", "It decrypts the data.",
+                     "It uses the constant 0x9e3779b9 in every round of the loop.", "The loop runs 128 times over a 64-bit key and a 128-bit block."):
+            self.assertEqual(scoring.sft_target(f"XTEA, encrypt, {n}\n{body}", xtea)["text"], want, body)
+        exact = real_task("strobf", "xor_const")
+        key = exact["accept"][0]
+        want = targets.render(exact)["text"]
+        for body in ("Each byte is XORed with 0x37 before it is stored.", f"It could also read {key[:-1]}x in a variant.", "The string is built from two words, i.e. a.b in the end."):
+            self.assertEqual(scoring.sft_target(f"{key}\n{body}", exact)["text"], want, body)
+        self.assertIsNone(scoring.sft_target(f"nope\n{key}", exact))
+        self.assertIsNone(scoring.sft_target(f"secret {key}", exact), "a noun in front of the key is a different string")
 
-    def test_m2_exact_keys_without_a_separator_and_a_lead_in_over_two_candidates(self):
-        key = {"score": "exact_head", "accept": ["adminlogin42"], "kind": "strobf"}
-        for body in ("The buffer then holds adminlogin4x after the loop.", "It may start with adminlogon42 in some builds."):
-            self.assertTrue(scoring.sft_target(f"adminlogin42\n{body}", key)["sentence_dropped"], body)
-        word = {"score": "exact_head", "accept": ["retries"], "kind": "keycount"}
-        self.assertTrue(scoring.sft_target("retries\nThe buffer then holds retriex after the loop.", word)["sentence_dropped"], "a near copy of a plain-word key")
-        self.assertFalse(scoring.sft_target("retries\nThe function counts the lines that start with this key.", word)["sentence_dropped"])
-        url = {"score": "exact_head", "accept": ["http://login.local/driver"], "kind": "strobf"}
-        self.assertFalse(scoring.score("Answer:\nhttp://login.local/driver\nhttp://login.local/drivex", url), "the second candidate has four alphabetic runs and no spaces")
-        self.assertFalse(scoring.score("http://login.local/driver\nhttp://login.local/drivex", url))
-        self.assertTrue(scoring.score("Answer:\nhttp://login.local/driver\nIt is built from the bytes of the table.", url))
-
-    def test_m1_a_sentence_is_never_cut_at_an_abbreviation_a_number_or_an_open_parenthesis(self):
-        """sft_trunc.py of the review: the stored sentence ends where the sentence ends, or the sentence is dropped."""
-        for body, kept in (("Offset is 0x8 (approx. the second word) of the node.", "Offset is 0x8 (approx. the second word) of the node."),
-                           ("Offset is 0x8, see Fig. 3 of the notes. More text follows here.", None),
-                           ("No. 5 is the pointer to the payload. Offset 8 is next.", None),
-                           ("U.S. English text is used here. Next node at 8.", "U.S. English text is used here."),
-                           ('He says "it is 0x8." Then it moves on. And more.', 'He says "it is 0x8."'),
-                           ("The value is 0.5 of the node size, i.e. half of it. Done.", None),
-                           ("It sits after the tag, e.g. after the data pointer. The rest is padding.", "It sits after the tag, e.g. after the data pointer.")):
-            r = scoring.sft_target(f"0x8\n{body}", self.t)
-            self.assertIsNotNone(r, body)
-            if kept is None:
-                self.assertTrue(r["sentence_dropped"] or r["sentence"].endswith((".", '."')), (body, r))
-            else:
-                self.assertEqual(r["sentence"], kept, body)
-            if r["sentence"]:
-                self.assertEqual(r["sentence"].count("("), r["sentence"].count(")"), r)
-                self.assertTrue(r["sentence"].endswith((".", '."', "!", "?")), r)
-        self.assertEqual(scoring._first_sentence("It is the pointer (approx. the second word) of the node. Then it moves on.")[0],
-                         "It is the pointer (approx. the second word) of the node.")
-        self.assertEqual(scoring._first_sentence("It reads 0x8. The loop ends.")[0], "It reads 0x8.", "hex followed by a full stop ends a sentence at a capital")
-
-    def test_the_stored_text_always_scores(self):
+    def test_the_stored_text_always_scores_and_is_the_template(self):
         for fam in am.NEW_FAMILIES:
             for t in families.generate(fam, 70, 5):
                 m = t.meta()
@@ -248,24 +223,24 @@ class StoredTarget(unittest.TestCase):
                               f"**{scoring.canonical(m)}**\nShort but with enough words. Another sentence."):
                     r = scoring.sft_target(reply, m)
                     self.assertIsNotNone(r, (t.id, reply))
+                    self.assertEqual(r["text"], targets.render(m)["text"], (t.id, reply))
                     self.assertTrue(scoring.score_strict(r["text"], m), (t.id, r["text"]))
                     self.assertTrue(scoring.score(r["text"], m), (t.id, r["text"]))
 
     def test_a_failed_request_is_never_stored(self):
         self.assertIsNone(scoring.sft_target("[error TimeoutError('x')]", self.t))
-        skip = {"score": "any", "accept": ["0x0a", "0a", "10"]}
+        skip = {"kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"], "question": "The checksum skips bytes with one specific value. Which value (hex)?"}
         err = "[error <HTTPError 500: 'Internal Server Error'>]"
         self.assertFalse(scoring.score_strict("[error TimeoutError('x')]", skip))
         self.assertTrue("a" in err and scoring._legacy_score(err, skip), "the frozen matcher alone would take the letter a in the error text")
         self.assertFalse(scoring.score(err, skip) or scoring.score_any_line(err, skip), "neither scorer accepts the text of a failed request")
 
-    def test_a_right_headline_is_always_stored_and_a_short_first_sentence_is_dropped(self):
-        """A stored line that is no sentence would read as a list when the text is scored again: it is dropped instead, the headline stays."""
+    def test_a_right_headline_over_any_second_line_that_is_prose_is_accepted_and_a_list_is_not(self):
         for body in ("U.S. English. Next node at 8.", "It is 0x8. Actually the field at 0x10 is the real one.", "Yes. The pointer follows the payload in the node."):
-            r = scoring.sft_target(f"0x8\n{body}", self.t)
-            self.assertIsNotNone(r, body)
-            self.assertEqual((r["text"], r["sentence_dropped"], r["truncated"]), ("0x8", True, True), body)
-            self.assertTrue(scoring.score_strict(r["text"], self.t))
+            r = scoring.sft_target(f"{self.k}\n{body}", self.t)
+            self.assertEqual(r["text"], self.want, body)
+        for body in (wrong_of(self.k), f"- {wrong_of(self.k)}", f"or {wrong_of(self.k)}", "maybe"):
+            self.assertIsNone(scoring.sft_target(f"{self.k}\n{body}", self.t), body)
 
 
 class DataPathAgainstEvaluation(unittest.TestCase):
@@ -321,37 +296,42 @@ class Selection(unittest.TestCase):
     """A task with a high chance keeps answers only when at least two of the K samples are right; every reply is scored again."""
 
     def test_agreement_only_above_the_chance_threshold(self):
-        easy = {"score": "tokens", "accept": [core.dec(5)], "chance": 0.5, "kind": "crc"}
+        easy = real_task("crc", "bitwise_init", chance=0.5)
         hard = {**easy, "chance": 0.01}
-        legacy = {"score": "exact", "accept": ["ab"], "kind": "xor-key"}
-        one = [("5", True), ("6", False), ("7", False)]
-        two = [("5", True), ("5\nThe loop stops at five times the stride.", True), ("7", False)]
+        legacy = real_task("legacy", "xor-key")
+        ok = right(easy)
+        one = [(ok, True), ("0x6", False), ("0x7", False)]
+        two = [(ok, True), (f"{ok}\nThe loop starts the register there.", True), ("0x7", False)]
         self.assertEqual(sft.select(one, easy), ([], "agreement"))
-        self.assertEqual([r["text"] for r in sft.select(two, easy)[0]], ["5", "5\nThe loop stops at five times the stride."])
+        recs, why = sft.select(two, easy)
+        self.assertEqual((why, [r["text"] for r in recs]), ("kept", [targets.render(easy)["text"]]), "two agreeing samples: ONE record, rendered from the truth")
         self.assertEqual(sft.select(one, hard)[1], "kept")
-        self.assertEqual(sft.select([("ab", True)], legacy)[1], "kept", "no chance recorded: no agreement rule")
-        self.assertEqual(sft.select([("6", False)], hard), ([], "no_correct"))
-        self.assertEqual(sft.select([("5\nBut maybe 6 is right.", True)], hard)[1], "kept", "the headline is right: the sentence is dropped, not the reply")
-        dup = sft.select([("5", True), ("5", True)], hard)[0]
-        self.assertEqual(len(dup), 1, "identical stored texts are kept once")
+        self.assertEqual(sft.select([(right(legacy), True)], legacy)[1], "kept", "no chance recorded: no agreement rule")
+        self.assertEqual(sft.select([("0x6", False)], hard), ([], "no_correct"))
+        self.assertEqual(sft.select([(f"{ok}\nBut maybe 0x6 is right.", True)], hard)[1], "kept", "the headline is right: the teacher's sentence is never stored")
+        dup = sft.select([(ok, True), (ok, True)], hard)[0]
+        self.assertEqual(len(dup), 1, "a task gives one record")
 
-    def test_the_count_is_made_of_storable_headlines_and_flags_are_ignored(self):
+    def test_the_count_is_made_of_accepted_headlines_and_flags_are_ignored(self):
         """m3: two replies whose headlines are right agree even when one has a hedging body; a True flag on a wrong reply is not a vote."""
-        easy = {"score": "tokens", "accept": [core.hx(0xffff, 4)], "chance": 0.55, "kind": "crc"}
-        rows = [("0xffff", True), ("0xffff\nBut maybe it is 0x0 for some inputs of the table.", True)]
+        easy = real_task("crc", "bitwise_init", chance=0.55)
+        ok = right(easy)
+        rows = [(ok, True), (f"{ok}\nBut maybe it is 0x0 for some inputs of the table.", True)]
         recs, why = sft.select(rows, easy)
-        self.assertEqual((why, [r["sentence_dropped"] for r in recs]), ("kept", [False]), "both agree; identical stored texts are one record")
-        self.assertEqual(sft.select([("0xffff", True), ("0x0", True)], easy), ([], "agreement"), "a stale True flag on a wrong reply is not an agreeing sample")
-        self.assertEqual(sft.select([("0xffff", False), ("0xffff", False)], easy)[1], "kept", "a False flag on a right reply does not hide it")
+        self.assertEqual((why, len(recs)), ("kept", 1), "both agree")
+        self.assertEqual(sft.select([(ok, True), ("0x6", True)], easy), ([], "agreement"), "a stale True flag on a wrong reply is not an agreeing sample")
+        self.assertEqual(sft.select([(ok, False), (ok, False)], easy)[1], "kept", "a False flag on a right reply does not hide it")
 
     def test_assemble_scores_every_reply_again(self):
         """m3 (3): a checkpoint written by an older scorer (a True flag on an error text, a right reply flagged False) is not trusted."""
-        t = {"id": "s-1", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"], "chance": 0.01}
+        t = real_task("legacy", "skip", chance=0.01)
+        ok = right(t)
         msgs = lambda task: []
-        results = {"s-1": {"outs": [["[error TimeoutError('x')]", True], ["the letter a", True], ["0x0a", False]]}}
+        results = {t["id"]: {"outs": [["[error TimeoutError('x')]", True], ["the letter a", True], [ok, False]]}}
         kept, st = sft.assemble([t], results, "m", msgs)
-        self.assertEqual([r["messages"][-1]["content"] for r in kept], ["0x0a"])
+        self.assertEqual([r["messages"][-1]["content"] for r in kept], [targets.render(t)["text"]])
         self.assertEqual((st["errors"], st["correct"], st["kept_records"]), (1, 1, 1))
+        self.assertEqual((kept[0]["teacher_headline"], kept[0]["target_source"]), (ok, "truth-template"))
 
     def test_every_variant_above_the_threshold_is_known(self):
         from rea_bench import chance
@@ -373,9 +353,9 @@ class Selection(unittest.TestCase):
 
     def test_stats_are_split_by_family(self):
         st = sft.Stats()
-        t1 = {"kind": "crc", "score": "tokens", "accept": [["1"]], "chance": 0.5}
-        t2 = {"kind": "bounds", "score": "tokens", "accept": [["1"]], "chance": 0.01}
-        o1, o2 = [("1", True), ("2", False)], [("2", False)]
+        t1 = real_task("crc", "bitwise_init", chance=0.5)
+        t2 = real_task("bounds", "char_class", chance=0.01)
+        o1, o2 = [(right(t1), True), ("0x7", False)], [("999", False)]
         st.add(t1, o1, *sft.select(o1, t1))
         st.add(t2, o2, *sft.select(o2, t2))
         d = st.as_dict()
@@ -383,13 +363,13 @@ class Selection(unittest.TestCase):
         self.assertEqual(d["by_kind"]["crc"]["agreement"], 1)
         self.assertEqual(d["by_kind"]["bounds"]["no_correct"], 1)
 
-    def test_dropped_sentences_are_counted_and_marked(self):
-        t = {"id": "a", "kind": "structs", "score": "tokens", "accept": [core.hx(8)], "chance": 0.01}
-        kept, st = sft.assemble([t], {"a": {"outs": [["0x8\nWait, actually it is 0x70 in some builds of it.", True], ["0x8\nIt is the pointer to the next node.", True]]}}, "m",
-                                lambda task: [])
-        self.assertEqual(sorted(r["sentence_dropped"] for r in kept), [False, True])
-        self.assertEqual(st["sentence_dropped"], 1)
-        self.assertEqual(st["by_kind"]["structs"]["sentence_dropped"], 1)
+    def test_records_and_stats_carry_no_sentence_fields(self):
+        t = real_task("structs", "linked_next", chance=0.01)
+        kept, st = sft.assemble([t], {t["id"]: {"outs": [[f"{right(t)}\nWait, actually it is 0x70 in some builds of it.", True], [f"{right(t)}\nIt is the pointer to the next node.", True]]}},
+                                "m", lambda task: [])
+        self.assertEqual(len(kept), 1)
+        self.assertFalse({"sentence_dropped", "truncated"} & set(kept[0]) | {"sentence_dropped", "truncated"} & set(st) | {"sentence_dropped", "truncated"} & set(st["by_kind"]["structs"]))
+        self.assertEqual(set(kept[0]), {"messages", "task", "kind", "model", "teacher_headline", "target_source"})
 
 
 if __name__ == "__main__":

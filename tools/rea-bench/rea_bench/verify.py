@@ -59,9 +59,13 @@ def harness_runs(ubsan: bool) -> list:
 
 def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
     """Problems found with one task (empty list = fine): a filler reply scores, the C does not compile clean, a harness disagrees
-    with the truth, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
+    with the truth, the truth template does not render a target that scores, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
     problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)] if t.cc else []   # legacy: frozen, see cli
     problems += [f"{t.id} accepts the content-free reply {r!r} under the strict scorer of the sample stage" for r in filler_passes(t, strict=True)] if not t.cc else []
+    try:                                                      # round 4: the target that would be stored for this task is true and scores
+        scoring.check_target(t.meta())
+    except Exception as e:                                    # a missing template, an unparsable question, a text the scorer rejects
+        problems.append(f"{t.id} ({t.variant}) truth template: {e}")
     if survive_check and t.facts and survive.OBJDUMP and survive.toolchain(t.cc or "gcc"):     # no compiler: the gate warned (survive.Gate)
         ok, why = survive.check_task(t)
         if not ok:

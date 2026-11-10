@@ -4,17 +4,20 @@
 (`scoring.score_strict`, the whitelist grammar, for every family including legacy; the frozen substring scorer is for `modal_rea.py`'s
 evaluation only):
 
-  re-scored     every reply is scored again from its text, whatever flag the checkpoint holds: a `--resume` run or an older checkpoint
-                never carries the verdict of an older scorer into the data (round 3, m3). The text of a failed request is never a reply.
-  stored text   the headline and at most ONE justification sentence (`scoring.sft_target`): the rest of the reply is cut off and the
-                record says `truncated: true`. A justification that holds another number, name or string of the key's shape, or a hesitation
-                word, is DROPPED (`sentence_dropped: true`): the headline alone is stored.
+  filter        the teacher is a FILTER (round 4): a task enters the data only when at least one reply has a headline the strict scorer accepts
+                (`scoring.accepted_headline`). That proves the task is answerable from the pseudocode. Every reply is scored again from its text,
+                whatever flag the checkpoint holds: a `--resume` run or an older checkpoint never carries the verdict of an older scorer into the
+                data (round 3, m3). The text of a failed request is never a reply.
+  stored text   NEVER the teacher's text. The assistant message is rendered from the task's own truth (`targets.render`): the canonical headline and
+                one factual sentence of a per-variant template set, chosen by a seeded RNG from the task id. The record keeps `teacher_headline` (the
+                first accepted headline, raw, for analysis only) and `target_source: "truth-template"`. Free prose repeatedly carried wrong facts
+                past every filter (a sentence that contradicted its headline, numbers in swapped roles), so none of it is stored any more.
   agreement     a task with `chance >= AGREE_CHANCE` (the best constant guess within its variant is right that often: CRC init and xorout
-                0.4-0.6, pktsum 0.2-0.5, fsm 0.2-0.4, TEA/XTEA with the round count guessed 0.3, ...) is kept only when at least AGREE_MIN of
-                the K samples have a right, storable headline: one lucky guess is not evidence that the model read the code. Tasks below
-                the threshold keep any right sample. Agreement filters luck, it does not make a 0.55 task hard: a model that always answers
+                0.4-0.6, pktsum 0.2-0.5, fsm 0.2-0.4, TEA/XTEA with the round count guessed 0.3, ...; legacy `skip` 0.14) is kept only when at
+                least AGREE_MIN of the K samples have an accepted headline: one lucky guess is not evidence that the model read the code. Tasks
+                below the threshold keep any right sample. Agreement filters luck, it does not make a 0.55 task hard: a model that always answers
                 "all ones" still agrees with itself.
-  distinct      identical stored texts of one task are kept once.
+  one record    the rendered text of a task is the same for every accepted sample, so a task gives ONE record.
 """
 from __future__ import annotations
 
@@ -33,27 +36,20 @@ def needs_agreement(t: dict) -> bool:
 
 def select(outs: list, t: dict) -> tuple:
     """([records], reason) for one task. `outs` = [(reply, flag)] for its K samples; the flag is not used (every reply is scored again). A record
-    is {"text", "headline", "truncated", "sentence_dropped"}; reason is "kept", "no_correct" (no sample has a right headline) or "agreement"
-    (too few right samples for the task's chance level)."""
-    targets = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
-    if not targets:
+    is {"text", "headline", "sentence", "template", "teacher_headline", "target_source"}: the text is rendered from the truth. reason is "kept",
+    "no_correct" (no sample has an accepted headline) or "agreement" (too few accepted samples for the task's chance level)."""
+    accepted = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
+    if not accepted:
         return [], "no_correct"
-    if needs_agreement(t) and len(targets) < AGREE_MIN:
+    if needs_agreement(t) and len(accepted) < AGREE_MIN:
         return [], "agreement"
-    seen, kept = set(), []
-    for r in targets:
-        if r["text"] in seen:
-            continue
-        seen.add(r["text"])
-        kept.append({k: r[k] for k in ("text", "headline", "truncated", "sentence_dropped")})
-    return kept, "kept"
+    return [accepted[0]], "kept"
 
 
 class Stats:
     """The sample stage's counters, in total and per task family (`kind`)."""
 
-    FIELDS = ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "truncated", "sentence_dropped", "no_correct",
-              "agreement")
+    FIELDS = ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "no_correct", "agreement")
 
     def __init__(self):
         self.total = collections.Counter()
@@ -68,8 +64,6 @@ class Stats:
             c["solved_tasks"] += any(ok and not is_error_reply(o) for o, ok in outs)
             c["kept_tasks"] += bool(kept)
             c["kept_records"] += len(kept)
-            c["truncated"] += sum(r["truncated"] for r in kept)
-            c["sentence_dropped"] += sum(r.get("sentence_dropped", False) for r in kept)
             if reason in ("no_correct", "agreement"):
                 c[reason] += 1
 
@@ -107,5 +101,5 @@ def assemble(tasks: list, results: dict, model: str, messages_for) -> tuple:
         st.add(t, outs, records, reason)
         for r in records:
             kept.append({"messages": [*messages_for(t), {"role": "assistant", "content": r["text"]}], "task": t["id"], "kind": t["kind"],
-                         "model": model, "truncated": r["truncated"], "sentence_dropped": r["sentence_dropped"]})
+                         "model": model, "teacher_headline": r["teacher_headline"], "target_source": r["target_source"]})
     return kept, st.as_dict()

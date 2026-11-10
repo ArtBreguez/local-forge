@@ -5,8 +5,8 @@ is built from the key but never from the key's own values (`fresh` picks a numbe
 question states), so a row that happens to equal the answer cannot count as an attack (the reviewer's script had a few such coincidences:
 `2 to 5` for a task whose bounds are 2 and 5).
 
-`stored_attacks(t)` are replies with a RIGHT headline and a bad second line: `sft_target` may return the headline alone (the sentence is
-dropped) but the bad content must never be in the stored text.
+`stored_attacks(t)` are replies with a RIGHT headline and a bad second line: since round 4 the stored text is rendered from the truth, so whatever
+the second line says, `sft_target` must return exactly the template's text.
 
     python3 -m tests.rea_attacks_r3 [seed] [n per family]       how many rows the scorer accepts (0 is the goal)
 """
@@ -21,6 +21,7 @@ from .helpers import ROOT
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
 from rea_bench import families, grammar  # noqa: E402
+from rea_bench import targets  # noqa: E402
 from rea_bench.scoring import canonical, score, score_strict, sft_target, strict_task  # noqa: E402
 
 NUM_WORDS = {0: "zero", 1: "one", 2: "two", 3: "three", 4: "four", 5: "five", 6: "six", 7: "seven", 8: "eight", 9: "nine", 10: "ten", 11: "eleven",
@@ -198,8 +199,8 @@ def run(seed: int, n: int, with_score: bool = True) -> dict:
                     by_family[fam][1] += 1
             for lab, reply, forbidden in stored_attacks(t):
                 r = sft_target(reply, t)
-                if r is not None and re.search(r"(?<![0-9A-Za-z])" + re.escape(forbidden) + r"(?![0-9A-Za-z])", r["text"]):
-                    stored_bad.append((task.id, lab, reply))
+                if r is not None and r["text"] != targets.render(t)["text"]:
+                    stored_bad.append((task.id, lab, reply))              # round 4: whatever the second line says, the stored text is the template
     return {"rows": rows, "accepted": accepted, "stored_bad": stored_bad, "by_family": {k: tuple(v) for k, v in by_family.items()}}
 
 
