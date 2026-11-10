@@ -1,23 +1,34 @@
-"""Answer scoring against a task's truth (`score` + `accept` [+ `reject`, `cand`]).
+"""Answer scoring against a task's truth (`score` + `accept` [+ `reject`, `cand`, `allow`]).
 
 Legacy modes (the original ten templates; whole reply, substring based, semantics frozen so earlier numbers stay comparable):
   exact / any       one accepted spelling must appear in the answer (whitespace and case ignored)
   all               every accepted value must appear (each with its numeric spellings, see `variants`)
   all_groups        every group must have one spelling in the answer
 
-Headline modes (the generator's new families). Only the HEADLINE of the reply is scored: its first non-empty line with markdown
-removed (`**`, backticks, `#`, bullets), skipping a bare lead-in such as "Answer:". The sampler's system prompt asks for the
-answer in one short line and a justification after it, so numbers the justification restates ("n - 2", "states 0 to 7") can
-never turn a wrong headline into a match, and the full reply is only worth keeping when its headline matched.
-  tokens            every group must match a whole token of the headline; a `reject` token in the headline fails it.
-                    Numbers are compared by value: `0x08` = `0x8`, `16u`/`16UL` = 16, `250,000,000` = 250000000 (`,` only as a
-                    thousands separator, also `_` and `'`). A headline that holds a number the key does not contain (a competing
-                    candidate) fails, so a reply listing several candidates ("0 1 2", "0x10 0x20") is not an answer. With two
-                    numeric groups (lower and upper bound) they must appear in that order. Optional `cand` (a regex) names the
-                    shape of non-numeric candidates (the fsm input strings, environment variable names); another such token
-                    in the headline fails too.
-  exact_case        like exact on the headline but case-sensitive (alphabets: "aB" and "Ab" are different alphabets)
-  exact_head        like exact on the headline (plaintexts, secrets)
+Headline modes (the generator's new families). One rule for all of them: only the HEADLINE of the reply is scored, and the headline
+must be an answer, not a hedge.
+
+  headline          first non-empty line of the reply with markdown removed (`**`, backticks, `#`, bullets). A bare lead-in line
+                    ("Answer:", ends with a colon, no digit) is skipped only when exactly ONE answer line follows before prose or the
+                    end of the reply: "Possible offsets:\n0x8\n0x10\n0x18" is a list, not an answer.
+  hedge             a headline that contains `or|either|nor|not|n't|instead|rather than|vs|maybe|perhaps|possibly|probably|likely|
+                    might|could|...` fails in `tokens` mode (the whole-answer match of the exact modes leaves no room for one).
+  second candidate  a headline that holds another value of the key's shape fails: a number the key does not contain, a `reject`
+                    name (the family's name vocabulary plus common confusables), a `cand`-shaped token (fsm input strings,
+                    environment variable names, base<N>). Numbers directly attached to a unit or a standard name that the question
+                    did not ask for ("128-bit", "(88 bits)", "x86-64", "CRC-32") are not candidates.
+  tokens            every group must match a whole token of the headline. Numbers are compared by value (`0x08` = `0x8`,
+                    `16u` = 16, `250,000,000` = 250000000). With two numeric groups (lower, upper bound) they must appear in order.
+                    `allow` lists phrases that are blanked first ("extended tea": XTEA may be explained, "TEA" alone may not).
+  exact_case        the whole headline is the key: after quotes, backticks, markdown, a short lead-in phrase ("The string is",
+                    "Alphabet:") and trailing punctuation nothing but the key is left. Case and spaces are significant (alphabets
+                    and plaintexts: "aB" and "Ab" are different; "admin login 42" is not "adminlogin42"), and the key is delimited:
+                    "xkey", "key7" and "/etc/key" are other strings.
+  exact_head        the same whole-headline match for plaintexts and secrets.
+
+What is stored as an SFT target is the headline and at most ONE justification sentence (`sft_target`, `sft.py`): the rest of the
+reply is cut off (`truncated: true`), and a sentence that names another candidate value, hedges, or says wait / actually /
+correction / however vetoes the reply. The stored text always scores True itself.
 
 Substring modes are fine for long values (a key, a 32-bit constant) and vacuous for small ones ("0x18" contains "8", "XTEA"
 contains "tea"); the families that ask for offsets, rounds, key lengths and names use `tokens`.
@@ -62,6 +73,16 @@ def _legacy_score(answer: str, t: dict) -> bool:
 
 _MD_LEAD = re.compile(r"^\s*(?:#{1,6}\s+|>\s*|[-*+•]\s+)+")
 _SEPARATOR = re.compile(r"[-_=~\s]*")
+_FENCE = re.compile(r"^\s*(?:```|~~~)")
+
+# A headline that hedges is not an answer. `n't` covers isn't / doesn't / can't. The key's own spellings never contain these words
+# (a test walks every generated task), so the check can look at the whole headline.
+HEDGE = re.compile(r"\b(?:or|either|nor|not|cannot|instead|rather\s+than|vs|versus|maybe|perhaps|possibly|probably|likely|unlikely|"
+                   r"might|could|unsure|presumably)\b|n['’]t\b", re.I)
+# Words of a reply that changes its mind: a justification sentence with one of them vetoes the reply.
+HESITATION = re.compile(r"\b(?:wait|actually|correction|however|hmm+|oops|sorry|mistake|scratch\s+that|on\s+second\s+thought|let\s+me|"
+                        r"re-?check|re-?compute|re-?evaluate|but)\b", re.I)
+UNCERTAIN = re.compile(r"\b(?:maybe|perhaps|possibly|probably|likely|might|could|guess|unsure|not\s+sure|i\s+think|i\s+believe)\b", re.I)
 
 
 def _strip_md(line: str) -> str:
@@ -69,15 +90,45 @@ def _strip_md(line: str) -> str:
     return s.replace("**", "").replace("__", "").replace("`", "").replace("*", " ").strip()
 
 
-def headline(answer: str) -> str:
-    """First non-empty line of the reply, markdown removed. Fence lines, rules and a lead-in line ("Answer:", "Here it is:" - ends
-    with a colon, holds no digit) are skipped; "" if nothing is left."""
-    for line in answer.splitlines():
-        s = _strip_md(line)
-        if not s or _SEPARATOR.fullmatch(s) or (s.endswith(":") and not re.search(r"\d", s)):
+def _is_leadin(s: str) -> bool:
+    """A bare lead-in line: ends with a colon and holds no digit ("Answer:", "Here it is:")."""
+    return s.endswith(":") and not re.search(r"\d", s)
+
+
+def _is_prose(s: str) -> bool:
+    """A sentence (4+ words), as opposed to an answer line or a list item."""
+    return len(re.findall(r"[A-Za-z]{2,}", s)) >= 4
+
+
+def _answer_lines(answer: str) -> list:
+    """[(raw line, markdown-stripped line)] of the non-empty lines; fences and rules are left out."""
+    out = []
+    for raw in answer.splitlines():
+        if _FENCE.match(raw):
             continue
-        return s
-    return ""
+        s = _strip_md(raw)
+        if s and not _SEPARATOR.fullmatch(s):
+            out.append((raw, s))
+    return out
+
+
+def _split(answer: str) -> tuple:
+    """(index of the headline in the lines, the lines); index None when there is no usable headline. A lead-in line is skipped only
+    when exactly one answer line follows before prose or the end ("Possible offsets:" followed by a list has no headline)."""
+    lines = _answer_lines(answer)
+    if not lines:
+        return None, lines
+    if _is_leadin(lines[0][1]):
+        if len(lines) < 2 or (len(lines) > 2 and not _is_prose(lines[2][1])):
+            return None, lines
+        return 1, lines
+    return 0, lines
+
+
+def headline(answer: str) -> str:
+    """The headline of the reply, markdown removed; "" if there is none (empty reply, a lead-in followed by a list)."""
+    i, lines = _split(answer)
+    return "" if i is None else lines[i][1]
 
 
 # ---- tokens ------------------------------------------------------------------------------------------------------------
@@ -90,6 +141,11 @@ _HYPHEN_WORD = re.compile(r"[a-z_]+(?:-[0-9a-z_]+)+")
 _LETTER_RUN = re.compile(r"(?<![0-9a-z_])[a-z](?:[\s,;>\-]+[a-z](?![0-9a-z_]))+(?![0-9a-z_])")
 _NUM = re.compile(r"(-?)(0x[0-9a-f]+|\d+)(?:ull|llu|ul|lu|ll|u|l)?")
 _THOUSANDS = re.compile(r"(?<![0-9a-z_,])\d{1,3}(?:,\d{3})+(?![0-9a-z_])")
+# A number that is part of a unit or a standard name the question did not ask about is not a competing candidate:
+# "(128-bit key)", "-byte aligned", "(88 bits)", "x86-64", "CRC-32", "AES-128", "base-64".
+_UNIT_AFTER = re.compile(r"-(?:bit|byte)s?\b")
+_PAREN_BITS = re.compile(r"\s+bits?\b")
+_NAME_BEFORE = re.compile(r"(?:crc|x86|x64|aes|sha|md|rc|des|base)-$")
 
 
 def num_value(tok: str):
@@ -109,8 +165,8 @@ def _prep(text: str) -> str:
 
 
 def _is_hexlike(tok: str) -> bool:
-    """A bare hex constant: 3+ hex digits with a letter and a digit (edb88320). Plain words never look like this."""
-    return len(tok) >= 3 and re.fullmatch(r"[0-9a-f]+", tok) is not None and re.search(r"[a-f]", tok) is not None and re.search(r"\d", tok) is not None
+    """A bare hex constant: 2+ hex digits with a letter and a digit (3f, edb88320). Plain words never look like this."""
+    return len(tok) >= 2 and re.fullmatch(r"[0-9a-f]+", tok) is not None and re.search(r"[a-f]", tok) is not None and re.search(r"\d", tok) is not None
 
 
 def tokens(answer: str) -> set:
@@ -118,7 +174,7 @@ def tokens(answer: str) -> set:
 
 
 def _token_list(text: str) -> list:
-    """[(token, numeric value or None, position)]: the plain tokens, then hyphenated words and letter runs."""
+    """[(token, numeric value or None, position in _prep(text))]: the plain tokens, then hyphenated words and letter runs."""
     t = _prep(text)
     out = [(m.group(0), num_value(m.group(0)), m.start()) for m in _TOK.finditer(t)]
     out += [(m.group(0), None, m.start()) for m in _HYPHEN_WORD.finditer(t)]
@@ -126,17 +182,63 @@ def _token_list(text: str) -> list:
     return out
 
 
+def _ignorable(prep: str, pos: int, tok: str) -> bool:
+    """A number that belongs to a unit or a standard name ("128-bit", "(88 bits)", "CRC-32"): not a candidate for the key."""
+    end = pos + len(tok)
+    return bool(_UNIT_AFTER.match(prep, end) or (prep[max(0, pos - 1):pos] == "(" and _PAREN_BITS.match(prep, end))
+                or _NAME_BEFORE.search(prep[max(0, pos - 8):pos]))
+
+
 def _split_group(group: list) -> tuple:
     nums = {num_value(a.lower()) for a in group} - {None}
     return nums, {a.lower() for a in group if num_value(a.lower()) is None}
 
 
-def _tokens_score(head: str, t: dict) -> bool:
-    toks = _token_list(head)
-    if not toks:
-        return False
+def _blank_allowed(text: str, phrases) -> str:
+    """The text with the task's `allow` phrases (an explanation of the key: "extended tea" for XTEA) replaced by a space."""
+    for ph in phrases or []:
+        text = re.sub(re.escape(ph), " ", text, flags=re.I)
+    return text
+
+
+def _competitor(text: str, t: dict) -> bool:
+    """True when `text` names another value of the key's shape: a number the key does not contain, a bare hex constant, a `reject`
+    name, or a `cand`-shaped token. A reply that lists candidates is not an answer."""
+    prep = _prep(text)
+    toks = _token_list(text)
     texts = {tok for tok, _v, _p in toks}
     if any(r.lower() in texts for r in t.get("reject", [])):
+        return True
+    groups = [_split_group(g) for g in t["accept"]]
+    wanted = set().union(*(nums for nums, _ in groups)) if groups else set()
+    literals = set().union(*(lits for _, lits in groups)) if groups else set()
+    if wanted:                                          # numeric key: no number besides the key's own
+        for tok, v, p in toks:
+            if v is not None and v not in wanted and not _ignorable(prep, p, tok):
+                return True
+            if v is None and _is_hexlike(tok) and tok not in literals:
+                return True
+    if "cand" in t:                                     # non-numeric candidates of the same shape (fsm input strings)
+        shape = re.compile(t["cand"])
+        if any(shape.fullmatch(tok) and tok not in literals for tok, v, _p in toks if v is None):
+            return True
+    return False
+
+
+def _arithmetic(head: str) -> bool:
+    """Two numbers joined by an operator ("40 + 40", "7 * 8", "n == 8"): an expression, not an answer."""
+    prep = _prep(head)
+    nums = [m for m in _TOK.finditer(prep) if num_value(m.group(0)) is not None]
+    return any(set(prep[a.end():b.start()].strip()) and set(prep[a.end():b.start()].strip()) <= set("+*/=^&|<>%")
+               for a, b in zip(nums, nums[1:]))
+
+
+def _tokens_score(head: str, t: dict) -> bool:
+    head = _blank_allowed(head, t.get("allow"))
+    if HEDGE.search(head) or _arithmetic(head):
+        return False
+    toks = _token_list(head)
+    if not toks:
         return False
     groups = [_split_group(g) for g in t["accept"]]
     first, order = {}, []
@@ -149,19 +251,45 @@ def _tokens_score(head: str, t: dict) -> bool:
             order.append(gi)
     if [first[g] for g in order] != sorted(first[g] for g in order) or len({first[g] for g in order}) != len(order):
         return False                                    # two numeric groups (lower, upper) must come in order
-    wanted = set().union(*(nums for nums, _ in groups)) if groups else set()
-    literals = set().union(*(lits for _, lits in groups)) if groups else set()
-    if wanted:                                          # numeric key: no number besides the key's own
-        for tok, v, _p in toks:
-            if v is not None and v not in wanted:
-                return False
-            if v is None and _is_hexlike(tok) and tok not in literals:
-                return False
-    if "cand" in t:                                     # non-numeric candidates of the same shape (fsm input strings)
-        shape = re.compile(t["cand"])
-        if any(shape.fullmatch(tok) and tok not in literals for tok, v, _p in toks if v is None):
-            return False
-    return True
+    return not _competitor(head, t)
+
+
+# ---- exact strings -----------------------------------------------------------------------------------------------------
+
+_WRAP = "\"'`“”‘’()[]<>"
+_TRAIL = ".,;:!?" + _WRAP
+_LEAD_WORDS = frozenset("""the a an this that it its it's proc function string text plaintext plain ascii secret alphabet result output
+answer value key name path url writes write written writing returns return returned outputs produces produce builds copies decodes decoded
+decode yields yield stores store is are was here here's equals equal argument buffer index order in of to into as""".split())
+_PREFIX_PUNCT = re.compile(r"[\s:=,\-–>" + re.escape(_WRAP) + r"]+")
+
+
+def _is_exact_answer(head: str, key: str) -> bool:
+    """The whole headline is `key`: quotes, backticks, trailing punctuation and a short lead-in phrase made of function words
+    ("The string is", "Alphabet:") are allowed around it; anything else (a second string, a prefix or suffix glued to the key,
+    another case, other spacing) is not."""
+    s = head.strip().rstrip(_TRAIL)
+    if s == key:
+        return True
+    if not key or not s.endswith(key):
+        return False
+    prefix = s[:-len(key)]
+    if prefix[-1] not in " \t:=-–>" + _WRAP:             # the key must start a word: "xkey", "/etc/key" are other strings
+        return False
+    words = re.findall(r"[A-Za-z']+", prefix)
+    if _PREFIX_PUNCT.sub("", re.sub(r"[A-Za-z']+", "", prefix)):
+        return False                                    # digits or other symbols in the lead-in
+    return len(words) <= 6 and all(w.lower() in _LEAD_WORDS for w in words)
+
+
+_STRING_SHAPE = re.compile(r"[A-Za-z0-9]+(?:[_./:@-][A-Za-z0-9]+)+|[A-Za-z0-9+/]{24,}")
+
+
+def _string_competitor(text: str, t: dict) -> bool:
+    """A plaintext-, path- or alphabet-shaped token other than the key in a justification."""
+    for k in t["accept"]:
+        text = text.replace(k, " ")
+    return bool(_STRING_SHAPE.search(text))
 
 
 # ---- entry points ------------------------------------------------------------------------------------------------------
@@ -172,18 +300,88 @@ def check_mode(t: dict) -> None:
         raise ValueError(f"unknown score mode {t.get('score')!r} in task {t.get('id', '?')}; known: {', '.join(MODES)}")
 
 
+def _headline_ok(head: str, t: dict) -> bool:
+    if t["score"] == "tokens":
+        return _tokens_score(head, t)
+    return any(_is_exact_answer(head, k) for k in t["accept"])           # exact_case, exact_head
+
+
 def score(answer: str, t: dict) -> bool:
     check_mode(t)
-    mode = t["score"]
-    if mode in LEGACY_MODES:
+    if t["score"] in LEGACY_MODES:
         return _legacy_score(answer, t)
     head = headline(answer)
-    if mode == "tokens":
-        return _tokens_score(head, t)
-    if mode == "exact_case":
-        return any(x in re.sub(r"\s+", "", head) for x in t["accept"])
-    h = re.sub(r"\s+", "", head.lower())                # exact_head
-    return bool(h) and any(re.sub(r"\s+", "", x.lower()) in h for x in t["accept"])
+    return bool(head) and _headline_ok(head, t)
+
+
+def score_any_line(answer: str, t: dict) -> bool:
+    """Format-insensitive control: does ANY line of the reply (read as a reply of its own) score? A model that thinks aloud on
+    line 1 and answers on line 4 scores 0 under `score` and 1 here; the gap is the share of misses that are formatting. Not
+    used for training data, only to read a held-out score next to the strict one."""
+    check_mode(t)
+    if t["score"] in LEGACY_MODES:
+        return _legacy_score(answer, t)
+    return score(answer, t) or any(score(line, t) for line in answer.splitlines() if line.strip())
+
+
+# ---- what is stored ----------------------------------------------------------------------------------------------------
+
+_DOT = "\u2024"        # stands in for the dots of e.g. / i.e. / etc. / vs. while the text is split into sentences
+_ABBREV = {"e.g.": f"e{_DOT}g{_DOT}", "i.e.": f"i{_DOT}e{_DOT}", "etc.": f"etc{_DOT}", "vs.": f"vs{_DOT}"}
+MAX_SENTENCE = 400
+
+
+def _first_sentence(text: str) -> tuple:
+    """(first sentence, rest) of the text; a sentence ends at . ! ? followed by a space or the end (e.g./i.e./etc. do not end one)."""
+    for a, b in _ABBREV.items():
+        text = text.replace(a, b)
+    m = re.match(r"(.+?[.!?])(?:\s+|$)", text, flags=re.S)
+    sent, rest = (m.group(1), text[m.end():]) if m else (text, "")
+    return sent.replace(_DOT, ".").strip(), rest.replace(_DOT, ".").strip()
+
+
+def justification_ok(sentence: str, t: dict) -> bool:
+    """May this sentence be stored next to a right headline? It must not change its mind (wait / actually / correction / however /
+    but), hedge or negate, or name another candidate value (a number the key does not contain, another cipher name, another
+    string of the key's shape): such a sentence either contradicts the headline or teaches a wrong fact beside it."""
+    if HESITATION.search(sentence):
+        return False
+    if t["score"] in LEGACY_MODES:                  # whole-reply scoring has no notion of a candidate; uncertainty words are the veto
+        return not UNCERTAIN.search(sentence)
+    sentence = _blank_allowed(sentence, t.get("allow"))
+    if HEDGE.search(sentence):
+        return False
+    return not (_competitor(sentence, t) if t["score"] == "tokens" else _string_competitor(sentence, t))
+
+
+def sft_target(reply: str, t: dict):
+    """The text to store for a reply that scored: the headline (with its lead-in line, if it had one) and at most one justification
+    sentence. {"text", "headline", "sentence", "truncated"}; None when the reply must not be stored: no right headline, a
+    justification that hedges or names another candidate, a sentence longer than MAX_SENTENCE, or (legacy tasks, whose answer may sit
+    anywhere in the reply) a cut reply that no longer scores. The text always scores True itself."""
+    check_mode(t)
+    if t["score"] in LEGACY_MODES:
+        lines = [ln.rstrip() for ln in reply.splitlines() if ln.strip()]
+        if not lines:
+            return None
+        blocks, rest = [lines[0]], "\n".join(lines[1:])
+        head = lines[0]
+    else:
+        i, al = _split(reply)
+        if i is None or not _headline_ok(al[i][1], t):
+            return None
+        blocks, head = [raw.rstrip() for raw, _ in al[:i + 1]], al[i][1]
+        rest_lines = [s for _, s in al[i + 1:]]
+        if rest_lines and _is_leadin(rest_lines[0]):            # "Justification:" before the sentence
+            rest_lines = rest_lines[1:]
+        rest = " ".join(rest_lines)
+    sent, more = _first_sentence(rest) if rest.strip() else ("", "")
+    if len(sent) > MAX_SENTENCE or (sent and not justification_ok(sent, t)):
+        return None
+    text = "\n".join(blocks + ([sent] if sent else []))
+    if not score(text, t):
+        return None
+    return {"text": text, "headline": head, "sentence": sent, "truncated": bool(more)}
 
 
 def canonical(t: dict) -> str:
@@ -194,4 +392,3 @@ def canonical(t: dict) -> str:
     if mode == "all":
         return ", ".join(acc)
     return acc[0]
-

@@ -117,7 +117,7 @@ class Scorer(unittest.TestCase):
     def test_exact_case_is_case_sensitive(self):
         t = {"score": "exact_case", "accept": ["aBcD"]}
         self.assertTrue(scoring.score("alphabet: `aBcD`", t))
-        self.assertTrue(scoring.score("a B c D", t))          # whitespace is ignored
+        self.assertFalse(scoring.score("a B c D", t), "B1: spaces are significant")
         self.assertFalse(scoring.score("AbCd", t))
         self.assertFalse(scoring.score("abcd", t))
 
@@ -145,7 +145,7 @@ class Scorer(unittest.TestCase):
         fsm = {"score": "tokens", "accept": [["bcd", "bdc"]], "cand": "[bcd]{2,}"}
         self.assertTrue(s("bcd", fsm) and s("b c d", fsm) and s("b, d, c", fsm))
         self.assertFalse(s("bcd or ccd", fsm))
-        self.assertTrue(s("bcd or bdc", fsm), "both are shortest inputs")
+        self.assertFalse(s("bcd or bdc", fsm), "a hedge is not an answer even when both strings are accepted ones")
 
     def test_two_environment_variable_names_are_not_an_answer(self):
         t = next(t for t in families.generate("antidebug", 24, 5) if t.variant == "env")
@@ -191,11 +191,16 @@ class Scorer(unittest.TestCase):
     def test_bare_hex_words_are_not_accepted(self):
         """m1: 'a', 'be', 'ad', 'dead' are words and '10' is decimal ten; only 0x... (or an unambiguous long bare form) counts."""
         self.assertEqual(core.hx(0xa), ["0xa"])
-        self.assertEqual(core.hx(0xbe, 2), ["0xbe"])
+        self.assertEqual(core.hx(0xbe, 2), ["0xbe", "xbe"], "bare 'be' is a word; the C escape \\xbe is not")
         self.assertEqual(core.hx(0x10), ["0x10"])
         self.assertEqual(core.hx(0xdead, 4), ["0xdead"])
         self.assertEqual(core.hx(0xa001, 4), ["0xa001", "a001"])
         self.assertEqual(core.hx(0), ["0x0", "0"])
+        self.assertEqual(core.hx(0x3f, 2), ["0x3f", "3f", "x3f"], "m2: a byte with a letter and a digit is no word")
+        self.assertEqual(core.hx(0x3f), ["0x3f", "3f"])
+        for r in ("0x3f", "3f", "3F", "\\x3f", "`3f`"):
+            self.assertTrue(scoring.score(r, {"score": "tokens", "accept": [core.hx(0x3f, 2)]}), r)
+        self.assertFalse(scoring.score("0x3f, 1a", {"score": "tokens", "accept": [core.hx(0x3f, 2)]}), "a second bare hex byte is a candidate")
         wordy = {"score": "tokens", "accept": [core.hx(0xa)]}
         self.assertFalse(scoring.score("It is a field, and a flag", wordy))
         self.assertTrue(scoring.score("0xa", wordy))
@@ -203,7 +208,8 @@ class Scorer(unittest.TestCase):
     def test_exact_head_and_unknown_modes(self):
         t = {"score": "exact_head", "accept": ["admin_login42"]}
         self.assertTrue(scoring.score("`admin_login42`\nXOR 0x37", t))
-        self.assertTrue(scoring.score("Here is the string:\nAdmin_Login42", t))
+        self.assertTrue(scoring.score("Here is the string:\nadmin_login42", t))
+        self.assertFalse(scoring.score("Here is the string:\nAdmin_Login42", t), "B1: plaintexts are case-sensitive")
         self.assertFalse(scoring.score("I do not know.\nadmin_login42", t))
         with self.assertRaises(ValueError):
             scoring.score("x", {"score": "fuzzy", "accept": ["x"], "id": "t1"})
@@ -920,6 +926,10 @@ class CipherReference(unittest.TestCase):
         self.assertTrue(s("XTEA (eXtended TEA): it decrypts, 32 rounds", xtea))
         self.assertFalse(s("TEA, decrypts, 32", xtea))
         self.assertFalse(s("XTEA, encrypts, 32", xtea))
+        self.assertFalse(s("TEA, XTEA, decrypts, 32", xtea), "B2: a list of both names; TEA is only allowed inside 'extended TEA'")
+        self.assertFalse(s("TEA (not XTEA), decrypts, 32", xtea))
+        self.assertFalse(s("XTEA or TEA, decrypts, 32", xtea))
+        self.assertTrue(s("XTEA (eXtended TEA), decrypts, 32 rounds (128-bit key)", xtea))
 
 
 class EncodingReference(unittest.TestCase):
@@ -971,11 +981,13 @@ class StrobfModel(unittest.TestCase):
             self.assertTrue(all(c.isalnum() and c.islower() or c.isdigit() or c in "_ ./-:" for c in p), p)
             self.assertNotIn(p, t.body, "the plaintext must not appear in the C source")
 
-    def test_scorer_ignores_spacing_but_not_a_changed_character(self):
+    def test_scorer_wants_the_whole_headline_and_the_exact_characters(self):
         t = families.generate("strobf", 1, 8)[0]
         p = t.params["plain"]
         self.assertTrue(scoring.score(f"The string is `{p}`.", t.truth))
         self.assertFalse(scoring.score(t.wrong, t.truth))
+        self.assertFalse(scoring.score(p.upper() if p != p.upper() else p.lower(), t.truth), "case is significant")
+        self.assertFalse(scoring.score(p.replace(" ", "") if " " in p else p.replace("_", " "), t.truth), "spaces are significant")
 
 
 class PktsumModel(unittest.TestCase):

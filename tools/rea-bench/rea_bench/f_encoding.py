@@ -21,7 +21,9 @@ B58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
 STD = {"base64": B64, "base32": B32, "base58": B58}
 RADIX = {"base64": 64, "base32": 32, "base58": 58}
 BASE_NAMES = {"base64": ["base64", "base-64"], "base32": ["base32", "base-32"], "base58": ["base58", "base-58"]}
-OTHER_BASES = ["base16", "base85", "ascii85", "base62", "base91", "uuencode", "hex"]
+OTHER_BASES = ["base16", "base36", "base45", "base62", "base85", "base91", "base32hex", "base64url", "base58check", "ascii85", "z85", "uuencode",
+               "radix64", "bech32", "hex"]
+BASE_SHAPE = r"base-?\d+[a-z]*"      # any other baseNN in a headline is a second candidate, listed or not
 ENCODE = ["encode", "encodes", "encoder", "encoding", "encodes"]
 DECODE = ["decode", "decodes", "decoder", "decoding"]
 
@@ -234,7 +236,7 @@ def _make(rng, base, direction):
         q = "Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?"
         same, opp = (ENCODE, [w for w in DECODE]) if direction == "encode" else (DECODE, [w for w in ENCODE if w != "encoding"])
         reject = opp + [n for b, ns in BASE_NAMES.items() if b != base for n in ns] + OTHER_BASES
-        truth = {"score": "tokens", "accept": [same, BASE_NAMES[base]], "reject": reject}
+        truth = {"score": "tokens", "accept": [same, BASE_NAMES[base]], "reject": reject, "cand": BASE_SHAPE}
         wrong_dir = "decodes" if direction == "encode" else "encodes"
         wrong = f"It {wrong_dir} {base}"
     return Task(kind=FAMILY, variant=f"{base}_{direction}", body=body, question=q, truth=truth, facts=[[alpha]] if ask_alpha else [],

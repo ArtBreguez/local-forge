@@ -2,8 +2,9 @@
 
 Each task bakes a random key into a textbook implementation. The question asks which cipher it is plus one number that is
 read off the code: RC4's key length, or the number of loop iterations (TEA/XTEA) or total rounds (ChaCha/Salsa, a double round
-counts as two). TEA and XTEA also ask for the direction. Scoring is token-based with a `reject` list of every other cipher name,
-so "XTEA" never passes for "TEA" and "TEA or XTEA" fails. Python references (`rc4`, `tea`, `xtea`, `chacha_block`, `salsa_block`)
+counts as two). TEA and XTEA also ask for the direction. Scoring is token-based with a `reject` list of every other cipher name
+(the family's own names plus common confusables), so "XTEA" never passes for "TEA" and "TEA, XTEA" fails; a headline that hedges
+("TEA (not XTEA)", "RC4 or Camellia") fails in the scorer. For XTEA the phrase "extended TEA" may explain the name (`allow`). Python references (`rc4`, `tea`, `xtea`, `chacha_block`, `salsa_block`)
 produce the harness output; the tests anchor them to published vectors (RC4 "Key"/"Plaintext", RFC 7539 2.3.2, the zero-key
 TEA and XTEA vectors).
 """
@@ -18,15 +19,18 @@ DELTA = 0x9E3779B9
 NAMES = {"rc4": ["rc4", "arc4", "arcfour"], "tea": ["tea"], "xtea": ["xtea", "x-tea"],
          "chacha": ["chacha", "chacha20", "chacha12", "chacha8", "chacha-20"],
          "salsa": ["salsa", "salsa20", "salsa12", "salsa8", "salsa-20"]}
-OTHER_NAMES = ["xxtea", "btea", "aes", "des", "blowfish", "rc5", "rc6", "twofish", "serpent", "poly1305"]
+OTHER_NAMES = ["xxtea", "btea", "aes", "aes128", "aes256", "aes-128", "aes-256", "rijndael", "des", "3des", "triple-des", "blowfish", "rc2",
+               "rc5", "rc6", "twofish", "threefish", "serpent", "camellia", "cast5", "sm4", "gost", "kuznyechik", "skipjack", "hc128", "hc-128",
+               "xsalsa20", "xsalsa", "xchacha20", "xchacha", "chacha20-poly1305", "poly1305"]
+EXPLAIN_XTEA = ["extended tea", "extended tiny encryption algorithm", "e-xtended tea"]
 ENC = ["encrypt", "encrypts", "encrypting", "encryption", "encipher", "enciphers"]
 DEC = ["decrypt", "decrypts", "decrypting", "decryption", "decipher", "deciphers"]
 
 
 def reject_for(alg: str) -> list:
-    """Every other cipher name. For XTEA plain "tea" stays allowed ("eXtended TEA"); answering just "TEA" still fails
-    because the accept group wants "xtea"."""
-    return [n for a, ns in NAMES.items() if a != alg for n in ns if not (alg == "xtea" and n == "tea")] + OTHER_NAMES
+    """Every other cipher name, TEA included for XTEA: "TEA, XTEA" and "TEA (not XTEA)" are not answers. The phrase "extended TEA"
+    is blanked before the check (`allow`), so "XTEA (eXtended TEA)" still passes."""
+    return [n for a, ns in NAMES.items() if a != alg for n in ns] + OTHER_NAMES
 
 
 def rotl(x, n):
@@ -131,7 +135,10 @@ def _truth(alg, extra_groups, direction=None):
     reject = reject_for(alg)
     if direction:
         reject += DEC if direction == "enc" else [w for w in ENC if w != "encryption"]   # "Tiny Encryption Algorithm" is not a direction
-    return {"score": "tokens", "accept": accept, "reject": reject}
+    out = {"score": "tokens", "accept": accept, "reject": reject}
+    if alg == "xtea":
+        out["allow"] = EXPLAIN_XTEA
+    return out
 
 
 def v_rc4(rng):
