@@ -584,6 +584,36 @@ class FactGate(unittest.TestCase):
                 sys.path.remove(str(ROOT / "tools" / "modal"))
 
 
+class ChanceField(unittest.TestCase):
+    """m4: a per-variant `chance` (estimated probability that a guess is right) in the task JSON."""
+
+    def test_every_variant_has_a_chance_and_it_is_in_the_json(self):
+        from rea_bench import chance
+        for fam, mod in families.modules().items():
+            if fam == "legacy":
+                continue
+            for variant in mod.VARIANTS:
+                self.assertIn(f"{fam}/{variant}", chance.CHANCE)
+                self.assertTrue(0 < chance.CHANCE[f"{fam}/{variant}"] <= 1)
+            for t in families.generate(fam, 12, 3):
+                self.assertEqual(t.meta()["chance"], chance.CHANCE[f"{fam}/{t.variant}"])
+        self.assertNotIn("chance", families.generate("legacy", 3, 1001)[0].meta(), "legacy output is frozen")
+
+    def test_table_matches_a_fresh_estimate(self):
+        from rea_bench import chance
+        fresh = chance.estimate(seed=99, n=500)
+        for key, v in fresh.items():
+            self.assertLess(abs(v - chance.CHANCE[key]), max(0.06, 0.35 * chance.CHANCE[key]), f"{key}: table {chance.CHANCE[key]}, fresh {v}: run `chance --write`")
+
+    def test_pktsum_no_longer_asks_for_the_width_and_guesses_are_not_free(self):
+        from rea_bench import chance
+        for t in families.generate("pktsum", 300, 3):
+            self.assertNotIn("not part of the checksummed range", t.question)
+        for key in ("crc/table_poly", "strobf/xor_const", "antidebug/timing_ns", "bounds/range_chain"):
+            self.assertLess(chance.CHANCE[key], 0.1, key)
+        self.assertGreater(chance.CHANCE["crc/bitwise_init"], 0.3, "most CRC inits are all ones: the field flags it")
+
+
 def sample_tasks(family: str, seeds=(101, 202)) -> list:
     n = len(families.modules()[family].VARIANTS)
     return [t for s in seeds for t in families.generate(family, n, s)]
@@ -816,7 +846,7 @@ class StrobfModel(unittest.TestCase):
 class PktsumModel(unittest.TestCase):
     def test_every_question_kind_and_both_byte_orders_occur(self):
         tasks = families.generate("pktsum", 140, 6)
-        self.assertEqual({t.params["ask"] for t in tasks}, {"start", "tail", "endian", "len_offset", "len_start"})
+        self.assertEqual({t.params["ask"] for t in tasks}, {"start", "endian", "len_offset", "len_start"}, "no `tail`: it is the checksum width")
         self.assertEqual({t.params["endian"] for t in tasks if t.params["W"] == 2}, {"little", "big"})
 
     def test_harness_packets_exercise_the_range_and_the_byte_order(self):

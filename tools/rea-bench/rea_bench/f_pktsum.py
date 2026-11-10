@@ -2,7 +2,7 @@
 
 `proc(p, n)` validates a packet: a header of H bytes starting with a magic byte, a payload, then a 1- or 2-byte checksum. The
 checksum covers [S, n - W) with 1 <= S <= H, so the header bytes before S are not protected, or (variant len_field) the `len`
-bytes that follow the header, where `len` is a byte at offset L. The truth is the generator's own S, W, L and endianness. The
+bytes that follow the header, where `len` is a byte at offset L. The truth is the generator's own S, L and endianness (not W: how many bytes are excluded at the end is the width of the checksum, a constant per kind). The
 harness builds valid and mutated packets and prints proc's verdict (1 valid, 0 bad checksum, -1 malformed), expected from a
 Python model of the same format: flipping a covered byte must fail, flipping an uncovered header byte must not, swapping the two
 stored bytes must fail (so the byte order is proven), a wrong magic or a truncated packet is malformed.
@@ -154,7 +154,6 @@ def _len_body(spec):
 
 QUESTIONS = {
     "start": "proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?",
-    "tail": "proc validates a packet that ends with a checksum. How many bytes at the end of the packet are not part of the checksummed range (decimal)?",
     "endian": "proc validates a packet that ends with a 16-bit checksum. Is the checksum stored little-endian or big-endian in the packet? Answer 'little' or 'big'.",
     "len_offset": "proc validates a packet with a length byte in its header; the checksum follows the payload. At which byte offset (decimal, counting from 0) is that length byte?",
     "len_start": "proc validates a packet with a length byte in its header; the checksum follows the payload. At which byte offset (decimal, counting from 0) does the checksummed range start?",
@@ -164,20 +163,20 @@ QUESTIONS = {
 def _make(rng, variant, kind, endian=None, len_field=False):
     spec = Spec(rng, kind, endian, len_field)
     body = with_decoys(_len_body(spec) if len_field else _flat_body(spec), rng, rng.choice([1, 1, 2]), {spec.magic})   # core.decoys
-    asks = ["len_offset", "len_start"] if len_field else ["start", "tail"] + (["endian"] if spec.W == 2 else [])
+    asks = ["len_offset", "len_start"] if len_field else ["start"] + (["endian"] if spec.W == 2 else [])   # no `tail`: it is the checksum width
     ask = rng.choice(asks)
     if ask == "endian":
         word, other = ("little", "big") if spec.endian == "little" else ("big", "little")
         truth = {"score": "tokens", "accept": [[word]], "reject": [other]}
         wrong = other
     else:
-        val = {"start": spec.S, "tail": spec.W, "len_offset": spec.L, "len_start": spec.H}[ask]
+        val = {"start": spec.S, "len_offset": spec.L, "len_start": spec.H}[ask]
         truth = {"score": "tokens", "accept": [dec(val)]}
         wrong = str(val + 1)
     pkts = spec.packets(rng)
     expect = "".join(f"{spec.verdict(p)}\n" for p in pkts)
-    asked = {"start": spec.S, "tail": spec.W, "len_offset": spec.L, "len_start": spec.H}.get(ask)
-    return Task(kind=FAMILY, variant=variant, body=body, question=QUESTIONS[ask], truth=truth, facts=[[asked]] if asked is not None and ask != "tail" else [],
+    asked = {"start": spec.S, "len_offset": spec.L, "len_start": spec.H}.get(ask)
+    return Task(kind=FAMILY, variant=variant, body=body, question=QUESTIONS[ask], truth=truth, facts=[[asked]] if asked is not None else [],
                 params={"H": spec.H, "S": spec.S, "W": spec.W, "L": spec.L, "endian": spec.endian, "kind": kind, "ask": ask, "magic": spec.magic},
                 wrong=wrong, check=(_main(spec, pkts), expect))
 

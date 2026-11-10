@@ -115,6 +115,7 @@ class Task:
     wrong: str = ""                 # a plausible wrong answer the scorer must reject
     check: tuple | None = None      # (C main, expected stdout[, preamble]): a harness that proves the truth
     facts: list = field(default_factory=list)   # groups of alternatives (int immediates / str data) the compiled code must still hold (survive.py)
+    chance: float | None = None     # estimated probability that a guess is right (chance.py); None = legacy task
 
     def source(self, main: str | None = None, preamble: str = "") -> str:
         """The generated file; with `main` a harness instead of the stub main, with `preamble` (macros that swap a libc call for a
@@ -132,6 +133,8 @@ class Task:
             d["helpers"] = list(self.helpers)
         if self.facts:
             d["facts"] = self.facts
+        if self.chance is not None:
+            d["chance"] = self.chance
         d.update(self.truth)
         return d
 
@@ -151,6 +154,7 @@ def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=
     """Task i is variant i mod len(variants), drawn from its own rng. With a `gate` (survive.Gate) a draw whose asked fact is not in
     the code compiled at its own cc/opt is thrown away and the task is drawn again (new parameters, new cc/opt) from the stream
     "<family>/<seed>/<i>/r<attempt>"; attempt 0 is the stream of the ungated generator, so a gate only changes the tasks it rejects."""
+    from .chance import CHANCE
     names = list(variants)
     out = []
     for i in range(n):
@@ -159,6 +163,7 @@ def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=
             t = variants[names[i % len(names)]](rng)
             t.id = f"{t.kind}-{seed}-{i:04d}"
             t.opt, t.cc = pick_flags(family, seed, i, cc, attempt)
+            t.chance = CHANCE.get(f"{family}/{t.variant}")
             if gate is None or gate(t):
                 break
         else:

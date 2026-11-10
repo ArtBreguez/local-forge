@@ -8,6 +8,7 @@
                                                                clang if installed), run its harness, report duplicate tasks inside
                                                                the seed; exit 1 on any problem
     heldout [--write]                                          verify (or regenerate) the pinned list of held-out tasks (seed 1001)
+    chance [--write]                                           estimated chance level per variant (JSON field `chance`)
     survival --family all --n 120                              share of tasks whose asked constant is in the compiled code, per variant
     stats --seed 7 --n 3000                                    per family: distinct programs and overlap with the held-out list
 
@@ -141,6 +142,17 @@ def cmd_survival(a) -> None:
             print(f"{nm + '/' + variant:26s} {len(group):5d} " + " ".join(cells) + "    " + "  ".join(f"{cc}: {d}" for cc, d in zip(ccs, detail)), flush=True)
 
 
+def cmd_chance(a) -> None:
+    from . import chance
+    table = chance.estimate()
+    if a.write:
+        chance.write_table(table)
+        print(f"{len(table)} chance values -> {chance.__file__}")
+        return
+    for k, v in sorted(table.items()):
+        print(f"{k:28s} {v:7.4f}   {'(table: ' + str(chance.CHANCE.get(k)) + ')' if chance.CHANCE.get(k) != v else ''}")
+
+
 def cmd_list(_a) -> None:
     for nm, m in families.modules().items():
         print(f"{nm:10s} {len(m.VARIANTS):2d} variants: {', '.join(m.VARIANTS)}")
@@ -179,6 +191,9 @@ def main(argv=None) -> None:
     sv.add_argument("--n", type=int, default=120, help="tasks PER FAMILY")
     sv.add_argument("--seed", type=int, default=5)
     sv.set_defaults(fn=cmd_survival)
+    ch = sub.add_parser("chance", help="estimated chance level per variant (the `chance` field of the task JSON)")
+    ch.add_argument("--write", action="store_true")
+    ch.set_defaults(fn=cmd_chance)
     st = sub.add_parser("stats", help="distinct programs and held-out overlap of a generated seed")
     st.add_argument("--family", default="all")
     st.add_argument("--n", type=int, default=3000, help="tasks PER FAMILY")
