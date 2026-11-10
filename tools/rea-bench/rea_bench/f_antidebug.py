@@ -19,7 +19,7 @@ TECH = {"ptrace": ["ptrace", "ptrace_traceme", "traceme"], "timing": ["timing", 
         "env": ["env", "environment", "getenv"], "tracerpid": ["tracerpid"]}
 OPTIONS = "one of: ptrace, timing, env, tracerpid"
 RETURNS = [1, 2, 3, 7, 42, 99, 113, 255]
-ENV_VARS = ["LD_PRELOAD", "LD_AUDIT", "LD_DEBUG", "LD_LIBRARY_PATH", "LINES", "COLUMNS", "PYTHONINSPECT", "MALLOC_PERTURB_"]
+ENV_VARS = ["LD_PRELOAD", "LD_AUDIT", "LD_DEBUG", "LD_LIBRARY_PATH", "LD_BIND_NOW", "PYTHONINSPECT", "MALLOC_PERTURB_", "MALLOC_CHECK_"]
 
 
 def truth(tech, detail_alts):

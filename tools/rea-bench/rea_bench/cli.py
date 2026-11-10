@@ -13,18 +13,34 @@ from __future__ import annotations
 
 import argparse
 import pathlib
+import re
 import sys
 
 from . import families
 from .core import write_tasks
 
 
-def cmd_gen(a) -> None:
+TASK_FILE = re.compile(r"^[a-z]+-\d+-\d{4}\.(c|json)$")
+
+
+def pick_families(a) -> list:
     mods = families.modules()
     names = list(mods) if a.family == "all" else a.family.split(",")
     for nm in names:
         if nm not in mods:
             raise SystemExit(f"unknown family {nm!r}; known: {', '.join(mods)} (or 'all')")
+    if a.n < len(names):
+        raise SystemExit(f"--n {a.n} is smaller than the {len(names)} families asked for: some would get 0 tasks (use --n >= {len(names)})")
+    return names
+
+
+def cmd_gen(a) -> None:
+    names = pick_families(a)
+    stale = sorted(p.name for p in a.out.glob("*") if TASK_FILE.match(p.name)) if a.out.is_dir() else []
+    if stale and not a.force:
+        raise SystemExit(f"{a.out} already holds {len(stale)} task files ({stale[0]}, ...); use an empty directory or --force to replace them")
+    for name in stale:
+        (a.out / name).unlink()
     counts = families.split_counts(a.n, len(names))
     total = 0
     for nm, c in zip(names, counts):
@@ -37,11 +53,7 @@ def cmd_gen(a) -> None:
 
 def cmd_check(a) -> None:
     from . import verify
-    mods = families.modules()
-    names = list(mods) if a.family == "all" else a.family.split(",")
-    for nm in names:
-        if nm not in mods:
-            raise SystemExit(f"unknown family {nm!r}; known: {', '.join(mods)} (or 'all')")
+    names = pick_families(a)
     ubsan = verify.ubsan_available() and not a.no_ubsan
     print(f"checking with gcc{' + clang' if verify.CLANG else ' (clang not installed)'}, UBSan harness {'on' if ubsan else 'off'}")
     bad = 0
@@ -66,7 +78,7 @@ def cmd_list(_a) -> None:
 
 def main(argv=None) -> None:
     argv = list(sys.argv[1:] if argv is None else argv)
-    if argv and argv[0].startswith("--"):      # old gen_rea_tasks.py invocation
+    if argv and argv[0].startswith("--") and argv[0] != "--help":      # old gen_rea_tasks.py invocation
         argv = ["gen", "--family", "legacy", *argv]
     ap = argparse.ArgumentParser(prog="rea-bench", description="REA task generator with automatic ground truth")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -76,6 +88,7 @@ def main(argv=None) -> None:
     g.add_argument("--seed", type=int, default=1)
     g.add_argument("--cc", choices=["gcc", "clang", "mix"], default="mix", help="compiler written to the task JSON (new families)")
     g.add_argument("--out", type=pathlib.Path, required=True)
+    g.add_argument("--force", action="store_true", help="replace task files already in --out (default: refuse)")
     g.set_defaults(fn=cmd_gen)
     s = sub.add_parser("list", help="list families and variants")
     s.set_defaults(fn=cmd_list)

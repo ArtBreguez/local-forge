@@ -147,7 +147,9 @@ def _machine_task(rng, variant, code_fn, ask):
     if ask == "input":
         good = shortest_inputs(delta, alphabet, d)
         q = f"This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns {acc}."
-        bad = next("".join(p) for p in itertools.product(alphabet, repeat=d) if "".join(p) not in good)
+        # a plausible wrong answer: another input of the same length, or (when every one of them reaches the accept state)
+        # a shorter one, which cannot, because d is the shortest accepting length
+        bad = next(("".join(p) for p in itertools.product(alphabet, repeat=d) if "".join(p) not in good), alphabet[0] * (d - 1))
         main = input_harness(alphabet, d, acc)
         return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "tokens", "accept": [good]},
                     params={"delta": delta, "alphabet": alphabet, "d": d}, wrong=bad, check=(main, "".join(g + "\n" for g in good)))

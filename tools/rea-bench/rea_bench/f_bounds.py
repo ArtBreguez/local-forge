@@ -54,7 +54,7 @@ def v_window(rng):
 def v_index_limit(rng):
     n = rng.choice([16, 24, 32, 48, 64])
     form = rng.randrange(6)
-    limit = rng.randint(5, n - 4)
+    limit = rng.randint(6, n - 4)                    # > a, so the two bounds of form 5 differ (lo == hi would accept the wrong answer)
     a = rng.randint(1, 5)
     b = rng.randint(3, n - 2 - a)
     guard, lo, hi = [

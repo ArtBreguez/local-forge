@@ -131,6 +131,60 @@ class Scorer(unittest.TestCase):
         self.assertIn('"clang"', (ROOT / "tools" / "modal" / "modal_rea.py").read_text())
 
 
+class Regressions(unittest.TestCase):
+    """Things the independent review (.review-phase-a.md) found, kept as tests."""
+
+    def test_m2_m3_every_task_is_consistent_for_seeds_that_used_to_break(self):
+        # m2: bounds-77-0008 (index_limit form 5 with limit == a) accepted its own wrong answer; m3: fsm seed 3 died with StopIteration
+        for fam, n, seeds in (("bounds", 240, (2, 7, 77)), ("fsm", 1200, (3,)), ("antidebug", 120, (7,)), ("pktsum", 240, (7,))):
+            for seed in seeds:
+                for t in families.generate(fam, n, seed):
+                    self.assertTrue(scoring.score(scoring.canonical(t.truth), t.truth), f"{t.id} canonical rejected")
+                    self.assertFalse(scoring.score(t.wrong, t.truth), f"{t.id} ({t.variant}) accepts its own wrong answer {t.wrong!r}: {t.truth}")
+
+    def test_m2_two_bounds_always_differ(self):
+        for t in families.generate("bounds", 600, 77):
+            acc = t.truth["accept"]
+            if len(acc) == 2:
+                self.assertNotEqual(acc[0], acc[1], f"{t.id} ({t.variant})")
+
+    def test_m5_env_names_are_not_english_words(self):
+        from rea_bench import f_antidebug
+        for name in f_antidebug.ENV_VARS:
+            self.assertTrue("_" in name or len(name) >= 10, f"{name} would be accepted from any prose that happens to contain it")
+        self.assertNotIn("LINES", f_antidebug.ENV_VARS)
+        self.assertNotIn("COLUMNS", f_antidebug.ENV_VARS)
+
+    def run_cli(self, *args):
+        return subprocess.run([sys.executable, str(RB), *args], capture_output=True, text=True)
+
+    def test_m6_help_is_help(self):
+        r = self.run_cli("--help")
+        self.assertEqual(r.returncode, 0)
+        self.assertIn("{gen,list,check", r.stdout)
+        self.assertNotIn("--family legacy", r.stdout)
+
+    def test_m6_gen_refuses_a_non_empty_out_and_force_replaces(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(self.run_cli("gen", "--family", "crc", "--n", "6", "--seed", "5", "--out", d).returncode, 0)
+            r = self.run_cli("gen", "--family", "crc", "--n", "3", "--seed", "5", "--out", d)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("--force", r.stderr)
+            self.assertEqual(len(list(pathlib.Path(d).glob("*"))), 12, "nothing was touched")
+            pathlib.Path(d, "notes.txt").write_text("mine")
+            self.assertEqual(self.run_cli("gen", "--family", "crc", "--n", "3", "--seed", "5", "--out", d, "--force").returncode, 0)
+            self.assertEqual(sorted(p.name for p in pathlib.Path(d).glob("*")),
+                             sorted(["notes.txt"] + [f"crc-5-000{i}.{e}" for i in range(3) for e in ("c", "json")]), "stale tasks removed, other files kept")
+
+    def test_m6_n_smaller_than_the_family_count(self):
+        with tempfile.TemporaryDirectory() as d:
+            r = self.run_cli("gen", "--family", "all", "--n", "5", "--seed", "5", "--out", d)
+            self.assertNotEqual(r.returncode, 0)
+            self.assertIn("smaller than the 11 families", r.stderr)
+            self.assertEqual(list(pathlib.Path(d).glob("*")), [])
+            self.assertNotEqual(self.run_cli("check", "--family", "all", "--n", "5").returncode, 0)
+
+
 def sample_tasks(family: str, seeds=(101, 202)) -> list:
     n = len(families.modules()[family].VARIANTS)
     return [t for s in seeds for t in families.generate(family, n, s)]
