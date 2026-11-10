@@ -90,7 +90,7 @@ class Scorer(unittest.TestCase):
         self.assertTrue({"9e3779b9", "0x9e3779b9"} <= set(scoring.variants("2654435769")))
 
     def test_tokens_are_whole_tokens(self):
-        t = {"score": "tokens", "accept": [["8", "0x8"]]}
+        t = {"score": "tokens", "accept": [["8", "0x8"]], "question": "At which byte offset of the structure is the field?"}      # a noun leads in only if the question uses it
         self.assertTrue(scoring.score("The field is at offset 8.", t))
         self.assertTrue(scoring.score("offset **0x8**", t))
         self.assertFalse(scoring.score("offset 0x18", t))      # substring scoring would accept this ("0x18" contains "8")
@@ -232,7 +232,7 @@ class Scorer(unittest.TestCase):
 
     def test_modal_module_uses_the_package_scorer(self):
         data = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
-        self.assertIn("from rea_bench.scoring import check_mode, score", data)
+        self.assertIn("from rea_bench.scoring import check_mode, check_target, score_strict", data)
         self.assertNotIn("def _score", data)
         self.assertIn("task.get(\"cc\", \"gcc\")", data)
         rea = (ROOT / "tools" / "modal" / "modal_rea.py").read_text()
@@ -717,12 +717,12 @@ class FactGate(unittest.TestCase):
                     sys.modules.pop(name, None)
                 import modal_rea_data
                 task = {"id": "x-1", "kind": "x", "opt": "-O2", "cc": "gcc", "facts": [[1234567]], "score": "tokens", "accept": [["1"]]}
-                with mock.patch.object(modal_rea_data, "_sh", return_value=""), \
+                with mock.patch.object(modal_rea_data, "_sh_rc", return_value=(0, "")), \
                         mock.patch.object(modal_rea_data.survive, "check", return_value=(False, "gcc -O2: none of [1234567] in the code")):
                     rec = modal_rea_data.decompile_task(task, "int proc(void){return 0;}")
                 self.assertIn("fact not in the compiled code", rec["error"])
                 self.assertEqual(rec["id"], "x-1")
-                with mock.patch.object(modal_rea_data, "_sh", return_value=""), \
+                with mock.patch.object(modal_rea_data, "_sh_rc", return_value=(0, "")), \
                         mock.patch.object(modal_rea_data.survive, "check", side_effect=RuntimeError("no objdump")):
                     self.assertIn("gate failed", modal_rea_data.decompile_task(task, "int proc(void){return 0;}")["error"])
             finally:

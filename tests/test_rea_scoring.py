@@ -368,7 +368,8 @@ class Selection(unittest.TestCase):
         kept, st = sft.assemble([t], {t["id"]: {"outs": [[f"{right(t)}\nWait, actually it is 0x70 in some builds of it.", True], [f"{right(t)}\nIt is the pointer to the next node.", True]]}},
                                 "m", lambda task: [])
         self.assertEqual(len(kept), 1)
-        self.assertFalse({"sentence_dropped", "truncated"} & set(kept[0]) | {"sentence_dropped", "truncated"} & set(st) | {"sentence_dropped", "truncated"} & set(st["by_kind"]["structs"]))
+        gone = {"sentence_dropped", "truncated"}
+        self.assertEqual((gone & set(kept[0]), gone & set(st), gone & set(st["by_kind"]["structs"])), (set(), set(), set()))
         self.assertEqual(set(kept[0]), {"messages", "task", "kind", "model", "teacher_headline", "target_source"})
 
 
