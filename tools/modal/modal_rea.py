@@ -28,6 +28,7 @@ RB = ROOT / "tools" / "rea-bench"          # the generator package; inside the c
 if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
+from rea_bench import outputs  # noqa: E402  (stdlib only)
 from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib only; the one scorer the data pipeline and the unit tests use)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 # Our own GGUFs (base and LoRA quantized by the same path, tools/modal_lora.py): repo "vol:" = file inside the lf-lora volume
@@ -211,9 +212,7 @@ def main(only: str = ""):
     dest = ROOT / "results" / "phase6" / "rea"
     dest.mkdir(parents=True, exist_ok=True)
     todo = [m for m in MODELS + LOCAL_MODELS if not only or m[0] in only.split(",")]
-    hf = dest.parent / "rea-data" / "decompiled-seed1001.jsonl"
-    heldout = [json.loads(l) for l in hf.read_text().splitlines() if l.strip()] if hf.exists() else []
-    heldout = [t for t in heldout if "pseudocode" in t]
+    heldout = outputs.load_tasks(outputs.heldout_files(dest.parent / "rea-data"))   # decompiled-seed1001*.jsonl, one per family run
     for t in json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"] + heldout:
         check_mode(t)       # ValueError on an unknown score mode now, not half way through a paid run
     calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu in todo]

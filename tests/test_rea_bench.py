@@ -25,7 +25,7 @@ from .helpers import ROOT
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, dedupe, families, scoring, survive, verify  # noqa: E402
+from rea_bench import core, dedupe, families, outputs, scoring, survive, verify  # noqa: E402
 from rea_bench.verify import CLANG, compile_check, run_harness  # noqa: E402
 
 
@@ -363,7 +363,7 @@ class ModalScripts(unittest.TestCase):
                     mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
                     contextlib.redirect_stdout(io.StringIO()):
                 self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc")
-                out = [json.loads(l) for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed7.jsonl").read_text().splitlines()]
+                out = [json.loads(l) for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed7-legacy+crc.jsonl").read_text().splitlines()]
         held = dedupe.heldout_keys()
         kept, dropped = dedupe.training_tasks(["legacy", "crc"], 600, 7)
         self.assertEqual([r["id"] for r in out], [t.id for t in kept])
@@ -371,6 +371,58 @@ class ModalScripts(unittest.TestCase):
         self.assertEqual(len(seen["tasks"]), len(kept))
         self.assertFalse({t.id for t in dropped} & {r["id"] for r in out})
         self.assertTrue(held)
+
+    def run_main(self, root, **kw):
+        from unittest import mock
+        import types
+
+        def fake_starmap(tasks):
+            return [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _tag in tasks]
+
+        remote = mock.MagicMock(return_value={"sft": [{"task": "x"}], "stats": {"tasks": 1}})
+        with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data.subprocess, "run") as run, \
+                mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
+                mock.patch.object(self.data, "sample_answers", types.SimpleNamespace(remote=remote)), \
+                contextlib.redirect_stdout(io.StringIO()):
+            self.data.main(**kw)
+        return remote, run
+
+    def test_second_family_or_seed_does_not_overwrite_and_force_is_needed(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            rd = root / "results" / "phase6" / "rea-data"
+            self.run_main(root, stage="decompile", n=12, seed=7, family="crc")
+            self.run_main(root, stage="decompile", n=12, seed=7, family="cipher")          # another family, same seed
+            self.run_main(root, stage="decompile", n=12, seed=8, family="crc")             # another seed, same family
+            self.assertEqual(sorted(p.name for p in rd.glob("*")), ["decompiled-seed7-cipher.jsonl", "decompiled-seed7-crc.jsonl", "decompiled-seed8-crc.jsonl"])
+            first = (rd / "decompiled-seed7-crc.jsonl").read_text()
+            with self.assertRaisesRegex(SystemExit, "refusing to overwrite"):
+                self.run_main(root, stage="decompile", n=6, seed=7, family="crc")
+            self.assertEqual((rd / "decompiled-seed7-crc.jsonl").read_text(), first)
+            _, run = self.run_main(root, stage="decompile", n=6, seed=7, family="crc", force=True)
+            self.assertEqual(len((rd / "decompiled-seed7-crc.jsonl").read_text().splitlines()), 6)
+            wiped = [c.args[0][-1] for c in run.call_args_list if "volume" in c.args[0]]
+            self.assertEqual(wiped, ["/decompiled-seed7-crc"], "only this run's volume dir is wiped")
+
+    def test_sft_files_are_keyed_by_seed_and_family_and_refused_before_a_gpu_is_rented(self):
+        name = self.data.MODELS[0][0]
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            rd = root / "results" / "phase6" / "rea-data"
+            remote, _ = self.run_main(root, stage="sample", model=name, seed=7, family="crc")
+            self.run_main(root, stage="sample", model=name, seed=8, family="cipher")
+            self.assertEqual(remote.call_args.args[-1], "seed7-crc", "the sampler is told which decompiled dir to read")
+            self.assertEqual(sorted(p.name for p in rd.glob("sft-*")),
+                             sorted(f"sft-{name}-seed{s}-{f}.{e}" for s, f in ((7, "crc"), (8, "cipher")) for e in ("jsonl", "stats.json")))
+            remote2 = None
+            with self.assertRaisesRegex(SystemExit, "refusing to overwrite"):
+                remote2, _ = self.run_main(root, stage="sample", model=name, seed=7, family="crc")
+            self.assertIsNone(remote2)
+            remote3, _ = self.run_main(root, stage="sample", model=name, seed=7, family="crc", force=True)
+            remote3.assert_called_once()
+
+    def test_modal_rea_reads_every_heldout_file(self):
+        self.assertIn("outputs.load_tasks(outputs.heldout_files(", (ROOT / "tools" / "modal" / "modal_rea.py").read_text())
 
     def test_main_stops_on_an_unknown_score_mode_before_renting_a_gpu(self):
         with tempfile.TemporaryDirectory() as d:
@@ -582,6 +634,40 @@ class FactGate(unittest.TestCase):
                 for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
                     sys.modules.pop(name, None)
                 sys.path.remove(str(ROOT / "tools" / "modal"))
+
+
+class OutputNames(unittest.TestCase):
+    """M4: a second family or seed overwrote the first run's decompiled-seed<seed>.jsonl and sft-<model>.jsonl."""
+
+    def test_tags_and_names(self):
+        self.assertEqual(outputs.run_tag(7, "crc"), "seed7-crc")
+        self.assertEqual(outputs.run_tag(7, "crc,cipher"), "seed7-crc+cipher")
+        self.assertEqual(outputs.run_tag(1001, "all"), "seed1001-all")
+        self.assertEqual(outputs.decompiled_stem("seed7-crc"), "decompiled-seed7-crc")
+        self.assertEqual(outputs.sft_stem("heretic-9b", "seed7-crc"), "sft-heretic-9b-seed7-crc")
+        self.assertNotEqual(outputs.run_tag(7, "crc"), outputs.run_tag(7, "cipher"))
+        self.assertNotEqual(outputs.run_tag(7, "crc"), outputs.run_tag(8, "crc"))
+
+    def test_refuse_overwrite(self):
+        with tempfile.TemporaryDirectory() as d:
+            f = pathlib.Path(d, "x.jsonl")
+            outputs.refuse_overwrite([f], False)                       # absent: fine
+            f.write_text("1")
+            with self.assertRaisesRegex(SystemExit, "refusing to overwrite .*x.jsonl.*--force"):
+                outputs.refuse_overwrite([f], False)
+            outputs.refuse_overwrite([f], True)
+
+    def test_heldout_files_are_merged_and_deduplicated(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            rec = lambda i, ps=True: json.dumps({"id": i, **({"pseudocode": "x"} if ps else {"error": "e"})}) + "\n"
+            (root / "decompiled-seed1001.jsonl").write_text(rec("a-1") + rec("a-2"))
+            (root / "decompiled-seed1001-crc.jsonl").write_text(rec("a-2") + rec("c-1") + rec("c-2", False))
+            (root / "decompiled-seed1001-all.jsonl").write_text(rec("z-1"))
+            (root / "decompiled-seed7-crc.jsonl").write_text(rec("t-1"))
+            files = outputs.heldout_files(root)
+            self.assertEqual(len(files), 3)
+            self.assertEqual(sorted(r["id"] for r in outputs.load_tasks(files)), ["a-1", "a-2", "c-1", "z-1"])
 
 
 class ChanceField(unittest.TestCase):
