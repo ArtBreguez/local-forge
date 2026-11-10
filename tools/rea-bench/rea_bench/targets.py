@@ -25,15 +25,26 @@ where it is guaranteed to be visible at every cc/opt of the task AND a mechanica
 A specific algorithm is named only where the code computes exactly that reference algorithm (TEA, XTEA, RC4, ChaCha, Salsa, base64, base32,
 base58, FNV-1a, djb2, sdbm: compared with a reference implementation in tests/rea_claims.py); the legacy murmur loop is "Murmur-style".
 
-WHAT A TEMPLATE TYPES IN (round 5, m7: the old docstring said "nothing in a template is typed in as a number or as the name of an algorithm", and templates did).
-Typed in, every one of them backed by a checker of tests/rea_claims.py: the return values 1 and -1 (`proc returns 1 for ...`, `any other index gives -1`);
-`state 0` and `numbered from 0` (the questions say so); the library and OS names `ptrace`, `PTRACE_TRACEME`, `TracerPid`, `/proc/self/status`; `NUL`; the
-words `little-endian`, `32-bit`, `four bytes`, `16-bit`, `two clock readings`; the algorithm names above. Everything else a sentence says is a fact of `facts(t)`.
+WHAT A SENTENCE MAY CONTAIN (round 6, M1 and m4). Round 5 listed the words a template types in and a lint listed the words it must not use. Both lists were
+incomplete: round 6 found `nanoseconds`, `NULL`, `CRC`, `byte offset`, `environment variable`, `debugger` typed and unchecked, and 66 of 79 false one-edit
+sentences (two numbers in swapped roles, a flipped direction word, a wrong name, a wrong unit) passed the whole suite, because a checker verified the FACT that
+rendered a sentence and nothing tied the words of the sentence to it. The rule is now a whitelist, written independently of this file in tests/rea_sentences.py:
 
-EVERY SENTENCE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence of every key, the names of the claims
-it makes, and for every claim a function that verifies it against the task's C source and its compiled behaviour (compile and run, a Python
-reference, a parsed C constant, `_Static_assert(offsetof ...)`) over at least 200 generated tasks of every variant at two seeds. A template
-without an entry, or an entry without a checker, fails the test, and so does a sentence that uses a word of the structure list above.
+  * every sentence has a PATTERN: its literal text, and a named group wherever it says something that can be wrong (a number, an algorithm, a call, a file, a
+    field, an environment variable, a unit, a byte order, a direction word);
+  * the checker (tests/rea_claims.py) parses the RENDERED sentence, takes the values of the groups FROM THE SENTENCE and verifies each against the task: its C
+    compiled and run (a Python reference, a sweep of the domain, `offsetof`/`sizeof`, a fake libc call that records the request, the path, the variable, the clock),
+    or its C source. A sentence that matches no pattern ("wording the table does not know"), a group whose value is false, and a group that no claim reads each
+    fail. So a sentence contains only its pattern's literal text and its groups: `union`, `slicing-by-8`, `via a hash` are not in any pattern.
+  * a sentence uses a universal word (any, every, all, always, never, only, each, none, no other, exactly) only where tests/test_rea_quantifiers.py registers the
+    claim that backs it and the domain it covers (round 6, B1: "changing any byte ... makes the checksum fail" was false for Fletcher-16: a byte 0x00 -> 0xFF is not seen);
+  * every edit of a template shows in tests/golden/rea_sentences.txt (every headline and sentence with a named sentinel per placeholder), and
+    tests/test_rea_claims_mutations.py applies the reviewer's 79 false sentences (and 13 more) to a copy of this file: the table must reject each one.
+
+EVERY SENTENCE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence of every key, its pattern and the names of the claims it
+makes, and for every claim a function that verifies the parsed values against the task's C source and its compiled behaviour, over at least 200 generated tasks of
+every variant at two seeds, with EVERY sentence of the template rendered for every task. A template without an entry, an entry without a checker, a pattern that does
+not match its own template, a placeholder that the pattern does not capture: each fails the test. The rendered text of a template stays semantic: no code structure.
 
 `render(t)` works on the task record as the sample stage has it (`task.meta()` plus the pseudocode): `id`, `kind`, `variant`, `question`, `accept`.
 No generator parameter is needed, so a decompile run made before this module existed can still be sampled. tests/test_rea_targets.py renders

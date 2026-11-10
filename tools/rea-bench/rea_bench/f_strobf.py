@@ -32,7 +32,7 @@ def _other(v: int, k: int) -> int:
 
 
 def _gate(p: str, stored: bytes, *keys: int) -> dict:
-    """What the compiled object must show (survive.object_gate_check): the plaintext hidden, the stored bytes (or a key) present."""
+    """What the compiled object must show (survive.object_gate_check): the plaintext hidden, the stored bytes present (`keys`, the decode constants, is a record: since round 6 a key alone proves nothing)."""
     return {"hidden": p, "stored": stored.hex(), "keys": list(keys)}
 
 

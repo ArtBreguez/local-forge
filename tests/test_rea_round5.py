@@ -3,7 +3,7 @@
 B1  `alt_xor` drew its two constants independently; 0.46% of the tasks had the same one twice. Now k1 != k, and only those draws changed.
 M1  the compiler decodes a constant array at compile time (the string becomes immediates): such a task shows the answer in the code and no
     decoding. A strobf task of an encoded variant carries an `object_gate` (survive.py): the plaintext must not be in the object compiled at
-    its own cc/opt, the stored bytes (or a key) must be.
+    its own cc/opt, the stored bytes must be (round 6, m6: a key in the object proves nothing).
 M2  a legacy `skip` task with b = 0x00 asks for a compare that no optimiser leaves in the code. The frozen generator is unchanged; the training
     path (families.generate_many / dedupe.training_tasks) drops those tasks for every seed but the held-out one.
 """
@@ -99,13 +99,16 @@ class ObjectGate(unittest.TestCase):
             self.assertFalse(ok, t.id)
             self.assertIn("plaintext is in the object", why)
 
-    def test_a_program_with_neither_the_stored_bytes_nor_the_key_fails(self):
-        t = next(t for t in families.generate("strobf", 7 * 3, 31, "gcc") if t.variant == "sub_const")
-        other = 'void proc(char *out) { for (int i = 0; i < 9; i++) out[i] = (char)(i * 31 + 5); out[9] = 0; }'
-        gate = {**t.object_gate, "keys": [251]}
-        ok, why = survive.check_object(gate, t.source().replace(t.body, other), "gcc", "-O0")
+    def test_a_program_without_the_stored_bytes_fails_even_when_it_holds_the_key(self):
+        """m6: the key clause is gone. A program that XORs with the task's own key but holds other data has the key as an immediate and is refused."""
+        t = next(t for t in families.generate("strobf", 7 * 3, 31, "gcc") if t.variant == "xor_const")
+        key = t.params["key"]
+        other = f'void proc(char *out) {{ for (int i = 0; i < 9; i++) out[i] = (char)((i * 31 + 5) ^ {key}); out[9] = 0; }}'
+        self.assertIn(key, t.object_gate["keys"])
+        ok, why = survive.check_object(t.object_gate, t.source().replace(t.body, other), "gcc", "-O0")
         self.assertFalse(ok)
-        self.assertIn("neither the stored bytes nor a key", why)
+        self.assertIn("stored bytes are not in the object", why)
+        self.assertEqual(survive.check_object(t.object_gate, t.source(), "gcc", "-O0"), (True, ""))
 
     def test_the_gate_is_in_the_task_json_and_the_modal_side_can_check_it(self):
         t = next(t for t in families.generate("strobf", 7 * 3, 31, "gcc") if t.variant == "xor_const")

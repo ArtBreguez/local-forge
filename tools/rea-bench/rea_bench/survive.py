@@ -22,7 +22,10 @@ table the compiler made from the bit loop, not in the source.
 String obfuscation (round 5, M1) has no constant to ask for: the answer is the string the code writes. Its tasks carry an `object_gate`
 instead of `facts`: {"hidden": plaintext, "stored": hex of the stored bytes, "keys": [decode constants]}. The object compiled at the task's own
 cc/opt must NOT hold the plaintext (a 4-byte window of it with at least 3 letters, searched in the code and data sections: the compiler
-decoded the string at compile time and no decoding is left to read) and must hold the stored bytes (a 4-byte window of them) or a key. The
+decoded the string at compile time and no decoding is left to read) and must hold the stored bytes (a 4-byte window of them). Round 6, m6: it used to
+accept a decode constant among the immediates of the disassembly instead; a small key, rot_n's shift and the plaintext letters themselves (immediates when a
+compiler stores a string byte by byte) are in almost every object, and over 3,600 objects (seed 99, 60 tasks per variant, every cc and -O) the clause decided
+none (1,998 accepted on the stored bytes, 1,602 refused for the plaintext, 0 on a key alone), so it is gone; "keys" stays in the gate as a record. The
 sections are read from the ELF object itself (not symbols, not debug info: clang's UBSan strings and the build path are no part of the code).
 
 This is a necessary condition, not proof that the decompiler shows it. What it removes is the tasks the reviewers found unanswerable:
@@ -213,9 +216,7 @@ def object_gate_check(gate: dict, obj: pathlib.Path) -> tuple:
         return False, "the plaintext is in the object: the compiler decoded the string at compile time"
     if stored_visible(gate["stored"], blob):
         return True, ""
-    if any(forms(k) & numbers(_objdump(["-d", "--no-show-raw-insn", "-M", "intel"], obj)) for k in gate.get("keys", [])):
-        return True, ""
-    return False, "neither the stored bytes nor a key is in the object"
+    return False, "the stored bytes are not in the object"
 
 
 def check_object(gate: dict, src: str, cc: str, opt: str) -> tuple:
