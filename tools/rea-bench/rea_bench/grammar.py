@@ -13,7 +13,9 @@ are gone, one trailing `. , ; : !` is removed (a `?` or `...` is not removed: it
   separator    `,` `;` `/` `:` the word `and`, whitespace, quotes, balanced parentheses.
   filler       a fixed vocabulary of function words (`the`, `is`, `with`, ...), the generic words `answer`/`result`, the question's own unit
                words (`bytes`, `rounds`, `iterations`, `states`, `ns`, ... per question, see UNITS), and, for a task with at most one
-               numeric group, the nouns that name the quantity (`offset`, `size`, `key length`, ...). `allow` phrases of the task
+               numeric group, the nouns that name the quantity (`offset`, `size`, `key length`, ...) in the lead-in only, before the first
+               group (after it a noun could label the wrong number: `TEA, encrypt, key 48`); nouns that describe a name (`ptrace check`,
+               `TEA cipher`) may also follow a name. `allow` phrases of the task
                ("extended tea" for XTEA) are removed first.
   context      `128-bit`, `(88 bits)`, `CRC-32`: only where the question itself states that quantity (the key width, the block size, the CRC
                width) or, for a byte count, eight times a group's value; never as a hit for a group, never as a free pass.
@@ -67,9 +69,14 @@ def normalise(s: str) -> str:
 GLUE = frozenset("the a an this that it its it's is are here here's there with of in at for as using uses use runs run running "
                  "performs implements".split())
 GENERIC = frozenset("answer result solution output final response".split())
-NOUNS = frozenset("""offset offsets size length count number value key name constant field record struct structure function proc
-returns return returned equals equal exactly cipher algorithm technique check hash stream block polynomial poly init initial
-register input string text plaintext secret alphabet variable endian endianness order""".split())
+# Nouns that name the QUANTITY asked for: they may only lead in (before the first group), and only in a task with at most one numeric group: after a
+# group `key 48` would put the wrong label on a right number. Nouns that describe a NAME (`ptrace check`, `TEA cipher`) may also follow a name group.
+NOUNS_Q = frozenset("""offset offsets size length count number value key constant field record struct structure returns return returned equals equal
+exactly poly polynomial init initial register input string text plaintext secret alphabet proc""".split())
+NOUNS_N = frozenset("cipher algorithm technique check hash stream block endian endianness order function family variable name".split())
+RETURN_WORDS = frozenset("returns return returned".split())     # allowed anywhere when the question itself asks what proc returns ("tracerpid, returns 3")
+NOUNS = NOUNS_Q | NOUNS_N
+CTX_NOUNS = frozenset("key keys block blocks word words size width".split())     # the label of a context number, right behind it: `128-bit key`, `8-byte block`
 
 _ROUNDS = {"round", "rounds", "iteration", "iterations", "cycle", "cycles", "loop", "loops", "times", "main"}
 _BYTES = {"byte", "bytes"}
@@ -225,6 +232,7 @@ class Spec:
         for nums_lits in self.groups:
             for lit in nums_lits[1]:
                 self.allow += list(EXPLAIN.get(lit, ()))
+        self.returns = bool(self.qwords & RETURN_WORDS)
         self.letter_runs = bool(t.get("cand"))
         self.values = values
         self.literals = {l for _n, ls in self.groups for l in ls}
@@ -267,7 +275,7 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         return [g for g, (nums, lits) in enumerate(groups)
                 if (tok.kind == "num" and (tok.val in nums or tok.text in lits)) or (tok.kind == "word" and tok.text in lits)]
 
-    expected, current, depth, pending, last_hit = 0, None, 0, None, -9
+    expected, current, depth, pending, last_hit, last_ctx = 0, None, 0, None, -9, -9
     lo_i = sp.numeric[0] if sp.interval else None
     hi_i = sp.numeric[-1] if sp.interval else None
     i = 0
@@ -309,6 +317,7 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         if tok.kind == "ctx":
             if not _ctx_ok(tok, sp):
                 return False
+            last_ctx = here
             continue
         if tok.kind == "num":
             nxt = toks[i] if i < len(toks) else None
@@ -319,8 +328,10 @@ def headline_ok(head: str, t: dict, sp: Spec = None) -> bool:
         w = tok.text
         if w in sp.units and (not sp.multi_num or current == sp.numeric[-1]):
             continue                                               # `8 bits` after the rotation amount, not after the XOR constant
-        if w == "and" or w in GLUE or w in GENERIC or w in sp.fill or (w in NOUNS and sp.nouns_ok):
+        if w == "and" or w in GLUE or w in GENERIC or w in sp.fill or (w in CTX_NOUNS and last_ctx == here - 1) or (w in RETURN_WORDS and sp.returns):
             continue
+        if (w in NOUNS_Q and sp.nouns_ok and current is None) or (w in NOUNS_N and (current is None or current not in sp.numeric)):
+            continue                                               # a quantity noun only leads in ("key 48" after a cipher would mislabel the count)
         if sp.interval:
             if w in LO_LABELS or w in HI_LABELS:
                 if pending is not None or expected != (lo_i if w in LO_LABELS else hi_i):

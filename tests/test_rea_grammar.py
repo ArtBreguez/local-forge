@@ -122,7 +122,7 @@ class M2Bounds(unittest.TestCase):
         """`to` and `-` between two numbers are ranges only where the question asks for an interval (bounds, threshold)."""
         magic = {"score": "tokens", "accept": [core.dec(1570), core.dec(7)], "kind": "magic"}
         self.assertTrue(S("1570, 7", magic))
-        for r in ("1570 to 7", "1570-7", "[1570, 7]", "lowest 1570, highest 7", "1570..7", "(1570, 7)" if False else "x 1570, 7"):
+        for r in ("1570 to 7", "1570-7", "[1570, 7]", "lowest 1570, highest 7", "1570..7", "x 1570, 7"):
             self.assertFalse(S(r, magic), r)
         self.assertTrue(S("(1570, 7)", magic), "a pair in parentheses is a plain pair where the two numbers are not bounds")
 
@@ -152,13 +152,33 @@ class M3Context(unittest.TestCase):
             self.assertFalse(S(r, self.tea), r)
 
     def test_a_number_the_question_states_is_allowed_beside_a_right_answer(self):
-        for r in ("RC4, 11 bytes (88 bits)", "RC4, 11 (88 bits)", "RC4: 11 bytes", "It is RC4 with a key length of 11 bytes."):
+        for r in ("RC4, 11 bytes (88 bits)", "RC4, 11 (88 bits)", "RC4: 11 bytes", "Key length: RC4, 11 bytes", "RC4 cipher, 11 bytes", "It is the RC4 cipher, 11 bytes."):
             self.assertTrue(S(r, self.cip), r)
         for r in ("TEA, encrypt, 48 (128-bit key)", "TEA, encrypt, 48 iterations (a 128-bit key)", "TEA, encrypt, 48 (an 8-byte block)", "TEA, encrypt, 48 (128 bits)",
                   "TEA, encrypt, 48 rounds (32-bit)"):
             self.assertTrue(S(r, self.tea), r)
         self.assertTrue(S("0xEDB88320, reflected (CRC-32)", self.crc) and S("0xedb88320 reflected, 32-bit", self.crc))
         self.assertFalse(S("0xEDB88320, reflected (CRC-16)", self.crc) or S("0xEDB88320, reflected (16-bit)", self.crc))
+
+    def test_a_noun_after_a_group_cannot_label_the_wrong_number(self):
+        """A noun that names the quantity leads in; behind a group it could put `key` on the round count (`TEA, encrypt, key 48`)."""
+        for r in ("TEA, encrypt, key 48", "TEA, encrypt, size 48", "TEA, encrypt, offset 48", "RC4, key length 11 bytes", "RC4, key 11", "It is RC4 with a key length of 11 bytes.",
+                  "TEA, encrypt, 48, a block cipher"):
+            self.assertFalse(S(r, self.tea if "TEA" in r else self.cip), r)
+        self.assertTrue(S("RC4, 11 bytes (88-bit key)", self.cip), "the label of a context number follows it")
+
+    def test_returns_and_variable_are_allowed_where_the_question_uses_them(self):
+        ad = {"score": "tokens", "accept": [["tracerpid"], core.dec(144)], "kind": "antidebug", "variant": "tracerpid",
+              "question": "Which anti-debugging technique does proc implement, and what does proc return when a tracer is attached (decimal)?"}
+        for r in ("tracerpid, returns 144", "tracerpid check, returns 144", "tracerpid: it returns 144"):
+            self.assertTrue(S(r, ad), r)
+        no_return = {**ad, "question": "Which anti-debugging technique does proc implement, and above how many nanoseconds does it report?"}
+        self.assertFalse(S("tracerpid, returns 144", no_return), "`returns` labels a number only where the question asks for a return value")
+        env = {"score": "tokens", "accept": [["env", "environment", "getenv"], ["rt_verbose"]], "cand": "[a-z0-9]*_[a-z0-9_]*", "kind": "antidebug", "variant": "env"}
+        for r in ("env, RT_VERBOSE", "environment variable RT_VERBOSE", "env check, variable name RT_VERBOSE", "getenv, 'RT_VERBOSE'"):
+            self.assertTrue(S(r, env), r)
+        for r in ("env, RT_VERBOSE_X", "env, RT_OTHER", "env or RT_VERBOSE", "environment variable"):
+            self.assertFalse(S(r, env), r)
 
     def test_the_question_decides(self):
         """The same reply passes or fails with the question's own words: without a question there is nothing to exempt."""
@@ -206,7 +226,7 @@ class ExactStrings(unittest.TestCase):
         for r in ("admin status 26", '"admin status 26"', "`admin status 26`", "The string is: admin status 26", "It writes admin status 26.", "**admin status 26**",
                   "Plaintext: admin status 26", "‘admin status 26’", "“admin status 26”"):
             self.assertTrue(S(r, t), r)
-        for r in ("admin status 27", "Admin status 26", "ADMIN STATUS 26", "adminstatus26", "admin  status 26" if False else "admin status  26x", "admin status 26 and more", "-admin status 26",
+        for r in ("admin status 27", "Admin status 26", "ADMIN STATUS 26", "adminstatus26", "admin status  26x", "admin status 26 and more", "-admin status 26",
                   ":admin status 26", "> admin status 26", "< admin status 26", "<> admin status 26", "x admin status 26", "key admin status 26 (or 27)", "admin status 26?",
                   "admin status 26...", "admin status 26 or admin status 27", "not admin status 26", "no admin status 26", "= admin status 26 =", "admin status 26\nadmin status 27"):
             self.assertFalse(S(r, t), r)

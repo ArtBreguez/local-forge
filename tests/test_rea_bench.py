@@ -187,7 +187,8 @@ class Scorer(unittest.TestCase):
         self.assertFalse(s("37", {"score": "tokens", "accept": [core.dec(-37)]}))
 
     def test_reject_looks_at_the_headline_only(self):
-        tracer = {"score": "tokens", "accept": [["tracerpid"], core.dec(3)], "reject": ["ptrace", "env", "timing"]}
+        tracer = {"score": "tokens", "accept": [["tracerpid"], core.dec(3)], "reject": ["ptrace", "env", "timing"],
+                  "question": "Which anti-debugging technique does proc implement, and what does proc return when a tracer is attached (decimal)?"}
         self.assertTrue(scoring.score("tracerpid, returns 3\nIt notices that a debugger is ptrace-attached via /proc.", tracer))
         self.assertFalse(scoring.score("tracerpid or ptrace, returns 3", tracer))
 

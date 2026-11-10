@@ -153,9 +153,9 @@ def family_attacks(t) -> list:
                      f"{alg}, {d}, {rounds} rounds (128-bit key)"]
             yields = [f"{alg} {d}, {rounds} iterations (a 128-bit key, 64-bit blocks)"]          # 64-bit blocks: the question says 8-byte
         elif v == "rc4":
-            right = [f"{alg}, {rounds}", f"{alg}: {rounds} bytes", f"It's {alg}, key length {rounds}.", f"**{alg}**, {rounds}",
-                     f"{alg}, {rounds} bytes ({int(rounds) * 8} bits)"]
-            yields = [f"{alg} with a {rounds}-byte key"]                                          # `N-byte` is a context form, not a hit
+            right = [f"{alg}, {rounds}", f"{alg}: {rounds} bytes", f"**{alg}**, {rounds}", f"{alg}, {rounds} bytes ({int(rounds) * 8} bits)"]
+            yields = [f"{alg} with a {rounds}-byte key",                                          # `N-byte` is a context form, not a hit
+                      f"It's {alg}, key length {rounds}."]                                        # a quantity noun after a group could label the wrong number
         else:
             right = [f"{alg}, {rounds}", f"{alg}: {rounds} rounds", f"It's {alg}, {rounds} rounds.", f"**{alg}**, {rounds}", f"{alg}, {rounds} rounds (256-bit key)"]
             yields = []
@@ -173,7 +173,7 @@ def family_attacks(t) -> list:
                     ("tea (eXtended TEA)", f"{alg}{' (eXtended TEA)' if alg == 'XTEA' else ''}, {d}, {rounds}", True),
                     ("tea 'Tiny Encryption Algorithm'", f"TEA (Tiny Encryption Algorithm), {d}, {rounds}" if alg == "TEA" else f"XTEA, {d}, {rounds}", True),
                     ("tea plain 'TEA' for XTEA key", f"TEA, {d}, {rounds}" if alg == "XTEA" else f"XTEA, {d}, {rounds}", False),
-                    ("tea words: Block TEA", f"{alg} {d}, {rounds}, a block cipher", True),
+                    ("tea words: a block cipher after the number (yield)", f"{alg} {d}, {rounds}, a block cipher", "yield"),
                     ("tea (TEA not XTEA) mis-identification", f"TEA (not XTEA), {d}, {rounds}", False if alg == "XTEA" else None),
                     ("tea key negated, number negated", f"{alg}, {d}, not {rounds}", False)]
         if v in ("chacha", "salsa"):
@@ -186,7 +186,7 @@ def family_attacks(t) -> list:
         if v == "rc4":
             out += [("rc4 klen+-1", f"RC4, {int(rounds) + 1}", False), ("rc4 'arcfour'", f"ARCFOUR, {rounds} bytes", True),
                     ("rc4 bits not bytes", f"RC4, {int(rounds) * 8} bits", False), ("rc4 'RC4/ARC4' (same)", f"RC4/ARC4, {rounds}", True),
-                    ("rc4 key length text", f"RC4, key length {rounds} bytes", True), ("rc4 RC4 vs RC5", f"RC5, {rounds}", False),
+                    ("rc4 key length text (yield)", f"RC4, key length {rounds} bytes", "yield"), ("rc4 RC4 vs RC5", f"RC5, {rounds}", False),
                     ("rc4 RC4 or AES", f"RC4 or AES, {rounds}", False), ("rc4 RC4 or Camellia", f"RC4 or Camellia, {rounds}", False),
                     ("rc4 bytes and bits", f"RC4, {rounds} bytes ({int(rounds) * 8} bits)", True)]
     elif kind == "encoding" and mode == "tokens":

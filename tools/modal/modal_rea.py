@@ -6,7 +6,9 @@ Two arms per model, on 10 questions about 8 functions in one stripped Linux bina
            the model answers. Measures reading ability, which is what REA needs from a model.
   agent  : the model gets a shell with `rea`, the binary and the question, and must find the function itself (up to 8 tool
            calls, JSON tool protocol enforced by the harness). Measures tool use.
-Scoring is rea_bench.scoring.score (substring modes for the fixed questions, headline-only modes for generated families), recorded with the full transcript in results/phase6/rea/<model>.jsonl.
+Scoring is rea_bench.scoring.score, the EVALUATION scorer: the frozen whole-reply substring modes for the fixed questions and the legacy templates (so 34/60 -> 50/60 stays
+comparable), the whitelist headline grammar for the generated families. The data path (modal_rea_data.py --stage sample) does not use it: it scores every family, legacy
+included, with rea_bench.scoring.score_strict. Recorded with the full transcript in results/phase6/rea/<model>.jsonl.
 The generated held-out set (seed 1001) is a third arm, reported on its own line and never added to the fixed 10: each record has `pass` (strict:
 the HEADLINE of the reply is the answer) and `pass_any_line` (a format-insensitive control: any line of the reply is). A base model that
 thinks aloud on line 1 scores 0 strict and, if it answers later, 1 on the control; the gain of a fine-tune on the strict score is only
