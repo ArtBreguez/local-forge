@@ -23,9 +23,8 @@ from .helpers import ROOT
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, families, scoring  # noqa: E402
-
-CLANG = shutil.which("clang")
+from rea_bench import core, families, scoring, verify  # noqa: E402
+from rea_bench.verify import CLANG, compile_check, run_harness  # noqa: E402
 
 
 def digest(directory: pathlib.Path) -> str:
@@ -33,21 +32,6 @@ def digest(directory: pathlib.Path) -> str:
     for p in sorted(directory.glob("*")):
         h.update(p.name.encode() + b"\0" + p.read_bytes() + b"\0")
     return h.hexdigest()
-
-
-def cc_syntax(src: str, opt: str, cc: str = "gcc") -> subprocess.CompletedProcess:
-    """-Wall -Werror compile of the generated file alone (no link): any warning at this level fails."""
-    return subprocess.run([cc, opt, "-Wall", "-Werror", "-c", "-o", "/dev/null", "-x", "c", "-"], input=src,
-                          capture_output=True, text=True, timeout=60)
-
-
-def run_harness(src: str, opt: str, extra=(), cc: str = "gcc") -> subprocess.CompletedProcess:
-    with tempfile.TemporaryDirectory() as d:
-        exe = pathlib.Path(d, "h")
-        b = subprocess.run([cc, opt, "-Wall", *extra, "-o", str(exe), "-x", "c", "-"], input=src, capture_output=True, text=True, timeout=60)
-        if b.returncode:
-            return b
-        return subprocess.run([str(exe)], capture_output=True, text=True, timeout=30)
 
 
 def build_binary(src: str, opt: str, out: pathlib.Path, extra=()) -> None:
@@ -63,13 +47,7 @@ def global_text_symbols(src: str, opt: str) -> set:
     return {line.split()[2] for line in nm.splitlines() if len(line.split()) == 3 and line.split()[1] == "T"}
 
 
-def _ubsan_works() -> bool:
-    r = subprocess.run(["gcc", "-fsanitize=undefined", "-fno-sanitize-recover=all", "-o", "/dev/null", "-x", "c", "-"],
-                       input="int main(void){return 0;}", capture_output=True, text=True)
-    return r.returncode == 0
-
-
-UBSAN = _ubsan_works()
+UBSAN = verify.ubsan_available()
 
 
 class LegacyPin(unittest.TestCase):
@@ -195,14 +173,14 @@ class FamilyChecks:
     def test_compiles_clean_with_gcc(self):
         for t in self.tasks:
             for opt in core.OPTS:
-                r = cc_syntax(t.source(), opt)
+                r = compile_check(t.source(), opt)
                 self.assertEqual(r.returncode, 0, f"{t.id} ({t.variant}) gcc {opt}:\n{r.stderr}\n{t.source()}")
 
     @unittest.skipUnless(CLANG, "clang is not installed here")
     def test_compiles_clean_with_clang(self):
         for t in self.tasks:
             for opt in ("-O0", "-O2"):
-                r = cc_syntax(t.source(), opt, "clang")
+                r = compile_check(t.source(), opt, "clang")
                 self.assertEqual(r.returncode, 0, f"{t.id} ({t.variant}) clang {opt}:\n{r.stderr}")
 
     def test_harness_proves_the_truth(self):
@@ -212,8 +190,7 @@ class FamilyChecks:
                 continue
             main_c, want, *pre = t.check
             src = t.source(main_c, pre[0] if pre else "")
-            runs = [("-O0", ()), ("-O2", ())] + ([("-O1", ("-fsanitize=undefined", "-fno-sanitize-recover=all"))] if UBSAN else [])
-            for opt, extra in runs:
+            for opt, extra in verify.harness_runs(UBSAN):
                 r = run_harness(src, opt, extra)
                 self.assertEqual(r.returncode, 0, f"{t.id} ({t.variant}) {opt} {extra}:\n{r.stderr}")
                 self.assertEqual(r.stdout, want, f"{t.id} ({t.variant}) {opt} {extra}")
