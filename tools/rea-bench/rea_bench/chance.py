@@ -28,7 +28,7 @@ CHANCE: dict = {
     "bounds/char_class": 0.0403,
     "bounds/clamp": 0.001,
     "bounds/index_limit": 0.0107,
-    "bounds/loop_iterations": 0.0181,
+    "bounds/loop_iterations": 0.0188,
     "bounds/range_chain": 0.001,
     "bounds/window": 0.001,
     "cipher/chacha": 0.0314,
@@ -58,16 +58,16 @@ CHANCE: dict = {
     "fsm/table_states": 0.2683,
     "multi/chain": 0.0012,
     "multi/decode_secret": 0.001,
-    "multi/eval_arith": 0.0028,
+    "multi/eval_arith": 0.0029,
     "multi/key_helper": 0.0039,
     "multi/limit_helper": 0.0404,
-    "pktsum/crc16": 0.3613,
-    "pktsum/fletcher16": 0.3579,
-    "pktsum/len_field": 0.2553,
-    "pktsum/sum16_be": 0.36,
-    "pktsum/sum16_le": 0.3543,
-    "pktsum/sum8": 0.2281,
-    "pktsum/xor8": 0.2255,
+    "pktsum/crc16": 0.3691,
+    "pktsum/fletcher16": 0.3595,
+    "pktsum/len_field": 0.2573,
+    "pktsum/sum16_be": 0.3669,
+    "pktsum/sum16_le": 0.353,
+    "pktsum/sum8": 0.2271,
+    "pktsum/xor8": 0.2245,
     "strobf/alt_xor": 0.001,
     "strobf/reverse_xor": 0.001,
     "strobf/rot_n": 0.001,
@@ -108,7 +108,7 @@ def estimate(seed: int = 424242, n: int = PER_VARIANT) -> dict:
             groups.setdefault(_group(t), Counter())[_answer(t)] += 1
         for variant in mod.VARIANTS:
             ts = [t for t in tasks if t.variant == variant]
-            if ts[0].truth.get("cand") and "alphabet" in ts[0].params:      # fsm input strings
+            if ts[0].truth.get("cand") and "d" in ts[0].params and "alphabet" in ts[0].params:      # fsm input strings
                 p = sum(len(t.truth["accept"][0]) / len(t.params["alphabet"]) ** t.params["d"] for t in ts) / len(ts)
             else:
                 p = sum((groups[_group(t)][_answer(t)] - 1) / max(sum(groups[_group(t)].values()) - 1, 1) for t in ts) / len(ts)

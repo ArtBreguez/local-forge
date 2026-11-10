@@ -14,6 +14,7 @@ import hashlib
 import io
 import json
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
@@ -575,14 +576,40 @@ class FactGate(unittest.TestCase):
         self.assertNotIn(0x20, nums)
 
     def test_forms_and_strings(self):
-        nums = {0x610, 0xfffffe0c, 8}
+        nums = {0x610, 0xfffffe0c, 0x48}
         present = lambda g: survive.group_present(g, nums, b"..LD_PRELOAD..")
         self.assertTrue(present([0x610]) and present([-0x610]), "magnitude, either sign")
         self.assertTrue(present([500]), "x - lo is `add 0xfffffe0c` (= -500 as 32 bits)")
         self.assertTrue(present([-500]))
-        self.assertTrue(present([7, 8]), "any alternative of the group")
-        self.assertFalse(present([7, 9]))
+        self.assertTrue(present([0x47, 0x48]), "any alternative of the group")
+        self.assertFalse(present([0x47, 0x49]))
         self.assertTrue(present(["LD_PRELOAD"]) and not present(["LD_AUDIT"]))
+
+    def test_a_truncation_of_the_value_is_not_the_value(self):
+        """M1: 0xa001 was 'present' because the code had `cmp rsi, 1` (its low byte); 0xedb88320 because of a 16-bit part."""
+        self.assertFalse(survive.group_present([0xa001], {1, 8, 0xff}, b""), "low byte of a positive value")
+        self.assertFalse(survive.group_present([0x1234], {0x34}, b""))
+        self.assertFalse(survive.group_present([0x8408], {8}, b""), "psrlw xmm4, 8")
+        self.assertFalse(survive.group_present([0xedb88320], {0x8320, 0x20, 0x1234}, b""), "16-bit part of a 32-bit constant")
+        self.assertFalse(survive.group_present([0xedb88320], {(-0xedb88320) & 0xffff}, b""), "16-bit part of its negation")
+        self.assertTrue(survive.group_present([0xa001], {0xffff5fff}, b""), "x - 0xa001 is add edi, 0xffff5fff")
+        self.assertTrue(survive.group_present([0xa001], {(-0xa001) & 0xffffffffffffffff}, b""))
+        self.assertTrue(survive.group_present([-100], {0x9c}, b""), "a negative immediate in an 8-bit operation")
+        self.assertEqual(core.forms(0xa001), {0xa001, 0x5fff, 0xffff5fff, 0xffffffffffff5fff})
+        self.assertNotIn(0x8320, core.forms(0xedb88320))
+        self.assertNotIn(0x20, core.forms(0xedb88320))
+        self.assertIn(0x9c, core.forms(-100), "the 8-bit pattern of a negative value below 256")
+        self.assertNotIn(0x9c, core.forms(-300))
+        self.assertNotIn((-200) & 0xff, core.forms(200), "no 8-bit pattern for a positive value: it is a truncation alias of nothing real")
+        self.assertNotIn((-0x1234) & 0xff, core.forms(0x1234))
+
+    def test_values_below_0x20_are_weak_evidence_but_never_vacuous(self):
+        """8 is in most programs, so presence of a small value proves little: the weight is on the probe (test_rea_gate). But a group
+        whose every value is absent is still absent: passing it as 'always present' let 8 of 40 char_class tasks through."""
+        self.assertFalse(survive.group_present([7, 8, 9], set(), b""))
+        self.assertTrue(survive.group_present([7, 8, 9], {8}, b""))
+        self.assertFalse(survive.group_present([0x7a, 5], {0x30}, b""), "a bound next to a width: neither is in the code")
+        self.assertTrue(survive.group_present([0x7a, 5], {5}, b""))
 
     @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
     def test_gate_accepts_a_present_constant_and_rejects_a_missing_one(self):
@@ -628,7 +655,13 @@ class FactGate(unittest.TestCase):
             for t in families.generate(fam, 120, 9):
                 json.dumps(t.meta())
                 for g in t.facts:
-                    self.assertTrue(g and all((isinstance(a, int) and not isinstance(a, bool)) or (isinstance(a, str) and a) for a in g), (t.id, g))
+                    alts, spec = survive.split_group(g)
+                    self.assertTrue(alts and all((isinstance(a, int) and not isinstance(a, bool)) or (isinstance(a, str) and a) for a in alts), (t.id, g))
+                    self.assertTrue(all(not isinstance(a, dict) for a in g[:-1]), "a probe is the last element of its group")
+                    if spec:         # the probe's anchor finds an asked literal in the source and it is one of the group's own values
+                        m = re.search(spec["at"], t.source())
+                        self.assertIsNotNone(m, (t.id, spec["at"]))
+                        self.assertIn(survive._parse_int(m.group(1)), alts, (t.id, m.group(1), alts))
                 p = t.params
                 if t.variant in ("field_read", "init_magic", "linked_next", "nested_offset"):
                     self.assertIn(p["offset"], t.facts[0])

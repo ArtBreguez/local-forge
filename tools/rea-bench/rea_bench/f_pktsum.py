@@ -162,7 +162,8 @@ QUESTIONS = {
 
 def _make(rng, variant, kind, endian=None, len_field=False):
     spec = Spec(rng, kind, endian, len_field)
-    body = with_decoys(_len_body(spec) if len_field else _flat_body(spec), rng, rng.choice([1, 1, 2]), {spec.magic})   # core.decoys
+    body = with_decoys(_len_body(spec) if len_field else _flat_body(spec), rng, rng.choice([1, 1, 2]),
+                       {spec.magic, spec.S, spec.L or 0, spec.H, spec.W})   # core.decoys: nothing the question can ask for
     asks = ["len_offset", "len_start"] if len_field else ["start"] + (["endian"] if spec.W == 2 else [])   # no `tail`: it is the checksum width
     ask = rng.choice(asks)
     if ask == "endian":

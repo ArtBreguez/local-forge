@@ -45,39 +45,74 @@ def dec(v: int) -> list:
 
 
 DECOY_NAMES = ["pad", "tmp", "seed", "salt", "tick", "stat", "mark", "hint", "slot", "note", "gap", "spin"]
+DECOY_MARK = "// decoy"          # every decoy line ends with this: dedupe.strip_decoys removes them to get the program without decoys
+
+
+def forms(a: int) -> set:
+    """How the integer `a` prints in an instruction of `objdump -d`: its magnitude, and the 16/32/64-bit two's-complement pattern of
+    its negation (`x - a` is `add edi, 0xffff5fff` for a = 0xa001); a negative `a` prints as its own pattern, also as an 8-bit one
+    (`cmp al, 0x9c` for -100) when |a| < 256. A pattern of a value too wide for the width is a truncation of it, not a form of it, and
+    is not offered: no low byte of a positive value, no 16-bit part of a 32-bit constant."""
+    out = {abs(a)}
+    for m in (0xffff, 0xffffffff, 0xffffffffffffffff):
+        if abs(a) <= m:
+            out.add((-a) & m if a > 0 else a & m)
+    if a < 0 and -a < 256:
+        out.add(a & 0xff)
+    return out - {0}
+
+
+def _decoy_statement(rng, n: str) -> tuple:
+    """(two lines, the integer literals they use). A volatile local or a static counter, kept by every -O level."""
+    c = rng.randrange(0x1000, 0x10000)
+    kind, s = rng.randrange(5), rng.randint(1, 7)
+    if kind == 0:
+        return [f"volatile unsigned {n} = 0x{c:x}u;", f"{n} ^= {n} >> {s};"], {c, s}
+    if kind == 1:
+        return [f"static volatile unsigned {n};", f"{n} += 0x{c:x}u;"], {c}
+    if kind == 2:
+        m = rng.randint(4, 16)
+        i, j = rng.randrange(m), rng.randrange(m)
+        return [f"static volatile unsigned char {n}[{m}];", f"{n}[{i}] = (unsigned char)({n}[{j}] + 0x{c & 0xff:02x});"], {m, i, j, c & 0xff}
+    if kind == 3:
+        return [f"volatile unsigned {n} = {c}u;", f"{n} = ({n} << {s}) | ({n} >> {32 - s});"], {c, s, 32 - s}
+    k = rng.randint(1, 999)
+    return [f"static volatile unsigned short {n} = 0x{c:x};", f"{n} = (unsigned short)({n} + {k});"], {c, k}
 
 
 def decoys(rng, count: int, forbidden=()) -> str:
     """`count` harmless statements for the top of a function: volatile locals and static counters that survive every -O level, so
     the compiled function has extra, unrelated constants (real code is full of them). Each carries random constants, which is what
-    keeps small templates (a standard CRC, a base64 encoder, ChaCha) from being the same program in every task. No constant equals
-    a value in `forbidden` (the answer must not be matched by a decoy)."""
+    keeps small templates (a standard CRC, a base64 encoder, ChaCha) from being the same program in every task. NO literal of a
+    statement (constants, shift counts, array sizes, indices) is a value in `forbidden` or one of its instruction forms: a decoy must
+    never equal the key or a fact alternative, or the fact gate and a model reading the code could take it for the answer (m8). Every
+    line ends with DECOY_MARK so the decoys can be stripped again."""
+    ban = set()
+    for v in forbidden:
+        ban |= {v} | forms(v)
     out, names = [], rng.sample(DECOY_NAMES, count)
     for k, base in enumerate(names):
-        n = f"{base}{k}"
-        c = rng.randrange(0x1000, 0x10000)
-        while c in forbidden:
-            c = rng.randrange(0x1000, 0x10000)
-        kind, s = rng.randrange(5), rng.randint(1, 7)
-        if kind == 0:
-            out += [f"volatile unsigned {n} = 0x{c:x}u;", f"{n} ^= {n} >> {s};"]
-        elif kind == 1:
-            out += [f"static volatile unsigned {n};", f"{n} += 0x{c:x}u;"]
-        elif kind == 2:
-            m = rng.randint(4, 16)
-            out += [f"volatile unsigned char {n}[{m}] = {{0}};", f"{n}[{rng.randrange(m)}] = (unsigned char)({n}[{rng.randrange(m)}] + 0x{c & 0xff:02x});"]
-        elif kind == 3:
-            out += [f"volatile unsigned {n} = {c}u;", f"{n} = ({n} << {s}) | ({n} >> {32 - s});"]
+        for _ in range(500):
+            lines, lits = _decoy_statement(rng, f"{base}{k}")
+            if not lits & ban:
+                break
         else:
-            out += [f"static volatile unsigned short {n} = 0x{c:x};", f"{n} = (unsigned short)({n} + {rng.randint(1, 999)});"]
-    return "".join(f"    {line}\n" for line in out)
+            raise RuntimeError("no decoy statement avoids the forbidden values")
+        out += lines
+    return "".join(f"    {line} {DECOY_MARK}\n" for line in out)
+
+
+def strip_decoys(body: str) -> str:
+    """The body without its decoy lines."""
+    return "\n".join(line for line in body.split("\n") if not line.rstrip().endswith(DECOY_MARK))
 
 
 _PROC_OPEN = re.compile(r"\bproc\s*\([^)]*\)\s*\{\n")
 
 
 def with_decoys(body: str, rng, count: int, forbidden=()) -> str:
-    """`body` with `count` decoy statements as the first lines of proc."""
+    """`body` with `count` decoy statements as the first lines of proc. `forbidden`: every integer the question or the fact gate can
+    ask for (the answer values and all fact alternatives)."""
     if not count:
         return body
     m = _PROC_OPEN.search(body)

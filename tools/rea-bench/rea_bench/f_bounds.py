@@ -103,11 +103,11 @@ def v_loop_iterations(rng):
     s = rng.randint(2, 9)
     loop = {"up_lt": f"for (int i = {a}; i < n; i += {s}) c++;", "up_le": f"for (int i = {a}; i <= n; i += {s}) c++;",
             "down_gt": f"for (int i = n; i > {a}; i -= {s}) c++;", "down_ge": f"for (int i = n; i >= {a}; i -= {s}) c++;"}[form]
-    body = with_decoys(f"int proc(int n) {{\n    int c = 0;\n    {loop}\n    return c;\n}}", rng, rng.choice([1, 1, 2]), {a, s})
     n0 = a + rng.randint(5 * s, 60 * s)
+    want = count_ref(form, a, s, n0)
+    body = with_decoys(f"int proc(int n) {{\n    int c = 0;\n    {loop}\n    return c;\n}}", rng, rng.choice([1, 1, 2]), {a, s, n0, want})
     probes = [n0, 0, a, a + 1, n0 + 7]
     main = "int main(void) {\n" + "".join(f'    printf("%d\\n", proc({p}));\n' for p in probes) + "    return 0;\n}"
-    want = count_ref(form, a, s, n0)
     return Task(kind=FAMILY, variant="loop_iterations", body=body, truth={"score": "tokens", "accept": [dec(want)]},
                 params={"form": form, "a": a, "s": s, "n0": n0}, question=f"What does proc return when it is called with {n0} (decimal)?",
                 wrong=str(want + 1), check=(main, "".join(f"{count_ref(form, a, s, p)}\n" for p in probes)))

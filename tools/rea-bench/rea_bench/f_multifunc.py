@@ -54,8 +54,8 @@ def v_eval_arith(rng):
 uint32_t proc(uint32_t x) {{
     return {call};
 }}"""
-    body = with_decoys(body, rng, rng.choice([0, 1, 1, 2]))
     n0 = rng.randint(3, 60)
+    body = with_decoys(body, rng, rng.choice([0, 1, 1, 2]), {n0, ref(n0), k2, d})
     probes = [n0, n0 + 1, 0, 5]
     return Task(kind=FAMILY, variant="eval_arith", body=body, helpers=["helper"],
                 question=f"{CALLEE} What does proc return when it is called with {n0} (decimal)?",

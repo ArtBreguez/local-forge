@@ -76,6 +76,9 @@ def draw_params(rng, need_init=False, need_xor=False):
             label = "custom"
         if (need_init and init == 0) or (need_xor and xorout == 0):
             continue
+        lit = reflect(poly, width) if refl else poly
+        if lit in (init, xorout):          # the probe finds the poly literal by its text: it must be the only one of its value
+            continue
         return width, poly, init, refl, xorout, label
     return width, poly, init, refl, xorout, label
 
@@ -161,7 +164,9 @@ def _make(rng, form, ask):
     d = width // 4
     lit = reflect(poly, width) if refl else poly
     # standard algorithms are the same few programs in every task: decoys (core.decoys) make them differ; random polynomials need fewer
-    body = with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]) if label != "custom" else rng.choice([0, 1, 1, 2]), {poly, lit, init, xorout})
+    ones = (1 << width) - 1
+    body = with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]) if label != "custom" else rng.choice([0, 1, 1, 2]),
+                       {poly, lit, init, xorout, ones, 0xffffffff, 0xffffffffffffffff, 0x80, 0xff, 1 << (width - 1)})
     params = {"width": width, "poly": poly, "lit": lit, "init": init, "refl": refl, "xorout": xorout, "label": label}
     if ask == "poly":
         q = (f"This function computes a {width}-bit CRC. Give the polynomial constant exactly as it appears in the code (hex), and say "
@@ -182,8 +187,12 @@ def _make(rng, form, ask):
     asked = {"poly": lit, "init": init, "xorout": xorout}[ask]
     if asked == (1 << width) - 1:                    # all ones is loaded as a wider -1 (`mov edx, 0xffffffff`) in a 16-bit register
         asked = [asked, 0xffffffff, 0xffffffffffffffff]
+    # the probe finds the asked literal in the source by its text and replaces it by a marker (survive.py); a polynomial also fails when
+    # the compiler turned the bit loop into a 256-entry table (clang -O1: no polynomial in the code, a table in the data)
+    at = {"poly": rf"(0x{lit:0{d}x})u", "init": r"uint\d+_t crc = (0x[0-9a-f]+)u;", "xorout": r"return \(uint\d+_t\)\(crc \^ (0x[0-9a-f]+)u\)"}[ask]
+    probe = {"at": at, "kind": "exact", "hex": True, "bits": width, "no_table": ask == "poly"}
     return Task(kind=FAMILY, variant=f"{form}_{ask}", body=body, question=q, truth=truth, params=params, wrong=wrong,
-                check=harness(width, (poly, init, refl, xorout), rng), facts=[asked if isinstance(asked, list) else [asked]])
+                check=harness(width, (poly, init, refl, xorout), rng), facts=[(asked if isinstance(asked, list) else [asked]) + [probe]])
 
 
 def _variant(form, ask):

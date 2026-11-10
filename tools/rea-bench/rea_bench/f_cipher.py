@@ -172,7 +172,7 @@ def v_rc4(rng):
         buf[k] ^= S[(S[i] + S[j]) & 255];
     }}
 }}"""
-    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]))
+    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]), near(klen))
     data = bytes(rng.randrange(256) for _ in range(rng.randint(10, 24)))
     main = f"""int main(void) {{
     uint8_t buf[] = {{{c_bytes(data)}}};
@@ -195,7 +195,8 @@ def _tea_task(rng, alg, direction):
     ref = (tea if alg == "tea" else xtea)
     start = (DELTA * rounds) & M
     # `i` is declared outside the loop and returned: gcc replaces a loop counter by `sum` (the exit test becomes a compare with
-    # DELTA*rounds) so the round count would not be in the code at all (reviewer, M2); a returned count stays a constant.
+    # DELTA*rounds) so the round count would not be in the code at all (reviewer, M2); a returned count stays a constant. The fact
+    # carries a probe on the loop bound (survive.py): the count is visible only if a marker bound shows up in the code too.
     if alg == "tea" and direction == "enc":
         loop = f"""    uint32_t sum = 0;
     for (i = 0; i < {rounds}; i++) {{
@@ -233,7 +234,7 @@ def _tea_task(rng, alg, direction):
     v[1] = v1;
     return i;
 }}"""
-    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]))
+    body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]), near(rounds))
     main = f"""int main(void) {{
     uint32_t v[2] = {{0x{v[0]:08x}u, 0x{v[1]:08x}u}};
     unsigned r = proc(v);
@@ -249,7 +250,8 @@ def _tea_task(rng, alg, direction):
              ("xtea", "enc"): f"{other}, encrypt, {rounds}", ("xtea", "dec"): f"XTEA, {flip}, {rounds}"}[(alg, direction)]
     return Task(kind=FAMILY, variant=f"{alg}_{direction}", body=body, question=q,
                 truth=_truth(alg, [dec(rounds)], direction), params={"key": key, "rounds": rounds, "v": v, "alg": alg},
-                wrong=wrong, check=(main, f"{out[0]:08x} {out[1]:08x} {rounds}\n"), facts=[near(rounds)])
+                wrong=wrong, check=(main, f"{out[0]:08x} {out[1]:08x} {rounds}\n"),
+                facts=[near(rounds) + [{"at": r"for \(i = 0; i < (\d+); i\+\+\)", "kind": "near"}]])
 
 
 def _stream_task(rng, alg):
@@ -272,9 +274,9 @@ def _stream_task(rng, alg):
 
 """
         init = f"""    x[0] = {s(0)}; x[1] = {s(1)}; x[2] = {s(2)}; x[3] = {s(3)};
-    for (int i = 0; i < 8; i++) x[4 + i] = key[i];
+    for (int j = 0; j < 8; j++) x[4 + j] = key[j];
     x[12] = counter;
-    for (int i = 0; i < 3; i++) x[13 + i] = nonce[i];"""
+    for (int j = 0; j < 3; j++) x[13 + j] = nonce[j];"""
         rnd = """        QR(x[0], x[4], x[8], x[12])
         QR(x[1], x[5], x[9], x[13])
         QR(x[2], x[6], x[10], x[14])
@@ -291,7 +293,7 @@ def _stream_task(rng, alg):
 
 """
         init = f"""    x[0] = {s(0)}; x[5] = {s(1)}; x[10] = {s(2)}; x[15] = {s(3)};
-    for (int i = 0; i < 4; i++) {{ x[1 + i] = key[i]; x[11 + i] = key[4 + i]; }}
+    for (int j = 0; j < 4; j++) {{ x[1 + j] = key[j]; x[11 + j] = key[4 + j]; }}
     x[6] = nonce[0]; x[7] = nonce[1];
     x[8] = counter; x[9] = 0;"""
         rnd = """        QR(x[0], x[4], x[8], x[12])
@@ -304,31 +306,39 @@ def _stream_task(rng, alg):
         QR(x[15], x[12], x[13], x[14])"""
         nn = 2
         ref = salsa_block(key, counter, nonce, rounds)
-    body = f"""{macro}void proc(uint32_t out[16], const uint32_t key[8], uint32_t counter, const uint32_t nonce[{nn}]) {{
+    # proc returns the number of rounds it ran (`done`), like TEA returns its loop counter: the round count is then a value the code
+    # must produce, not only a loop bound a compiler may reshape (reviewer round 2, M1: every ChaCha/Salsa has the rotation
+    # constants 7, 8, 12, 16 / 7, 9, 13, 18, so a round count of 8 or 12 was "present" in a program that never ran it).
+    body = f"""{macro}unsigned proc(uint32_t out[16], const uint32_t key[8], uint32_t counter, const uint32_t nonce[{nn}]) {{
     uint32_t x[16], w[16];
+    unsigned done = 0;
 {sig}{init}
     memcpy(w, x, sizeof w);
     {loop_head} {{
 {rnd}
+        done += 2;
     }}
     for (int i = 0; i < 16; i++) out[i] = x[i] + w[i];
+    return done;
 }}"""
-    body = with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]))
+    body = with_decoys(body, rng, rng.choice([1, 1, 2, 2, 3]), near(rounds) + near(rounds // 2) + near(2 * rounds))
     main = f"""int main(void) {{
     static const uint32_t key[8] = {{{c_u32s(key)}}};
     static const uint32_t nonce[{nn}] = {{{c_u32s(nonce)}}};
     uint32_t out[16];
-    proc(out, key, 0x{counter:08x}u, nonce);
+    unsigned r = proc(out, key, 0x{counter:08x}u, nonce);
     for (int i = 0; i < 16; i++) printf("%08x%c", (unsigned)out[i], i % 4 == 3 ? '\\n' : ' ');
+    printf("%u\\n", r);
     return 0;
 }}"""
-    expect = "".join(f"{w:08x}" + ("\n" if i % 4 == 3 else " ") for i, w in enumerate(ref))
+    expect = "".join(f"{w:08x}" + ("\n" if i % 4 == 3 else " ") for i, w in enumerate(ref)) + f"{rounds}\n"
     q = ("This function expands a 256-bit key, a counter and a nonce into a 64-byte block. Which cipher family is it, and how many rounds "
          "does it run in total (a double round counts as 2, so a loop of N double rounds is 2N; the bound may show one off; decimal)?")
     wrong = f"salsa20, {rounds}" if alg == "chacha" else f"Salsa20, {rounds + 4}"
     return Task(kind=FAMILY, variant=alg, body=body, question=q, truth=_truth(alg, [dec(rounds)]),
                 params={"key": key, "rounds": rounds, "counter": counter, "nonce": nonce, "style": style},
-                wrong=wrong, check=(main, expect), facts=[near(rounds) + near(rounds // 2)])
+                wrong=wrong, check=(main, expect),
+                facts=[near(rounds) + near(rounds // 2) + [{"at": r"(?:for \(int i = 0; i < |for \(int i = )(\d+); i(?: \+= 2|\+\+| > 0; i -= 2)\) \{\n\s*QR", "kind": "half"}]])
 
 
 VARIANTS = {"rc4": v_rc4,
