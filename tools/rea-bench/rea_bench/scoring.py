@@ -294,6 +294,14 @@ def _string_competitor(text: str, t: dict) -> bool:
 
 # ---- entry points ------------------------------------------------------------------------------------------------------
 
+ERROR_PREFIX = "[error"       # what modal_rea_data.sample_answers writes for a failed request (`[error <exception repr>]`)
+
+
+def is_error_reply(reply: str) -> bool:
+    """The text of a failed request, not a reply of the model (a dead server, a timeout, a prompt over the slot size). Never scored, never stored."""
+    return reply.lstrip().startswith(ERROR_PREFIX)
+
+
 def check_mode(t: dict) -> None:
     """Fail fast on a task whose score mode this module does not know (a GPU run must not die half way through on it)."""
     if t.get("score") not in MODES:
@@ -360,6 +368,8 @@ def sft_target(reply: str, t: dict):
     justification that hedges or names another candidate, a sentence longer than MAX_SENTENCE, or (legacy tasks, whose answer may sit
     anywhere in the reply) a cut reply that no longer scores. The text always scores True itself."""
     check_mode(t)
+    if is_error_reply(reply):
+        return None
     if t["score"] in LEGACY_MODES:
         lines = [ln.rstrip() for ln in reply.splitlines() if ln.strip()]
         if not lines:

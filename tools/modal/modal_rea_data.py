@@ -43,7 +43,7 @@ if (RB / "rea_bench").is_dir():
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
 from rea_bench import dedupe, families, outputs, sft, survive  # noqa: E402  (stdlib-only)
-from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib-only, unit-tested without Modal; same scorer modal_rea.py uses)
+from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib-only, unit-tested without Modal)
 
 image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
 app = modal.App("lf-rea-data", image=image)
@@ -169,9 +169,10 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                 with ur.urlopen(req, timeout=600) as r:
                     txt = json.load(r)["choices"][0]["message"].get("content") or ""
                 txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
+                ok = score(txt, t)
             except Exception as e:
-                txt = f"[error {e!r}]"
-            outs.append((txt, score(txt, t)))
+                txt, ok = f"[error {e!r}]", False       # the text of a failed request is never scored (B1) and never stored; stats count it
+            outs.append((txt, ok))
         return t, outs
 
     try:
@@ -250,6 +251,7 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         dedupe.check_heldout_range(names, n, seed)          # the pinned held-out list covers 120 tasks per family
         _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag)
     else:
+        dedupe.check_sample_seed(seed)                       # the held-out split is never sampled for training (m7)
         m = [x for x in MODELS if x[0] == model]
         if not m:
             raise SystemExit(f"unknown model {model}; known: {[x[0] for x in MODELS]}")
@@ -263,7 +265,10 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         outputs.write_atomic(out, (json.dumps(r) for r in res["sft"]))
         stats.write_text(json.dumps(res["stats"], indent=1))
         s = res["stats"]
-        print(name, tag, {f: s.get(f) for f in ("tasks", "answers", "correct", "solved_tasks", "kept_tasks", "kept_records", "agreement", "vetoed")}, "->", out)
+        print(name, tag, {f: s.get(f) for f in ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "agreement", "vetoed")}, "->", out)
+        warning = sft.error_warning(s)
+        if warning:
+            print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
         for kind, row in s.get("by_kind", {}).items():
             print(f"  {kind:10s} {row['solved_tasks']:4d}/{row['tasks']:<4d} solved, {row['kept_tasks']:4d} kept ({row['agreement']} dropped for lack of "
                   f"agreement, {row['vetoed']} vetoed)")

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import collections
 
-from .scoring import sft_target
+from .scoring import is_error_reply, sft_target
 
 AGREE_CHANCE = 0.2
 AGREE_MIN = 2
@@ -30,7 +30,7 @@ def select(outs: list, t: dict) -> tuple:
     """([records], reason) for one task. `outs` = [(reply, scored right)] for its K samples. A record is
     {"text", "headline", "truncated"}; reason is "kept", "no_correct", "agreement" (too few agreeing right samples for the task's
     chance level) or "vetoed" (every right reply had a justification that is not storable)."""
-    good = [o for o, ok in outs if ok]
+    good = [o for o, ok in outs if ok and not is_error_reply(o)]       # the text of a failed request is never a sample
     if not good:
         return [], "no_correct"
     if needs_agreement(t) and len(good) < AGREE_MIN:
@@ -48,7 +48,7 @@ def select(outs: list, t: dict) -> tuple:
 class Stats:
     """The sample stage's counters, in total and per task family (`kind`)."""
 
-    FIELDS = ("tasks", "answers", "correct", "solved_tasks", "kept_tasks", "kept_records", "truncated", "no_correct", "agreement", "vetoed")
+    FIELDS = ("tasks", "answers", "errors", "correct", "solved_tasks", "kept_tasks", "kept_records", "truncated", "no_correct", "agreement", "vetoed")
 
     def __init__(self):
         self.total = collections.Counter()
@@ -58,8 +58,9 @@ class Stats:
         for c in (self.total, self.by_kind[t.get("kind", "?")]):
             c["tasks"] += 1
             c["answers"] += len(outs)
-            c["correct"] += sum(ok for _o, ok in outs)
-            c["solved_tasks"] += any(ok for _o, ok in outs)
+            c["errors"] += sum(is_error_reply(o) for o, _ok in outs)          # failed requests: not answers, never right
+            c["correct"] += sum(ok and not is_error_reply(o) for o, ok in outs)
+            c["solved_tasks"] += any(ok and not is_error_reply(o) for o, ok in outs)
             c["kept_tasks"] += bool(kept)
             c["kept_records"] += len(kept)
             c["truncated"] += sum(r["truncated"] for r in kept)
@@ -69,6 +70,22 @@ class Stats:
     def as_dict(self) -> dict:
         row = lambda c: {f: c[f] for f in self.FIELDS}
         return {**row(self.total), "by_kind": {k: row(c) for k, c in sorted(self.by_kind.items())}}
+
+
+ERROR_RATE_WARN = 0.05
+
+
+def error_warning(stats: dict):
+    """A loud warning text when more than ERROR_RATE_WARN of the requests failed (in total, or in one family); None otherwise. A dead
+    server, a timeout or an over-long prompt turns every following request into an error: the yield numbers are then not about the model."""
+    rows = {"ALL": stats, **stats.get("by_kind", {})}
+    bad = [(k, r["errors"], r["answers"]) for k, r in rows.items() if r.get("answers") and r.get("errors", 0) / r["answers"] > ERROR_RATE_WARN]
+    if not bad:
+        return None
+    lines = "; ".join(f"{k}: {e}/{a} requests failed ({100 * e / a:.0f}%)" for k, e, a in bad)
+    return (f"WARNING: MORE THAN {int(ERROR_RATE_WARN * 100)}% OF THE REQUESTS FAILED ({lines}). Failed requests are not scored and not stored, "
+            f"but these counts say nothing about the model. Look at /tmp/server.log on the sampler (OOM, a prompt over the slot size, a timeout) "
+            f"and re-run with --resume.")
 
 
 def assemble(tasks: list, results: dict, model: str, messages_for) -> tuple:

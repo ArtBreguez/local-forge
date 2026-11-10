@@ -257,5 +257,78 @@ class LegacyDefault(ModalCase):
             self.assertIn("none of them is kept", self.printed)
 
 
+class Round3Pipeline(ModalCase):
+    """Round 3: B1 (a failed request is never scored or stored), m7 (no sampling of the held-out seed), m8 (volume rm fails closed)."""
+
+    ERRORS = ["[error <HTTPError 500: 'Internal Server Error'>]", "[error TimeoutError('The read operation timed out')]",
+              "[error URLError(ConnectionRefusedError(111, 'Connection refused'))]", "[error ValueError('Expecting value: line 1 column 1 (char 0)')]"]
+
+    def test_b1_an_error_text_is_not_a_reply_even_when_a_scorer_would_accept_it(self):
+        skip = {"id": "skip-7-0055", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"]}        # the review's task: a legacy variant offers `a`
+        for txt in self.ERRORS:
+            self.assertTrue(scoring.is_error_reply(txt))
+            self.assertIsNone(scoring.sft_target(txt, skip), txt)
+            self.assertEqual(sft.select([(txt, True)] * 6, skip), ([], "no_correct"), "even a stale True flag does not keep it")
+        self.assertFalse(scoring.is_error_reply("0x0a"))
+
+    def test_b1_errors_are_counted_per_family_and_a_dead_server_is_loud(self):
+        t = {"id": "a", "kind": "crc", "score": "tokens", "accept": [["1"]], "chance": 0.01}
+        u = {"id": "b", "kind": "bounds", "score": "tokens", "accept": [["1"]], "chance": 0.01}
+        st = sft.Stats()
+        for task, outs in ((t, [(self.ERRORS[0], True), ("1", True), ("2", False)]), (u, [("1", True), ("1", True), ("1", True)])):
+            st.add(task, outs, *sft.select(outs, task))
+        d = st.as_dict()
+        self.assertEqual((d["errors"], d["answers"], d["correct"]), (1, 6, 4))
+        self.assertEqual((d["by_kind"]["crc"]["errors"], d["by_kind"]["bounds"]["errors"]), (1, 0))
+        self.assertEqual(d["by_kind"]["crc"]["correct"], 1, "a failed request is not a correct answer")
+        warning = sft.error_warning(d)
+        self.assertIn("MORE THAN 5%", warning)
+        self.assertIn("crc: 1/3", warning)
+        self.assertIsNone(sft.error_warning({"answers": 100, "errors": 5, "by_kind": {"x": {"answers": 100, "errors": 5}}}), "5% exactly is not more")
+
+    def test_b1_the_sampler_does_not_score_a_failed_request(self):
+        src = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
+        body = src[src.index("    def work(t):"):src.index("    try:\n        with ThreadPoolExecutor")]
+        self.assertIn('txt, ok = f"[error {e!r}]", False', body)
+        self.assertNotIn("score(txt, t))", body.split("except Exception")[1], "no scoring of the error text")
+
+    def test_b1_main_prints_the_warning_for_a_run_with_many_errors(self):
+        stats = {"tasks": 2, "answers": 12, "errors": 6, "correct": 0, "solved_tasks": 0, "kept_tasks": 0, "kept_records": 0, "agreement": 0, "vetoed": 0,
+                 "by_kind": {"crc": {"tasks": 2, "answers": 12, "errors": 6, "solved_tasks": 0, "kept_tasks": 0, "agreement": 0, "vetoed": 0}}}
+        with tempfile.TemporaryDirectory() as d:
+            self.run_main(pathlib.Path(d), stage="sample", model=self.data.MODELS[0][0], seed=7, family="crc", remote_result={"sft": [], "stats": stats})
+            self.assertIn("WARNING: MORE THAN 5% OF THE REQUESTS FAILED", self.printed)
+
+    def test_m7_the_sample_stage_refuses_the_held_out_seed(self):
+        with tempfile.TemporaryDirectory() as d:
+            with self.assertRaisesRegex(SystemExit, "held-out split.*--stage sample"):
+                self.run_main(pathlib.Path(d), stage="sample", model=self.data.MODELS[0][0], seed=1001, family="crc")
+            self.assertEqual(list((pathlib.Path(d) / "results" / "phase6" / "rea-data").glob("sft-*")), [])
+            self.run_main(pathlib.Path(d), stage="sample", model=self.data.MODELS[0][0], seed=7, family="crc")        # a training seed is fine
+
+    def test_m8_volume_rm_fails_closed_and_decides_from_a_listing_when_the_text_is_unknown(self):
+        def runner(rm_rc, rm_err, ls=None):
+            calls = []
+
+            def run(cmd, **k):
+                calls.append(cmd)
+                if cmd[2] == "rm":
+                    return types.SimpleNamespace(returncode=rm_rc, stdout="", stderr=rm_err)
+                return ls if ls is not None else types.SimpleNamespace(returncode=1, stdout="", stderr="boom")
+            run.calls = calls
+            return run
+
+        listing = lambda out, rc=0: types.SimpleNamespace(returncode=rc, stdout=out, stderr="")
+        outputs.rm_volume_dir("v", "/decompiled-seed7-all", runner(1, "FileNotFound: /decompiled-seed7-all"))               # the CLI's other spelling
+        outputs.rm_volume_dir("v", "/decompiled-seed7-all", runner(1, "something nobody has seen", listing("decompiled-seed8-all\nsft-x\n")))
+        for ls in (listing("decompiled-seed7-all\n"), listing("decompiled-seed7-a\u2026\n"), listing("", rc=1), None):
+            with self.assertRaisesRegex(SystemExit, "could not clear /decompiled-seed7-all"):
+                outputs.rm_volume_dir("v", "/decompiled-seed7-all", runner(1, "something nobody has seen", ls))
+        r = runner(1, "Error: authentication failed")
+        with self.assertRaises(SystemExit):
+            outputs.rm_volume_dir("v", "/decompiled-seed7-all", r)
+        self.assertEqual([c[2] for c in r.calls], ["rm", "ls"], "an unrecognised failure is checked against a listing, then stops the run")
+
+
 if __name__ == "__main__":
     unittest.main()

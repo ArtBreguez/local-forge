@@ -139,6 +139,14 @@ def check_heldout_range(names: list, n: int, seed: int) -> None:
                          f"{len(names)} famil{'y' if len(names) == 1 else 'ies'}, or another --seed")
 
 
+def check_sample_seed(seed: int) -> None:
+    """SystemExit when the sample stage is asked to sample the held-out seed: its tasks are the held-out split, and a sft-*-seed1001-*.jsonl
+    next to the training files would make "held-out never enters training" a matter of care instead of a rule (round 3, m7)."""
+    if seed == HELDOUT_SEED:
+        raise SystemExit(f"seed {HELDOUT_SEED} is the held-out split: --stage sample would write SFT pairs made from held-out tasks. Sample a "
+                         f"training seed (any other --seed), and use seed {HELDOUT_SEED} only with --stage decompile for modal_rea.py's held-out arm")
+
+
 def family_of_kind(kind: str) -> str:
     """The family a task record belongs to: its `kind` for the new families, `legacy` for the ten original templates (one kind each)."""
     from . import families

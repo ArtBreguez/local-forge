@@ -57,17 +57,30 @@ def load_tasks(files) -> list:
 
 # ---- robustness of the Modal stages (round 2, m6) ----------------------------------------------------------------------------------
 
-_ABSENT = re.compile(r"not found|no such|does not exist|doesn't exist|no files", re.I)
+_ABSENT = re.compile(r"not found|no such|does not exist|doesn't exist|no files|file ?not ?found|not exist", re.I)
+
+
+def _listing_says_absent(volume: str, path: str, run) -> bool:
+    """Decide from a listing, not from an error text: True only when `modal volume ls <volume> <parent>` succeeds, does not show the
+    entry's name, and shows no truncation marker (a table cell cut with an ellipsis could hide the name)."""
+    parent, _, name = path.rstrip("/").rpartition("/")
+    r = run(["modal", "volume", "ls", volume, parent or "/"], capture_output=True, text=True)
+    if r.returncode not in (0, None):
+        return False
+    listing = f"{getattr(r, 'stdout', '')}"
+    return bool(name) and name not in listing and "\u2026" not in listing and "..." not in listing
 
 
 def rm_volume_dir(volume: str, path: str, run=subprocess.run) -> None:
-    """Remove `path` on a Modal volume before a decompile run writes there. A directory that is not there is fine (first run); any other
-    failure stops the run: stale records of an older generator under the same tag would otherwise be sampled with the new ones."""
+    """Remove `path` on a Modal volume before a decompile run writes there. A directory that is not there is fine (first run); anything
+    else stops the run (fail closed): stale records of an older generator under the same tag would otherwise be sampled with the new ones.
+    "Not there" is recognised from the error text of `rm` (several spellings, `FileNotFound` included) or, when that text is not one of
+    them, from a successful `ls` of the parent directory that does not list the name: the CLI's message is not a contract (round 3, m8)."""
     r = run(["modal", "volume", "rm", "-r", volume, path], capture_output=True, text=True)
     if r.returncode in (0, None):
         return
     msg = f"{getattr(r, 'stdout', '')} {getattr(r, 'stderr', '')}"
-    if _ABSENT.search(msg):
+    if _ABSENT.search(msg) or _listing_says_absent(volume, path, run):
         return
     raise SystemExit(f"could not clear {path} on the Modal volume {volume} (exit {r.returncode}): {msg.strip()[:300]}\n"
                      f"stale records of an earlier run would be sampled with the new ones; fix the volume or use another --seed/--family")
