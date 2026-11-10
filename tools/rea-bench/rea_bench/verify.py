@@ -56,7 +56,7 @@ def harness_runs(ubsan: bool) -> list:
 def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
     """Problems found with one task (empty list = fine): a filler reply scores, the C does not compile clean, a harness disagrees
     with the truth, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
-    problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)]
+    problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)] if t.cc else []   # legacy: frozen, see cli
     if survive_check and t.facts:
         ok, why = survive.check_task(t)
         if not ok:

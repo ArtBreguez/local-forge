@@ -253,6 +253,17 @@ class ContentFreeReplies(unittest.TestCase):
                     self.assertFalse(hit, f"{t.id} ({t.variant}) accepts {hit}: {t.truth}")
             self.assertEqual(passed, 0, f"{fam}: {passed}/{total} tasks accept a filler reply")
 
+    def test_legacy_is_frozen_and_only_noted_by_check(self):
+        """The legacy templates keep their whole-reply scoring (comparability); `skip` tasks accept fillers there. check reports it."""
+        legacy = families.generate("legacy", 300, 7)
+        self.assertTrue(any(verify.filler_passes(t) for t in legacy), "documents the known weakness of the frozen scoring")
+        lax = next(t for t in legacy if verify.filler_passes(t))
+        self.assertFalse([p for p in verify.check_task(lax, ubsan=False, survive_check=False) if "content-free" in p], "not a problem for a legacy task")
+        r = subprocess.run([sys.executable, str(RB), "check", "--family", "legacy", "--n", "6", "--seed", "11", "--no-ubsan", "--no-survive"],
+                           capture_output=True, text=True)
+        self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
+        self.assertIn("legacy (frozen)", r.stdout)
+
     def test_the_fillers_are_what_the_review_used(self):
         self.assertEqual(verify.FILLER_REPLIES[:3], ["0 1 2", "1 2 3", "0x10 0x20"])
         self.assertIn("0 1 2 3 4 8 16 32 64 255 256 0x10 0x20", verify.FILLER_REPLIES)

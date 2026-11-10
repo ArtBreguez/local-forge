@@ -83,7 +83,13 @@ def cmd_check(a) -> None:
     for nm, c in zip(names, families.split_counts(a.n, len(names))):
         problems = []
         tasks = families.generate(nm, c, a.seed, "mix", gate)
-        problems += [f"{b} duplicates {first} (same program and question)" for first, b in dedupe.duplicates(tasks)]
+        dups = [f"{b} duplicates {first} (same program and question)" for first, b in dedupe.duplicates(tasks)]
+        if nm == "legacy":      # frozen templates and frozen whole-reply scoring: reported, not a problem (the held-out exclusion drops repeats)
+            lax = sum(bool(verify.filler_passes(t)) for t in tasks)
+            print(f"  legacy (frozen): {len(dups)} repeated programs, {lax} tasks accept a content-free reply under whole-reply scoring "
+                  f"(noted, not counted)")
+        else:
+            problems += dups
         for t in tasks:
             problems += verify.check_task(t, ubsan, survive_check=gate is not None)
         print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if t.facts)} with a fact checked at their own cc/opt" if gate else ""), flush=True)
