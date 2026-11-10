@@ -11,13 +11,21 @@ direction words FROM THE SENTENCE, and verifies each against the task's compiled
   with the table (and shows in tests/golden/rea_sentences.txt); the words that carry meaning (names, units, byte order, directions, the numbers) are groups.
 
 Pattern syntax: literal text, and `{name:kind}` for a group (a later `{name}` must repeat the same value). kinds: `i` an integer, `h` a hex number `0x..`,
-`p` a path, `q` a PTRACE request, `e` an expression over a and b, `w` an identifier, or `a|b|c` one of these words.
+`p` a path, `q` a PTRACE request, `e` an expression over a and b, `w` an identifier, `l` letters, `t` a string that a claim compares with the compiled behaviour
+(the string of a headline: it is checked byte for byte, so the group may be as loose as the string is), or `a|b|c` one of these words.
+
+HEADLINES (round 7, M1). The first line of the stored message gets the same treatment as the sentence: a pattern per headline phrasing (`HEADS`, `H(pattern,
+claims..., implied...)`), parsed from the RENDERED headline, and the claims of its row read the groups and verify them against the compiled task (the claims
+of the sentences, a few of them extended to read a string or a label). What a headline does not state but a claim needs (the width of the CRC, the call
+argument, the direction of a rotation) is IMPLIED: a constant of the question's meaning, a value the QUESTION states (`Q`), or a function of the groups that
+were read; an implied group is never "unread" and never comes from the parameter that rendered the headline.
 """
 from __future__ import annotations
 
 import re
 
-KINDS = {"i": r"-?\d+", "h": r"0x[0-9a-fA-F]+", "p": r"/[A-Za-z0-9_/.]+", "q": r"PTRACE_[A-Z_]+", "e": r"[ab0-9 ^&|+*()<>-]+?", "w": r"[A-Za-z_][A-Za-z0-9_]*"}
+KINDS = {"i": r"-?\d+", "h": r"0x[0-9a-fA-F]+", "p": r"/[A-Za-z0-9_/.]+", "q": r"PTRACE_[A-Z_]+", "e": r"[ab0-9 ^&|+*()<>-]+?", "w": r"[A-Za-z_][A-Za-z0-9_]*",
+         "l": r"[A-Za-z]+", "t": r".+"}
 FIELD = re.compile(r"\{(\w+)(?::([^{}]*))?\}")
 
 
@@ -27,6 +35,7 @@ class Caps(dict):
     def __init__(self, *a, **k):
         super().__init__(*a, **k)
         self.read: set = set()
+        self.implied: set = set()            # groups that the text does not state (a headline): never "unread"
 
     def __getitem__(self, k):
         self.read.add(k)
@@ -37,7 +46,7 @@ class Caps(dict):
         return super().get(k, default)
 
     def unread(self) -> set:
-        return set(self) - self.read
+        return set(self) - self.read - self.implied
 
 
 def compile_pattern(text: str):
@@ -438,3 +447,149 @@ def head_word_problems(heads: dict) -> list:
                 elif not any(key.startswith(pre) for pre in prefixes):
                     out.append(f"{key} head[{i}] {t!r}: the word {w!r} is registered for {sorted(prefixes)}, not for this key")
     return out
+
+
+# ---- headlines: one pattern per phrasing (round 7, M1) ------------------------------------------------------------------------------------------
+
+class Q:
+    """A value that the QUESTION of the task states (`rec["question"]`), used where a headline does not state it but a claim needs it: the CRC width, the
+    argument the question calls proc with, the direction of a rotation. `kind`: `i` an integer (decimal or 0x), `w` a word."""
+
+    def __init__(self, pattern: str, kind: str = "i"):
+        self.rx, self.kind = re.compile(pattern, re.I), kind
+
+    def __call__(self, question: str):
+        m = self.rx.search(question)
+        if m is None:
+            raise ValueError(f"the question has no {self.rx.pattern!r}: {question!r}")
+        v = m.group(1)
+        return (int(v, 16) if v.lower().startswith(("0x", "-0x")) else int(v)) if self.kind == "i" else v
+
+
+def H(pattern: str, *claims: str, **implied) -> tuple:
+    """A headline phrasing: its pattern, the claims that check what it states, and the groups it implies (a constant, a `Q`, or a function of the Caps)."""
+    return (pattern, tuple(claims), implied)
+
+
+def parse_head(row: tuple, headline: str, question: str):
+    """Caps of a rendered headline under the pattern of its row (the implied groups added), or None when the pattern does not match the whole headline."""
+    pattern, _claims, implied = row
+    caps = parse(pattern, headline)
+    if caps is None:
+        return None
+    for name, how in implied.items():
+        caps[name] = how(question) if isinstance(how, Q) else (how(caps) if callable(how) else how)
+        caps.implied.add(name)
+    return caps
+
+
+def _hr(patterns, *claims, **implied) -> list:
+    return [H(p, *claims, **implied) for p in patterns]
+
+
+_ALGS_ = "TEA|XTEA|RC4|ChaCha|Salsa"
+_Q_WIDTH = Q(r"(\d+)-bit CRC")
+_Q_ARG = Q(r"called with\s+(\d+)")
+_OFFSET_H = ("{off:h}", "Offset {off:h}", "The offset is {off:h}.", "byte offset {off:h}")
+_NUM_H = ("{n:i}", "It is {n:i}.", "Answer: {n:i}", "{n:i}.")
+_BOUND_H = ("{lo:i} to {hi:i}", "lowest {lo:i}, highest {hi:i}", "[{lo:i}, {hi:i}]", "from {lo:i} to {hi:i}")
+_ACCEPTED_H = ("{s:t}", "The string is: {s:t}", "Input: {s:t}", "The input is: {s:t}")
+_FSM_IN_H = ("{s:l}", "Input: {s:l}", "The input is {s:l}.", '"{s:l}"')
+_FSM_ST_H = ("{n:i} states", "{n:i}", "{n:i} distinct states", "It has {n:i} states.")
+_Q_FINAL = Q(r"returns\s+(\d+)\s*\.")
+_CRC_POLY_H = ("{lit:h}, {dir:normal|reflected}", "{lit:h} {dir:normal|reflected}", "The polynomial is {lit:h}, {dir:normal|reflected}.",
+               "polynomial {lit:h}, {dir:normal|reflected}")
+_CRC_VAL_H = ("{x:h}", "It is {x:h}.", "Answer: {x:h}", "value {x:h}")
+_TEA_H = ["{alg:%s}, {dir:encrypt|decrypt}, {rounds:i}" % _ALGS_, "{alg:%s}, {dir:encrypt|decrypt}, {rounds:i} iterations" % _ALGS_,
+          "{dir:encrypt|decrypt}, {alg:%s}, {rounds:i} iterations" % _ALGS_, "{alg:%s} {dir:encrypt|decrypt}, {rounds:i} iterations" % _ALGS_]
+_STREAM_H = ["{alg:%s}, {rounds:i}" % _ALGS_, "{alg:%s}, {rounds:i} rounds" % _ALGS_, "{alg:%s}: {rounds:i} rounds" % _ALGS_, "It is {alg:%s}, {rounds:i} rounds." % _ALGS_]
+_ENC_H = ["{dir:encode|decode}, {base:base64|base32|base58}", "{base:base64|base32|base58}, {dir:encode|decode}", "{base:base64|base32|base58} {dir:encode|decode}",
+          "{Dir:Encode|Decode}s {base:base64|base32|base58}"]
+_ALPHA_H = ("{s:t}", "The alphabet is: {s:t}", "Alphabet: {s:t}", '"{s:t}"')
+_TECH_UNIT = "ns|us"
+_Q_UNIT = Q(r"above how many (nanoseconds|microseconds|milliseconds|seconds)", "w")
+
+
+def _ad(tech: str, claim: str, **implied) -> list:
+    return _hr(("{tech:%s}, {rv:i}" % tech, "{tech:%s}, returns {rv:i}" % tech, "It is a {tech:%s} check; returns {rv:i}." % tech, "{tech:%s} check, {rv:i}" % tech),
+               claim, **implied)
+
+
+def _timing_h(tech: str = "timing") -> list:
+    return ([H("{tech:%s}, {thr:i}" % tech, "timing_threshold", unit=_Q_UNIT)]
+            + _hr(("{tech:%s}, {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s}: {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{thr:i} {unit:%s}, {tech:%s}" % (_TECH_UNIT, tech)),
+                  "timing_threshold"))
+
+
+HEADS: dict = {
+    # structs
+    "structs/array_stride": _hr(("{n:i} bytes", "{n:i}", "The record size is {n:i} bytes.", "Size: {n:i} bytes"), "stride_records"),
+    "structs/field_read": _hr(_OFFSET_H, "field_read_offset", flag="non-zero"),
+    "structs/init_magic": _hr(_OFFSET_H, "init_magic_offset", magic=Q(r"constant\s+(0x[0-9a-f]+|\d+)")),
+    "structs/alloc_size": _hr(("{n:i} bytes", "{n:i}", "The structure is {n:i} bytes.", "Size: {n:i} bytes"), "alloc_structure_size"),
+    "structs/nested_offset": _hr(_OFFSET_H, "nested_field_offset"),
+    "structs/linked_next": _hr(_OFFSET_H, "linked_pointer_offset"),
+    # fsm
+    "fsm/table_input": _hr(_FSM_IN_H, "fsm_input_string", final=_Q_FINAL),
+    "fsm/switch_input": _hr(_FSM_IN_H, "fsm_input_string", final=_Q_FINAL),
+    "fsm/table_states": _hr(_FSM_ST_H, "fsm_states_count", z=0),
+    "fsm/switch_states": _hr(_FSM_ST_H, "fsm_states_count", z=0),
+    "fsm/opcode_value": _hr(("{n:i}", "opcode {n:i}", "It is opcode {n:i}.", "{n:i} (opcode)"), "opcode_returns_expr", expr=Q(r"makes it return (.+?)\?", "w")),
+    "fsm/opcode_count": _hr(("{n:i}", "{n:i} opcodes", "It is {n:i}.", "{n:i} cases"), "opcode_count_handled"),
+    # crc
+    "crc/bitwise_poly": _hr(_CRC_POLY_H, "crc_poly_form", w=_Q_WIDTH),
+    "crc/table_poly": _hr(_CRC_POLY_H, "crc_poly_form", w=_Q_WIDTH),
+    "crc/bitwise_init": _hr(_CRC_VAL_H, "crc_init_value", w=_Q_WIDTH),
+    "crc/table_init": _hr(_CRC_VAL_H, "crc_init_value", w=_Q_WIDTH),
+    "crc/bitwise_xorout": _hr(_CRC_VAL_H, "crc_xorout_value", w=_Q_WIDTH),
+    "crc/table_xorout": _hr(_CRC_VAL_H, "crc_xorout_value", w=_Q_WIDTH),
+    # cipher
+    "cipher/tea_enc": _hr(_TEA_H, "tea_reference"), "cipher/tea_dec": _hr(_TEA_H, "tea_reference"),
+    "cipher/xtea_enc": _hr(_TEA_H, "tea_reference"), "cipher/xtea_dec": _hr(_TEA_H, "tea_reference"),
+    "cipher/rc4": _hr(["{alg:%s}, {n:i}" % _ALGS_, "{alg:%s}, {n:i} bytes" % _ALGS_, "{alg:%s}: {n:i} bytes" % _ALGS_, "It is {alg:%s}, {n:i} bytes." % _ALGS_], "rc4_reference"),
+    "cipher/chacha": _hr(_STREAM_H, "stream_reference"), "cipher/salsa": _hr(_STREAM_H, "stream_reference"),
+    # strobf: proc writes the string
+    **{f"strobf/{v}": _hr(("{s:t}", "The string is: {s:t}", "It writes: {s:t}", "Plaintext: {s:t}"), "writes_exact_string")
+       for v in ("stack_string", "xor_const", "xor_rolling", "alt_xor", "sub_const", "reverse_xor", "rot_n")},
+    # pktsum: the heads of the three questions in a row: endianness, start, length byte
+    **{f"pktsum/{v}": (_hr(("{e:little|big}", "{e:little|big}-endian", "It is {e:little|big}-endian.", "{e:little|big} endian"), "pkt_endian_behaviour")
+                       + _hr(("{n:i}", "Offset {n:i}", "It is {n:i}.", "byte {n:i}"), "pkt_range_start")
+                       + _hr(("{n:i}", "Offset {n:i}", "It is at offset {n:i}.", "byte {n:i}"), "pkt_length_byte"))
+       for v in ("sum8", "xor8", "sum16_le", "sum16_be", "fletcher16", "crc16", "len_field")},
+    # bounds
+    "bounds/range_chain": _hr(_BOUND_H, "returns_one_exactly_in_range", ret=Q(r"does proc return (-?\d+)")),
+    "bounds/window": _hr(_BOUND_H, "returns_one_for_window", ret=Q(r"does proc return (-?\d+)"), w=lambda s: s["hi"] - s["lo"] + 1),
+    "bounds/index_limit": _hr(_BOUND_H, "index_limit_range", neg=Q(r"returns (-?\d+) for an index")),
+    "bounds/clamp": _hr(_BOUND_H, "clamp_interval"),
+    "bounds/loop_iterations": _hr(("{n:i}", "It returns {n:i}.", "returns {n:i}", "Answer: {n:i}"), "returns_loop_value", n0=_Q_ARG),
+    "bounds/char_class": _hr(("{n:i}", "{n:i} values", "It is {n:i}.", "{n:i} byte values"), "char_class_count", ret=Q(r"make proc return (-?\d+)")),
+    # antidebug: the label is the technique of the question's list
+    "antidebug/ptrace": _ad("ptrace", "ptrace_request", call="ptrace", outcome="fails"),
+    "antidebug/ptrace_raw": _ad("ptrace", "ptrace_request", call="ptrace", outcome="fails"),
+    "antidebug/tracerpid": _ad("tracerpid", "tracerpid_status", field="TracerPid"),
+    "antidebug/env": _hr(("{tech:env}, {NAME:w}", "{tech:env} check, {NAME:w}", "{NAME:w}, {tech:env}", "getenv, {NAME:w}"), "env_variable_read"),
+    "antidebug/timing_ns": _timing_h(), "antidebug/timing_us": _timing_h(),
+    # multi
+    "multi/eval_arith": _hr(_NUM_H, "returns_for_argument", n0=_Q_ARG), "multi/chain": _hr(_NUM_H, "returns_for_argument", n0=_Q_ARG),
+    "multi/key_helper": _hr(("{k:h}", "It is {k:h}.", "Answer: {k:h}", "byte {k:h}"), "xors_key_byte", seed=Q(r"seed\s*=\s*(\d+)")),
+    "multi/decode_secret": _hr(_ACCEPTED_H, "accepts_only_the_secret"),
+    "multi/limit_helper": _hr(("{n:i}", "{n:i} characters", "It is {n:i}.", "{n:i} chars"), "limit_for_mode", mode=Q(r"mode\s*=\s*(\d+)")),
+    # legacy
+    "xor-key": _hr(("{s:t}", "The key is: {s:t}", "Key: {s:t}", "XOR key: {s:t}"), "xor_key_repeats"),
+    "password": _hr(_ACCEPTED_H, "password_equal_only"),
+    "keycount": _hr(("{s:t}", "The key is: {s:t}", "Key: {s:t}", "The counted key is: {s:t}"), "keycount_lines"),
+    "alphabet": _hr(_ALPHA_H, "alphabet_position"),
+    "magic": _hr(("{m:h}, {v:i}", "{m:h} and {v:i}", "{m:h}; {v:i}", "{m:h} / {v:i}"), "magic_header"),
+    "lcg": _hr(("{a:i}, {r:i}", "{a:i} and {r:i} rounds", "{a:i}, {r:i} rounds", "{a:i}; {r:i} rounds"), "lcg_reference"),
+    "hash": _hr(["{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}, {c:h}", "{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur} and {c:h}",
+                 "It is {name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}, {c:h}.", "{name:FNV-1a|djb2|sdbm|Murmur-style|MurmurHash2|Murmur}: {c:h}"],
+                "hash_name_is_the_algorithm", "hash_final_xor"),
+    "skip": _hr(("{b:h}", "It is {b:h}.", "The value is {b:h}.", "byte {b:h}"), "skip_one_value"),
+    "rotate": _hr(("{k:h}, {r:i}", "{k:h} and {r:i}", "{k:h}; {r:i}", "{k:h}, {r:i} bits"), "rotate_reference", dir=Q(r"(left|right)-rotation", "w")),
+    "threshold": _hr(_BOUND_H, "threshold_values", inside=Q(r"for which this returns (-?\d+)")),
+}
+# the alphabet questions of the six encoding variants and the identity questions of the six
+for _b in ("base64", "base32", "base58"):
+    for _d in ("encode", "decode"):
+        HEADS[f"encoding/{_b}_{_d}"] = _hr(_ENC_H[:3], "encoding_identity") + [H(_ENC_H[3], "encoding_identity", dir=lambda s: s["Dir"].lower())]
+        HEADS[f"encoding/{_b}_{_d}#alphabet"] = _hr(_ALPHA_H, "alphabet_semantics", alen=lambda s: len(s["s"]), z=0)

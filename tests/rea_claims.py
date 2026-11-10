@@ -386,6 +386,18 @@ def fsm_input_final(c: Ctx):
 
 
 @claim
+def fsm_input_string(c: Ctx):
+    """A headline that gives the input string: the string is made of letters of the machine's alphabet and the compiled proc returns the state that the question asks
+    for (the machine is proven equal to proc by `_fsm_probe`; the string itself is run too)."""
+    alpha, delta, strings, got = c.once("fsm", _fsm_probe)
+    s, final = c.s["s"], c.s["final"]
+    need(s and set(s) <= set(alpha), f"the input {s!r} has a letter that the machine does not read (its alphabet is {alpha!r})")
+    out = ints(c.run('int main(void) { printf("%d\\n", proc(' + c_str(s) + ')); return 0; }'))
+    need(out == [final], f"proc returns {out} for the input {s!r}, the question asks for the state {final}")
+    need(_sim(alpha, delta, s) == final, f"the machine of the C ends in state {_sim(alpha, delta, s)} on the input {s!r}, not {final}")
+
+
+@claim
 def fsm_input_shortest(c: Ctx):
     alpha, delta, strings, got = c.once("fsm", _fsm_probe)
     dist = _bfs(delta, got[0])
@@ -574,6 +586,9 @@ def tea_reference(c: Ctx):
     elif "done" in s:
         need(s["done"] in ("encrypted", "decrypted"), "the participle")
         direction = s["done"][:-2]
+    elif "dir" in s:                                                 # a headline: "TEA, encrypt, 32"
+        need(s["dir"] in ("encrypt", "decrypt"), "the direction")
+        direction = s["dir"]
     else:
         direction = "decrypt" if variant.endswith("dec") else "encrypt"
     need(alg in ("TEA", "XTEA"), f"the sentence names {alg}, proc is a TEA or XTEA")
@@ -737,9 +752,21 @@ def encoding_reference(c: Ctx):
 
 
 @claim
+def encoding_identity(c: Ctx):
+    """A headline that names the direction and the encoding ("decode, base32"): the compiled proc is that encoder or decoder of the reference, with the alphabet
+    of its own C (the alphabet has the radix of the encoding)."""
+    base, direction, alpha, _pad, _v, _g = c.once("enc", _enc_probe)
+    need(len(set(alpha)) == len(alpha) == f_encoding.RADIX[c.s["base"]], f"the alphabet of the C has {len(alpha)} characters, {c.s['base']} has {f_encoding.RADIX[c.s['base']]}")
+    _enc_matches(c, alpha)                                           # proc IS `base` `direction` (the variant of the task), compared with the reference
+    need((c.s["dir"], c.s["base"]) == (direction, base), f"the headline says {c.s['dir']} {c.s['base']}, the compiled proc does {direction} {base}")
+
+
+@claim
 def alphabet_semantics(c: Ctx):
     base, direction, alpha, _pad, _v, _g = c.once("enc", _enc_probe)
     s = c.s
+    if "s" in s:                                                     # a headline: the alphabet string itself
+        need(s["s"] == alpha, f"the alphabet of the headline is not the one of the C, byte for byte: {s['s']!r} vs {alpha!r}")
     need(s["alen"] == len(alpha) == f_encoding.RADIX[base], f"the alphabet has {len(alpha)} characters, the sentence says {s['alen']}")
     need(c.answer[0] == alpha, "the alphabet of the answer is not the one of the C, byte for byte")
     if "agent" in s:
@@ -754,8 +781,8 @@ def alphabet_semantics(c: Ctx):
 
 @claim
 def writes_exact_string(c: Ctx):
-    s = c.answer[0]
-    n = c.s["len"]
+    s = c.s["s"] if "s" in c.s else c.answer[0]                      # a headline states the string; a sentence says "this string" (the truth's)
+    n = c.s["len"] if "len" in c.s else len(s)
     need(n == len(s), f"the sentence says {n} characters, the string has {len(s)}")
     out = c.run(f"""int main(void) {{
     unsigned char out[96];
@@ -856,7 +883,7 @@ def _pkt_check(c: Ctx, **model_args):
 def pkt_endian_behaviour(c: Ctx):
     p = c.t.params
     need(p["W"] == 2, "the checksum is not 16 bits wide")
-    e, first = c.s["e"], c.s["first"]
+    e, first = c.s["e"], c.s.get("first")                             # a headline names the byte order only
     rng = random.Random(c.t.id + "/endian")
     H, kind, magic = p["H"], p["kind"], p["magic"]
     pk = []
@@ -875,7 +902,7 @@ def pkt_endian_behaviour(c: Ctx):
     need(len(accepted) == 1 and all(g != 1 for g in acc["big" if accepted[0] == "little" else "little"]), f"proc does not accept exactly one byte order: {acc}")
     order = accepted[0]
     need(order == e, f"proc accepts the checksum stored {order}-endian, the sentence says {e}")
-    need(("low" if order == "little" else "high") == first, f"the byte stored first is the {'low' if order == 'little' else 'high'} one, the sentence says the {first} byte")
+    need(first is None or ("low" if order == "little" else "high") == first, f"the byte stored first is the {'low' if order == 'little' else 'high'} one, the sentence says the {first} byte")
 
 
 @claim
@@ -1023,6 +1050,8 @@ def ptrace_request(c: Ctx):
     s = c.s
     raw = c.key.endswith("raw")
     call, req = s["call"], s.get("req", "PTRACE_TRACEME")
+    if "tech" in s:                                                  # a headline names the technique of the question's list
+        need(s["tech"] == "ptrace", f"the headline names the technique {s['tech']}, proc asks to be traced by its parent: ptrace")
     if raw:
         proof = f"last_no == SYS_{call} && last_req == {req}"
     else:
@@ -1048,6 +1077,8 @@ def ptrace_request(c: Ctx):
 def tracerpid_status(c: Ctx):
     s = c.s
     field, rv = s["field"], s["rv"]
+    if "tech" in s:
+        need(s["tech"].lower() == "tracerpid", f"the headline names the technique {s['tech']}, proc reads the TracerPid line")
     other = "" if field == "TracerPid" else "TracerPid:\\t0\\n"
     pre = """static char fake_buf[256], last_path[160];
 static FILE *my_fopen(const char *path, const char *mode) {
@@ -1078,6 +1109,8 @@ static FILE *my_fopen(const char *path, const char *mode) {
 @claim
 def env_variable_read(c: Ctx):
     name = c.s["NAME"]
+    if "tech" in c.s:
+        need(c.s["tech"] == "env", f"the headline names the technique {c.s['tech']}, proc reads an environment variable: env")
     pre = """static const char *last_name, *fake_val;
 static char *fake_getenv(const char *n) { last_name = n; return (char *)fake_val; }
 #define getenv fake_getenv
@@ -1097,6 +1130,7 @@ static char *fake_getenv(const char *n) { last_name = n; return (char *)fake_val
 
 
 SCALE_NS = {"nanoseconds": 1, "microseconds": 1000, "milliseconds": 10 ** 6, "seconds": 10 ** 9}
+UNIT_NAME = {"ns": "nanoseconds", "us": "microseconds", "ms": "milliseconds", "s": "seconds"}      # the abbreviations of a headline
 
 
 @claim
@@ -1104,7 +1138,9 @@ def timing_threshold(c: Ctx):
     """The clock is faked in NANOSECONDS whatever API the task reads (clock_gettime or gettimeofday), and the elapsed time is the sentence's number of the
     sentence's unit: a wrong unit moves the threshold by a factor of 1000."""
     s = c.s
-    thr, unit = s["thr"], s["unit"]
+    thr, unit = s["thr"], UNIT_NAME.get(s["unit"], s["unit"])
+    if "tech" in s:
+        need(s["tech"] == "timing", f"the headline names the technique {s['tech']}, proc compares two clock readings: timing")
     ns = SCALE_NS[unit]
     if "clock_gettime(" in c.body:
         pre = """static long long fake_ns;
@@ -1195,8 +1231,8 @@ def _neighbours(c: Ctx, secret: str, ret: int) -> list:
 
 @claim
 def accepts_only_the_secret(c: Ctx):
-    s = c.answer[0]
-    ret, n = c.s.get("ret", 1), c.s["len"]
+    s = c.s["s"] if "s" in c.s else c.answer[0]
+    ret, n = c.s.get("ret", 1), c.s["len"] if "len" in c.s else len(s)
     res, bad, tried = _neighbours(c, s, ret)
     need(n == len(s), f"the sentence says {n} characters, the secret has {len(s)}")
     need(res == ret, f"proc returns {res} for the secret, the sentence says {ret}")
@@ -1222,7 +1258,7 @@ def limit_for_mode(c: Ctx):
 
 @claim
 def xor_key_repeats(c: Ctx):
-    s = c.answer[0]
+    s = c.s["s"] if "s" in c.s else c.answer[0]
     n = c.s["len"] if "len" in c.s else len(s)
     need(n == len(s), f"the sentence says {n} bytes, the key has {len(s)}")
     N = 256 + 2 * len(s)
@@ -1236,7 +1272,7 @@ def xor_key_repeats(c: Ctx):
 
 @claim
 def password_equal_only(c: Ctx):
-    s = c.answer[0]
+    s = c.s["s"] if "s" in c.s else c.answer[0]
     ret, n = c.s.get("ret", 1), c.s.get("len", len(s))
     res, bad, tried = _neighbours(c, s, ret)
     need(n == len(s), f"the sentence says {n} characters, the password has {len(s)}")
@@ -1246,7 +1282,7 @@ def password_equal_only(c: Ctx):
 
 @claim
 def keycount_lines(c: Ctx):
-    k = c.answer[0]
+    k = c.s["s"] if "s" in c.s else c.answer[0]
     text = f"{k}=1\\n#{k}=2\\n{k}=\\n{k}x=3\\n{k}=4\\n x{k}=5\\n"
     out = ints(c.run(f'int main(void) {{ printf("%d %d %d %d\\n", proc("{text}"), proc("{k}="), proc("{k}=v"), proc("#{k}=v")); return 0; }}'))
     need(out == [2, 0, 1, 0], f"proc counts {out} lines: key=1 and key=4 count, key= with nothing after, a comment, another key and an indented line do not")
@@ -1256,10 +1292,10 @@ def keycount_lines(c: Ctx):
 
 @claim
 def alphabet_position(c: Ctx):
-    s = c.answer[0]
+    s = c.s["s"] if "s" in c.s else c.answer[0]
     out = ints(c.run(f'int main(void) {{ const char *a = {c_str(s)}; for (int i = 0; a[i]; i++) printf("%d ", proc(a[i])); '
                      'for (int ch = 0x20; ch < 0x7f; ch++) printf("%d ", proc((char)ch)); return 0; }'))
-    n = c.s["len"]
+    n = c.s["len"] if "len" in c.s else len(s)
     need(n == len(s) == 32, f"the alphabet has {len(s)} characters, the sentence says {n}")
     need(out[:len(s)] == list(range(len(s))), "proc does not return the position of a character of the string")
     if "miss" in c.s:

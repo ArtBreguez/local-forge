@@ -39,12 +39,21 @@ rendered a sentence and nothing tied the words of the sentence to it. The rule i
   * a sentence uses a universal word (any, every, all, always, never, only, each, none, no other, exactly) only where tests/test_rea_quantifiers.py registers the
     claim that backs it and the domain it covers (round 6, B1: "changing any byte ... makes the checksum fail" was false for Fletcher-16: a byte 0x00 -> 0xFF is not seen);
   * every edit of a template shows in tests/golden/rea_sentences.txt (every headline and sentence with a named sentinel per placeholder), and
-    tests/test_rea_claims_mutations.py applies the reviewer's 79 false sentences (and 13 more) to a copy of this file: the table must reject each one.
+    tests/test_rea_claims_mutations.py applies the reviewers' false sentences, false headlines and false facts (79 + 13 of round 6, 109 of round 7: 201 edits) to a
+    copy of this file: the claims machinery, without the golden file, must reject each one.
 
-EVERY SENTENCE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence of every key, its pattern and the names of the claims it
-makes, and for every claim a function that verifies the parsed values against the task's C source and its compiled behaviour, over at least 200 generated tasks of
-every variant at two seeds, with EVERY sentence of the template rendered for every task. A template without an entry, an entry without a checker, a pattern that does
-not match its own template, a placeholder that the pattern does not capture: each fails the test. The rendered text of a template stays semantic: no code structure.
+THE HEADLINE IS READ LIKE THE SENTENCE (round 7, M1 and B1). The first line of the stored message is rendered from the truth too, and it says things: `It writes: <s>`
+over a function that only compares its input (decode_secret shared the strobf tuple), `{n} values` where the count is of bytes, `lowest {hi}, highest {lo}`. Each
+headline phrasing has a pattern in tests/rea_sentences.py (`HEADS`, one per phrasing of every key), is parsed from the RENDERED headline, and its claims read the groups
+(the same claims as the sentences; a string, a label, a unit or a byte order that a headline states is verified against the compiled task like a number). What a
+headline does not state but a claim needs is implied by the question, a constant of its meaning, or the groups that were read. A headline tuple shared by two keys is
+true for both: every literal word of a headline is registered with the keys it is true for (`HEAD_WORDS`) and the lint rejects any other use.
+
+EVERY SENTENCE AND EVERY HEADLINE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence and headline of every key, its pattern and the
+names of the claims it makes, and for every claim a function that verifies the parsed values against the task's C source and its compiled behaviour, over at least 200
+generated tasks of every variant at two seeds, with EVERY sentence and EVERY headline of the template rendered for every task. A template without an entry, an entry
+without a checker, a pattern that does not match its own template, a placeholder that the pattern does not capture: each fails the test. The rendered text of a template
+stays semantic: no code structure.
 
 `render(t)` works on the task record as the sample stage has it (`task.meta()` plus the pseudocode): `id`, `kind`, `variant`, `question`, `accept`.
 No generator parameter is needed, so a decompile run made before this module existed can still be sampled. tests/test_rea_targets.py renders
@@ -651,16 +660,19 @@ def known(t: dict) -> bool:
     return key_of(t) in SPECS
 
 
-def render(t: dict, index: int | None = None) -> dict:
-    """{"text", "headline", "sentence", "facts", "key", "template", "templates"}: the canonical headline and one factual sentence for task `t`,
-    from the truth alone. The teacher's reply plays no part here. `index` (tests only) renders phrasing `index` of the set that applies to the task
-    instead of the one the seeded RNG picks: the claims table checks every sentence of a template against every task."""
+def render(t: dict, index: int | None = None, head: int | None = None) -> dict:
+    """{"text", "headline", "sentence", "facts", "key", "template", "templates", "head_template", "head_templates"}: the canonical headline and one factual
+    sentence for task `t`, from the truth alone. The teacher's reply plays no part here. `index` and `head` (tests only) render phrasing `index` of the
+    sentences, and phrasing `head` of the headlines, of the set that applies to the task instead of the ones the seeded RNG picks: the claims table checks
+    every sentence and every headline of a template against every task."""
     key = key_of(t)
     if key not in SPECS:
         raise ValueError(f"no truth template for task {t.get('id', '?')} ({key}); add one to rea_bench/targets.py")
     f = SPECS[key].facts(t)
     heads, sentences = _template_set(key, f)
     i = random.Random(f"{TARGET_SOURCE}/{t.get('id', '')}/{key}").randrange(len(sentences)) if index is None else index
-    head = heads[i % len(heads)].format(**f)
+    k = i % len(heads) if head is None else head
+    h = heads[k].format(**f)
     sentence = sentences[i].format(**f)
-    return {"text": f"{head}\n{sentence}", "headline": head, "sentence": sentence, "facts": f, "key": key, "template": i, "templates": len(sentences)}
+    return {"text": f"{h}\n{sentence}", "headline": h, "sentence": sentence, "facts": f, "key": key, "template": i, "templates": len(sentences),
+            "head_template": k, "head_templates": len(heads)}

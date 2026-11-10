@@ -1,16 +1,18 @@
-"""Round 6, M1: the claims table must reject a FALSE SENTENCE, not only a false fact.
+"""Rounds 6 and 7: the claims table must reject a FALSE SENTENCE, a FALSE HEADLINE and a FALSE FACT, not only the fact that rendered them.
 
-The reviewer of round 6 made 79 one-edit false sentences (two numbers in swapped roles, a flipped direction word, a wrong name, a wrong unit, a structure
-word) and found that the round-5 claims suite caught 2 of them and the whole suite 13: it checked the facts that rendered a sentence, nothing tied the words of
-the sentence to them. They are ported here (tests/rea_mutations_data.py, adjusted where a round-6 rewording changed the text they edit) and applied one by one to
-a temp copy of tools/rea-bench/rea_bench/targets.py, which is loaded as a module and rendered exactly as the suite renders the real one: every sentence the
-mutation changed is rendered for a few tasks of the keys it touches, parsed with its pattern and its claims run (`test_rea_claims.exercise`). The claims
-machinery alone must fail: the golden file (which sees any edit) is not consulted. A mutation that passes is a sentence that can be false and stay in the data.
+Round 6: the reviewer made 79 one-edit false sentences (two numbers in swapped roles, a flipped direction word, a wrong name, a wrong unit, a structure word) and
+found that the round-5 claims suite caught 2 of them and the whole suite 13: it checked the facts that rendered a sentence, nothing tied the words of the sentence to
+them. Round 7: 109 more (89 sentences, fact functions and constants, 12 headlines, 8 facts that are wrong for about 20% of the tasks) and the claims machinery read
+no headline at all: 2 of the 12 headline mutations passed every test but the golden file. Both sets are in tests/rea_mutations_data.py and are applied one by one
+to a temp copy of tools/rea-bench/rea_bench/targets.py, which is loaded as a module and rendered exactly as the suite renders the real one: the sentences and
+headlines that the mutation changes on the sampled tasks (compared render by render with the real module: text and facts) are parsed with their patterns and their
+claims run (`test_rea_claims.exercise`). The claims machinery alone must fail: the golden file (which sees any edit of a template) is not consulted, and a fact or
+a constant edit changes no template text at all. A mutation that passes is a sentence, a headline or a fact that can be false and stay in the data.
 
 EXTRA are mutations of the same kinds on sentences the reviewer did not touch (a unit, a request name, a field, a byte order, a count word, the two sentences
 that were false in rounds 5 and 6).
 
-    REA_MUT_IDS=S1,F2 python3 -m unittest tests.test_rea_claims_mutations     a subset
+    REA_MUT_IDS=S1,NHD1 python3 -m unittest tests.test_rea_claims_mutations     a subset
 """
 from __future__ import annotations
 
@@ -24,14 +26,14 @@ import unittest
 
 from .helpers import ROOT
 from . import test_rea_claims as T
-from .rea_mutations_data import MUTATIONS
+from .rea_mutations_data import MUTATIONS, MUTATIONS_R7
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
 from rea_bench import families, targets  # noqa: E402
 
 SRC = pathlib.Path(targets.__file__)
-TASKS_PER_KEY = 3
+TASKS_PER_KEY = 6
 SEED = 4242
 
 EXTRA = [
@@ -53,48 +55,102 @@ EXTRA = [
 ]
 FAMILY_OF_ID = {"S": "structs", "F": "fsm", "C": "crc", "H": "cipher", "E": "encoding", "T": "strobf", "P": "pktsum", "B": "bounds", "A": "antidebug",
                 "U": "multi", "L": "legacy"}
+FAMILIES = sorted(FAMILY_OF_ID.values())
+ROWS = [(mid, fam, kind, None, old, new) for mid, fam, kind, old, new in list(MUTATIONS) + EXTRA] + list(MUTATIONS_R7)    # (id, family, kind, ctx, old, new)
 _TASKS: dict = {}
 
 
-def load_mutated(old: str, new: str):
-    """targets.py with `old` replaced by `new` (which must occur exactly once), loaded as a module of the package from a temp copy."""
-    text = SRC.read_text()
-    assert text.count(old) == 1, f"the text to edit occurs {text.count(old)} times: {old[:80]!r}"
+def apply_edit(text: str, ctx, old: str, new: str) -> str:
+    """`old` replaced by `new`: where it occurs exactly once (ctx None), or where it first occurs after `ctx` (which occurs exactly once)."""
+    if ctx is None:
+        assert text.count(old) == 1, f"the text to edit occurs {text.count(old)} times: {old[:80]!r}"
+        return text.replace(old, new)
+    assert text.count(ctx) == 1, f"the context occurs {text.count(ctx)} times: {ctx[:80]!r}"
+    a = text.index(ctx)
+    b = text.index(old, a)
+    return text[:b] + new + text[b + len(old):]
+
+
+def load_mutated(old: str, new: str, ctx=None):
+    """targets.py with `old` replaced by `new`, loaded as a module of the package from a temp copy."""
     with tempfile.TemporaryDirectory() as d:
         path = pathlib.Path(d) / "targets.py"
-        path.write_text(text.replace(old, new))
+        path.write_text(apply_edit(SRC.read_text(), ctx, old, new))
         spec = importlib.util.spec_from_file_location("rea_bench._targets_mutated", path)
         mod = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(mod)
     return mod
 
 
-def affected_sentences(mod) -> dict:
-    """{key: {index of every sentence of the template whose text differs from the real one}}"""
-    out = {}
-    for key, spec in mod.SPECS.items():
-        idx = {i for i, s in enumerate(spec.sentences) if s != targets.SPECS[key].sentences[i]}
-        if idx:
-            out[key] = idx
-    return out
+def family_of(key: str) -> str:
+    return key.split("/")[0] if "/" in key else "legacy"
+
+
+def sample(fam: str) -> dict:
+    """{key: the first TASKS_PER_KEY tasks of the family that are of this key}: the sample that every mutation of the family is rendered over."""
+    if fam not in _TASKS:
+        mod = families.modules()[fam]
+        pool = families.generate(fam, TASKS_PER_KEY * 2 * len(mod.VARIANTS), SEED)
+        by_key: dict = collections.defaultdict(list)
+        for t in pool:
+            by_key[targets.key_of(t.meta()).split("#")[0]].append(t)
+        _TASKS[fam] = {k: v[:TASKS_PER_KEY] for k, v in by_key.items()}
+    return _TASKS[fam]
 
 
 def tasks_of(key: str) -> list:
-    fam = key.split("/")[0] if "/" in key else "legacy"
-    if fam not in _TASKS:
-        mod = families.modules()[fam]
-        _TASKS[fam] = families.generate(fam, TASKS_PER_KEY * 2 * len(mod.VARIANTS), SEED)
-    base = key.split("#")[0]
-    return [t for t in _TASKS[fam] if targets.key_of(t.meta()).split("#")[0] == base][:TASKS_PER_KEY]
+    return sample(family_of(key)).get(key.split("#")[0], [])
+
+
+def families_touched(mod, fam: str) -> list:
+    """The families whose tasks a mutation can change: its own; a headline mutation: the families of the keys whose headlines differ; a partial one: all of them."""
+    if fam == "head":
+        return sorted({family_of(k) for k, s in mod.SPECS.items() if s.heads != targets.SPECS[k].heads})
+    return FAMILIES if fam == "partial" else [fam]
+
+
+def _render(T_, rec, j, k):
+    try:
+        r = T_.render(rec, j, k)
+        return r["sentence"], r["headline"], r["facts"]
+    except Exception as e:                                        # a template that no longer renders is a change
+        return f"{type(e).__name__}: {e}", f"{type(e).__name__}: {e}", None
+
+
+def affected_renders(mod, fam: str) -> dict:
+    """{task id: (task, {key: {sentence indexes, "h<row>" for a headline row}})}: what the mutation changes on the sampled tasks, render by render (the text of the
+    sentence or of the headline, or the facts that rendered it), compared with the real templates. A fact or a constant edit changes no template text."""
+    out = {}
+    for f in families_touched(mod, fam):
+        for tasks in sample(f).values():
+            for task in tasks:
+                items: dict = collections.defaultdict(set)
+                for rec in [task.meta()] + T.other_questions(task):
+                    key = targets.key_of(rec)
+                    try:
+                        sentences = list(T.applicable(key, mod.SPECS[key].facts(rec), mod))
+                        heads = T.head_slots(key, mod.SPECS[key].facts(rec), mod)
+                    except Exception:                             # the facts no longer compute: every sentence and headline of the key is changed
+                        sentences, heads = list(range(len(targets.SPECS[key].sentences))), [(r, r) for r in range(len(targets.SPECS[key].heads))]
+                    for j, i in enumerate(sentences):
+                        a, b = _render(mod, rec, j, 0), _render(targets, rec, j, 0)
+                        if a[0] != b[0] or a[2] != b[2]:
+                            items[key].add(i)
+                    for row, k in heads:
+                        a, b = _render(mod, rec, 0, k), _render(targets, rec, 0, k)
+                        if a[1] != b[1] or a[2] != b[2]:
+                            items[key].add(f"h{row}")
+                if items:
+                    out[task.id] = (task, dict(items))
+    return out
 
 
 def caught_by(mod, affected: dict):
-    """(task id, claim, why) of the first failure of the table on the mutated sentences, or None."""
-    for key in affected:
-        for task in tasks_of(key):
-            for k, name, why in T.exercise(task, T=mod, affected=affected, stop=True):
-                if why:
-                    return task.id, name, why
+    """(task id, claim, why) of the first failure of the claims machinery on the mutated sentences and headlines, or None."""
+    for task, items in affected.values():
+        for key, name, why in T.exercise(task, T=mod, affected=items, stop=True):
+            if why:
+                return task.id, name, why
     return None
 
 
@@ -102,40 +158,66 @@ class MutationsAreCaught(unittest.TestCase):
     """One test per mutation (generated below)."""
 
 
-def _mutation_test(mid, fam, kind, old, new):
+def _mutation_test(mid, fam, kind, ctx, old, new):
     def test(self):
-        mod = load_mutated(old, new)
-        aff = affected_sentences(mod)
-        self.assertTrue(aff, f"{mid}: the edit changes no sentence")
+        mod = load_mutated(old, new, ctx)
+        aff = affected_renders(mod, fam)
+        self.assertTrue(aff, f"{mid}: the edit changes no sentence, no headline and no fact on the {TASKS_PER_KEY} sampled tasks per key of its families")
         hit = caught_by(mod, aff)
-        self.assertIsNotNone(hit, f"{mid} ({fam}, {kind}) is a false sentence that the claims table accepts: {old!r} -> {new!r}\n  keys: {sorted(aff)}")
+        self.assertIsNotNone(hit, f"{mid} ({fam}, {kind}) is false and the claims table accepts it: {old!r} -> {new!r}\n  keys: {sorted({k for _t, it in aff.values() for k in it})}")
     test.__name__ = f"test_{mid}_{fam}_{kind.replace(' ', '_').replace('/', '_')}"
     return test
 
 
 _WANT = set(filter(None, os.environ.get("REA_MUT_IDS", "").split(",")))
-for _row in list(MUTATIONS) + EXTRA:
+for _row in ROWS:
     if not _WANT or _row[0] in _WANT:
         setattr(MutationsAreCaught, f"test_{_row[0]}", _mutation_test(*_row))
 
 
 class MutationCorpus(unittest.TestCase):
-    def test_there_are_79_reviewer_mutations_in_the_11_families_and_each_edits_the_text_once(self):
+    def test_there_are_79_round_6_and_109_round_7_mutations_and_each_edits_the_text_once(self):
         self.assertEqual(len(MUTATIONS), 79)
+        self.assertEqual(len(MUTATIONS_R7), 109)
+        self.assertEqual(len({r[0] for r in ROWS}), len(ROWS), "a mutation id is used twice")
         text = SRC.read_text()
-        for mid, fam, kind, old, new in MUTATIONS + EXTRA:
-            self.assertEqual(text.count(old), 1, f"{mid}: the text to edit does not occur exactly once")
+        for mid, fam, kind, ctx, old, new in ROWS:
             self.assertNotEqual(old, new, mid)
+            self.assertNotEqual(apply_edit(text, ctx, old, new), text, mid)       # (apply_edit asserts that the edit applies exactly once)
+        for mid, fam, *_r in MUTATIONS + EXTRA:
             self.assertEqual(FAMILY_OF_ID.get(mid[0]) if mid[0] != "X" else fam, fam, mid)
-        per = collections.Counter(fam for _i, fam, *_r in MUTATIONS)
-        self.assertEqual(sorted(per), sorted(FAMILY_OF_ID.values()))
+        self.assertEqual(sorted(collections.Counter(fam for _i, fam, *_r in MUTATIONS)), FAMILIES)
+        per = collections.Counter(fam for _i, fam, *_r in MUTATIONS_R7)
+        self.assertEqual(sorted(per), sorted(FAMILIES + ["head", "partial"]))
+        self.assertEqual((per["head"], per["partial"]), (12, 8))
+
+    def test_the_headline_mutations_edit_headlines_only(self):
+        """NHD1-NHD12: the sentences of every template are the real ones and some headline differs, so that the only way to see them is to read a headline."""
+        rows = [r for r in MUTATIONS_R7 if r[1] == "head"]
+        self.assertEqual(len(rows), 12)
+        for mid, fam, kind, ctx, old, new in rows:
+            mod = load_mutated(old, new, ctx)
+            self.assertEqual({k: s.sentences for k, s in mod.SPECS.items()}, {k: s.sentences for k, s in targets.SPECS.items()}, mid)
+            self.assertTrue([k for k, s in mod.SPECS.items() if s.heads != targets.SPECS[k].heads], f"{mid}: no headline differs")
 
     def test_the_machinery_accepts_the_real_templates(self):
-        """The control: with no edit, no sentence of any of the families fails (a quick run over the same tasks)."""
-        for key in ("structs/field_read", "bounds/clamp", "pktsum/fletcher16", "antidebug/timing_us", "hash"):
+        """The control: with no edit, no sentence and no headline of any of the families fails (a quick run over the same tasks)."""
+        for key in ("structs/field_read", "bounds/clamp", "pktsum/fletcher16", "antidebug/timing_us", "hash", "multi/decode_secret", "cipher/tea_dec"):
             task = tasks_of(key)[0]
             res = T.exercise(task, stop=True)
             self.assertEqual([r for r in res if r[2]], [], key)
+            self.assertTrue(any(r[1] in ("clamp_interval", "timing_threshold", "returns_one_exactly_in_range", "pkt_range_start", "hash_final_xor", "accepts_only_the_secret",
+                                         "tea_reference", "field_read_offset") for r in res), key)
+
+    def test_the_comparison_sees_a_fact_edit_that_changes_no_template_text(self):
+        """NB3 (`"hi": _val(...) + 1`) edits a fact function: the sentence and the headline texts change on the sampled tasks while the templates stay the same."""
+        row = next(r for r in MUTATIONS_R7 if r[0] == "NB3")
+        mod = load_mutated(row[4], row[5], row[3])
+        self.assertEqual({k: s.sentences for k, s in mod.SPECS.items()}, {k: s.sentences for k, s in targets.SPECS.items()})
+        aff = affected_renders(mod, "bounds")
+        self.assertTrue(aff)
+        self.assertTrue(any(any(isinstance(i, int) for i in items) and any(isinstance(i, str) for i in items) for _t, it in aff.values() for items in it.values()),
+                        "both the sentences and the headlines of a bounds key change")
 
 
 if __name__ == "__main__":

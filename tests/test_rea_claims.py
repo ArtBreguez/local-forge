@@ -6,6 +6,9 @@ held-out seed), every code form of the variant included, and EVERY sentence of t
   * TABLE            template key -> for each sentence of the template, its pattern and the names of the claims it makes (tests/rea_sentences.py). A template without
                      an entry, a sentence without a pattern or a claim, a claim without a checker, a checker that no sentence uses, a pattern that does not match its
                      own template: each fails `TableIsComplete`.
+  * HEADS            (round 7) the same for the headline: a pattern and the claims per headline phrasing of every key, parsed from the rendered headline (`exercise` renders
+                     and checks every headline too); what a headline does not state is implied (the question, a constant). `HeadWording`: every literal word of a headline is
+                     registered with the keys it is true for. `HeadTeeth`: a wrong value in any group of any headline is rejected.
   * WORDING          a rendered sentence that matches no pattern fails ("wording the table does not know"): a sentence contains only its pattern's literal text and its
                      captured groups. This replaces the structure-word blacklist of round 5. A group that no claim reads fails too.
   * GOLDEN           tests/golden/rea_sentences.txt: every headline and sentence of every template rendered with a named sentinel per placeholder, so that any edit of a
@@ -18,7 +21,8 @@ held-out seed), every code form of the variant included, and EVERY sentence of t
   * REFERENCES       `References`: the Python references the checkers use are anchored to the standard library or to published vectors (MurmurHash2 against Austin
                      Appleby's C, FNV-1a, RC4, ChaCha against RFC 8439, Salsa20, the CRCs against zlib and binascii, base64/base32 against base64, base58 against the
                      Bitcoin vectors).
-  * MUTATIONS        tests/test_rea_claims_mutations.py: 79 one-edit false sentences are applied to a copy of targets.py; the table must reject every one.
+  * MUTATIONS        tests/test_rea_claims_mutations.py: 201 one-edit false sentences, headlines and facts (rounds 6 and 7) are applied to a copy of targets.py; the claims
+                     machinery (not the golden file) must reject every one.
 
     REA_CLAIMS_N=8 python3 -m unittest tests.test_rea_claims      a quick run (the full run compiles about 30,000 programs)
     REA_CLAIMS_WORKERS=1                                           one process instead of two
@@ -41,6 +45,7 @@ import zlib
 
 from .helpers import ROOT
 from . import rea_claims as RC
+from . import rea_perturb as RP
 from . import rea_sentences as RS
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
@@ -53,6 +58,7 @@ SEEDS = (4241, core.HELDOUT_SEED)
 GCC = bool(shutil.which("gcc"))
 GOLDEN = ROOT / "tests" / "golden" / "rea_sentences.txt"
 TABLE = RS.TABLE
+HEADS = RS.HEADS
 
 
 def claims_of(key: str, i: int) -> tuple:
@@ -96,15 +102,52 @@ def other_questions(task) -> list:
     return out
 
 
+ASK_ORDER = ("endian", "start", "len")          # the order of the three sets of headlines (and of sentences) of a pktsum variant (targets._pkt_spec)
+
+
+def head_slots(key: str, f: dict, T=targets) -> list:
+    """[(row of HEADS[key], index of the headline within the set that applies)] for a task with facts `f`: the headlines that can be rendered for it."""
+    if key.startswith("pktsum/"):
+        v = key.split("/")[1]
+        base = sum(len(targets.PKT_HEADS[v][a]) for a in ASK_ORDER[:ASK_ORDER.index(f["ask"])])
+        return [(base + k, k) for k in range(len(T.PKT_HEADS[v][f["ask"]]))]
+    return [(k, k) for k in range(len(T.SPECS[key].heads))]
+
+
 def exercise(task, T=targets, affected=None, stop=False):
-    """[(key, claim, None | why)] for every claim of every renderable sentence of every question of this task; one compile per probe (shared cache). Each sentence
-    is rendered by template module `T` (the real one, or a mutated copy), parsed with its pattern, and the claims read the groups. `affected` ({key: {sentence
-    indexes}}) limits the run to those sentences, `stop` returns at the first failure (the mutation test)."""
+    """[(key, claim, None | why)] for every claim of every renderable sentence AND headline of every question of this task; one compile per probe (shared cache).
+    Each sentence and headline is rendered by template module `T` (the real one, or a mutated copy), parsed with its pattern (TABLE for sentences, HEADS for
+    headlines), and the claims read the groups. `affected` ({key: {sentence indexes and "h<row>" for a headline row}}) limits the run to those, `stop` returns
+    at the first failure (the mutation test)."""
     cache: dict = {}
     res = []
+
+    def check(key, rec, label, text, caps, claims) -> bool:
+        """Run the claims of one parsed sentence or headline; True when the run must end (`stop` and a failure)."""
+        ctx = RC.Ctx(task, rec, caps, key)
+        ctx.cache = cache
+        ok = True
+        for name in claims:
+            try:
+                RC.CLAIMS[name](ctx)
+                res.append((key, name, None))
+            except RC.ClaimFailed as e:
+                ok = False
+                res.append((key, name, f"{task.id}[{label}]: {e}"[:300]))
+            except Exception as e:                       # a crash of a checker is a failure of the claim, with the reason
+                ok = False
+                res.append((key, name, f"{task.id}[{label}]: checker crashed: {type(e).__name__}: {e}"[:300]))
+            if not ok and stop:
+                return True
+        if ok and caps.unread():
+            res.append((key, "unread", f"{task.id}[{label}]: the groups {sorted(caps.unread())} of {text!r} are read by no claim"[:300]))
+            return stop
+        return False
+
     for rec in [task.meta()] + other_questions(task):
         key = T.key_of(rec)
-        for j, i in enumerate(applicable(key, T.SPECS[key].facts(rec), T)):
+        facts = T.SPECS[key].facts(rec)
+        for j, i in enumerate(applicable(key, facts, T)):
             if affected is not None and i not in affected.get(key, ()):
                 continue
             pattern, claims = TABLE[key][i]
@@ -121,25 +164,34 @@ def exercise(task, T=targets, affected=None, stop=False):
                 if stop:
                     return res
                 continue
-            ctx = RC.Ctx(task, rec, caps, key)
-            ctx.cache = cache
-            ok = True
-            for name in claims:
-                try:
-                    RC.CLAIMS[name](ctx)
-                    res.append((key, name, None))
-                except RC.ClaimFailed as e:
-                    ok = False
-                    res.append((key, name, f"{task.id}[{i}]: {e}"[:300]))
-                except Exception as e:                   # a crash of a checker is a failure of the claim, with the reason
-                    ok = False
-                    res.append((key, name, f"{task.id}[{i}]: checker crashed: {type(e).__name__}: {e}"[:300]))
-                if not ok and stop:
-                    return res
-            if ok and caps.unread():
-                res.append((key, "unread", f"{task.id}[{i}]: the groups {sorted(caps.unread())} of {sentence!r} are read by no claim"[:300]))
+            if check(key, rec, i, sentence, caps, claims):
+                return res
+        for row, k in head_slots(key, facts, T):
+            if affected is not None and f"h{row}" not in affected.get(key, ()):
+                continue
+            label = f"head {row}"
+            try:
+                head = T.render(rec, 0, k)["headline"]
+            except Exception as e:
+                res.append((key, "wording", f"{task.id}[{label}]: the headline does not render: {type(e).__name__}: {e}"[:300]))
                 if stop:
                     return res
+                continue
+            hrow = HEADS[key][row]
+            try:
+                caps = RS.parse_head(hrow, head, rec["question"])
+            except Exception as e:                       # an implied value that the question does not state
+                res.append((key, "wording", f"{task.id}[{label}]: {type(e).__name__}: {e}"[:300]))
+                if stop:
+                    return res
+                continue
+            if caps is None:
+                res.append((key, "wording", f"{task.id}[{label}]: headline wording the table does not know: {head!r}"[:300]))
+                if stop:
+                    return res
+                continue
+            if check(key, rec, label, head, caps, hrow[1]):
+                return res
     return res
 
 
@@ -244,6 +296,24 @@ def template_fields(template: str) -> list:
     return out
 
 
+def sample_text(template: str, pattern: str) -> str:
+    """The template rendered with a sample value of the kind of each group of its pattern (an integer, a hex number, a word of the list, ...)."""
+    _rx, kinds = RS.compile_pattern(pattern)
+    kw, idx = {}, 7000
+    for group, field, base, fspec in template_fields(template):
+        idx += 1
+        kind = kinds[group]
+        v = idx if kind == "i" else (0x1000 + idx if kind == "h" else None)
+        if v is None:
+            v = {"p": "/proc/self/status", "q": "PTRACE_TRACEME", "e": "a ^ b", "w": "Name", "l": "abc", "t": "sample string"}.get(kind) or kind.split("|")[0]
+        if "[" in field:
+            kw.setdefault(base, {})[int(re.search(r"\[(\d+)\]", field).group(1))] = v
+        else:
+            kw[base] = v
+    kw = {k: ([v[j] for j in sorted(v)] if isinstance(v, dict) else v) for k, v in kw.items()}
+    return template.format(**kw)
+
+
 def sentinel_text(template: str) -> str:
     names = {base for _g, _f, base, _s in template_fields(template)}
     return template.format(**{n: Sentinel(n) for n in names})
@@ -271,9 +341,36 @@ class TableIsComplete(unittest.TestCase):
                 self.assertTrue(names, f"{key} sentence {i} makes no claim: {spec.sentences[i]}")
                 for name in names:
                     self.assertIn(name, RC.CLAIMS, f"{key} sentence {i}: no checker for the claim {name}")
-        used = {name for rows in TABLE.values() for _p, names in rows for name in names}
-        self.assertEqual(set(RC.CLAIMS) - used, set(), "a checker that no sentence uses")
+        used = {name for rows in TABLE.values() for _p, names in rows for name in names} | {name for rows in HEADS.values() for _p, names, _i in rows for name in names}
+        self.assertEqual(set(RC.CLAIMS) - used, set(), "a checker that no sentence and no headline uses")
         self.assertEqual(len(targets.SPECS), 78)
+
+    def test_every_headline_of_every_template_has_a_pattern_and_claims_and_every_claim_a_checker(self):
+        """Round 7, M1: the headline is read like the sentence. One pattern and one tuple of claims per headline phrasing of every key (pktsum: the three questions in a row)."""
+        self.assertEqual([k for k in targets.SPECS if k not in HEADS], [], "a template without headline patterns")
+        self.assertEqual([k for k in HEADS if k not in targets.SPECS], [], "headline patterns for a template that does not exist")
+        for key, spec in targets.SPECS.items():
+            self.assertEqual(len(HEADS[key]), len(spec.heads), f"{key}: one pattern and one tuple of claims per headline")
+            for i, (pattern, names, implied) in enumerate(HEADS[key]):
+                RS.compile_pattern(pattern)
+                self.assertTrue(names, f"{key} head {i} makes no claim: {spec.heads[i]}")
+                for name in names:
+                    self.assertIn(name, RC.CLAIMS, f"{key} head {i}: no checker for the claim {name}")
+                self.assertFalse(set(implied) & RS.groups(pattern), f"{key} head {i}: a group is both captured and implied")
+
+    def test_every_placeholder_of_every_headline_is_a_group_of_its_pattern(self):
+        for key, spec in targets.SPECS.items():
+            for i, h in enumerate(spec.heads):
+                have = RS.groups(HEADS[key][i][0])
+                want = {g for g, _f, _b, _s in template_fields(h)}
+                self.assertEqual(sorted(want - have), [], f"{key} head {i}: a placeholder of the headline that the pattern does not capture: {h}")
+
+    def test_every_headline_pattern_matches_its_template_rendered_with_sample_values(self):
+        for key, spec in targets.SPECS.items():
+            for i, h in enumerate(spec.heads):
+                pattern = HEADS[key][i][0]
+                text = sample_text(h, pattern)
+                self.assertIsNotNone(RS.parse(pattern, text), f"{key} head {i}: the pattern does not match its template\n  template: {h}\n  rendered: {text}\n  pattern:  {pattern}")
 
     def test_every_placeholder_of_every_template_is_a_group_of_its_pattern(self):
         """A number the sentence states is read from the sentence: every placeholder of a template is a captured group of the pattern."""
@@ -288,20 +385,7 @@ class TableIsComplete(unittest.TestCase):
         for key, spec in targets.SPECS.items():
             for i, s in enumerate(spec.sentences):
                 pattern = TABLE[key][i][0]
-                _rx, kinds = RS.compile_pattern(pattern)
-                kw, idx = {}, 7000
-                for group, field, base, fspec in template_fields(s):
-                    idx += 1
-                    kind = kinds[group]
-                    v = idx if kind == "i" else (0x1000 + idx if kind == "h" else None)
-                    if v is None:
-                        v = {"p": "/proc/self/status", "q": "PTRACE_TRACEME", "e": "a ^ b", "w": "Name"}.get(kind) or kind.split("|")[0]
-                    if "[" in field:
-                        kw.setdefault(base, {})[int(re.search(r"\[(\d+)\]", field).group(1))] = v
-                    else:
-                        kw[base] = v
-                kw = {k: ([v[j] for j in sorted(v)] if isinstance(v, dict) else v) for k, v in kw.items()}
-                text = s.format(**kw)
+                text = sample_text(s, pattern)
                 self.assertIsNotNone(RS.parse(pattern, text), f"{key}[{i}]: the pattern does not match its template\n  template: {s}\n  rendered: {text}\n  pattern:  {pattern}")
 
     def test_the_summary_numbers(self):
@@ -309,6 +393,9 @@ class TableIsComplete(unittest.TestCase):
         claims = sum(len(names) for rows in TABLE.values() for _p, names in rows)
         self.assertGreaterEqual(sentences, 234)
         self.assertGreaterEqual(claims, sentences)
+        heads = sum(len(h) for h in HEADS.values())
+        self.assertEqual(heads, sum(len(s.heads) for s in targets.SPECS.values()))
+        self.assertGreaterEqual(heads, 368)
 
 
 class Wording(unittest.TestCase):
@@ -593,6 +680,40 @@ class Teeth(unittest.TestCase):
         self.check("returns_for_argument", self.task("multi", "eval_arith"), n=lambda n: n + 1, n0=lambda n: n + 1)
         self.check("xors_key_byte", self.task("multi", "key_helper"), k=lambda k: k ^ 1)
         self.check("limit_for_mode", self.task("multi", "limit_helper"), n=lambda n: n + 1)
+
+
+@unittest.skipUnless(GCC, "gcc is needed")
+class HeadTeeth(unittest.TestCase):
+    """Round 7, M1: every group of every headline phrasing of every key, over one task of the key, is replaced by a wrong value (+1, -1, a flipped bit, every other word of a
+    list, a mangled string, two numbers swapped) and a claim of its row must fail: a group that the table does not constrain would let a headline say something false."""
+
+    def test_a_wrong_value_in_any_group_of_any_headline_is_rejected(self):
+        survivors, n, slow = [], 0, []
+        for fam, mod in families.modules().items():
+            seen = set()
+            for task in families.generate(fam, 3 * len(mod.VARIANTS) + 12, 4242):
+                base = targets.key_of(task.meta()).split("#")[0]
+                if base in seen:
+                    continue
+                seen.add(base)
+                cache: dict = {}
+                for rec in [task.meta()] + other_questions(task):
+                    key = targets.key_of(rec)
+                    for row, k in head_slots(key, targets.SPECS[key].facts(rec)):
+                        hrow = HEADS[key][row]
+                        caps = RS.parse_head(hrow, targets.render(rec, 0, k)["headline"], rec["question"])
+                        self.assertIsNotNone(caps, f"{key} head {row}")
+                        _rx, kinds = RS.compile_pattern(hrow[0])
+                        for label, new in RP.wrong_values(kinds, caps):
+                            n += 1
+                            why = RP.rejects(task, rec, key, hrow[1], caps, new, cache, hrow[2], seconds=20)
+                            if not why:
+                                survivors.append(f"{key} head {row} {label} on {task.id}: {targets.render(rec, 0, k)['headline']!r}")
+                            elif why.startswith("hang"):
+                                slow.append(f"{key} head {row} {label}")
+        self.assertGreater(n, 1000)
+        self.assertEqual(survivors, [], "a wrong value in a headline that no claim rejects")
+        self.assertEqual(slow, [], "a claim that hangs on a wrong value instead of failing")
 
 
 def _family_test(fam):
