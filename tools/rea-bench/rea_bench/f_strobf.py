@@ -25,7 +25,7 @@ def _finish(variant, body, p, params):
     main = 'int main(void) {\n    char out[96];\n    proc(out);\n    puts(out);\n    return 0;\n}'
     wrong = p[:-1] + ("x" if p[-1] != "x" else "y")
     q = "What string does proc write into its argument? Give it as plain ASCII text."
-    return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "exact", "accept": [p]},
+    return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "exact_head", "accept": [p]},
                 params={"plain": p, **params}, wrong=wrong, check=(main, p + "\n"))
 
 

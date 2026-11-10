@@ -150,7 +150,8 @@ static int fake_gettimeofday(struct timeval *t, void *tz) {
     main = (f'int main(void) {{\n    for (long long d = {thr - 1}LL; d <= {thr + 1}LL; d++) {{\n        fake_d = d;\n        fake_calls = 0;\n'
             '        printf("%d\\n", proc());\n    }\n    return 0;\n}')
     return Task(kind=FAMILY, variant=f"timing_{unit}", headers=HEADERS, body=body,
-                question=question(f"above how many {name} (decimal) between the two clock readings does it report a debugger?"),
+                question=question(f"above how many {name} between the two clock readings does it report a debugger? "
+                                  f"Answer with a plain integer in {name}: no separators, no other unit."),
                 truth=truth("timing", dec(thr)), params={"thr": thr, "unit": unit, "work": work}, wrong=f"timing, {thr * 2}",
                 check=(main, "0\n0\n1\n", pre))
 

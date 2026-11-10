@@ -10,10 +10,20 @@ import shutil
 import subprocess
 import tempfile
 
+from . import scoring
 from .core import OPTS
 
 CLANG = shutil.which("clang")
 UBSAN_FLAGS = ("-fsanitize=undefined", "-fno-sanitize-recover=all")
+
+
+# Replies with no answer in them, only common numbers (the reviewer's content-free fillers): no task may accept any of them.
+FILLER_REPLIES = ["0 1 2", "1 2 3", "0x10 0x20", "0 1 2 3 4 8 16 32 64 255 256 0x10 0x20"]
+
+
+def filler_passes(t) -> list:
+    """The filler replies the task's scorer accepts (empty list = fine)."""
+    return [r for r in FILLER_REPLIES if scoring.score(r, t.truth)]
 
 
 def compile_check(src: str, opt: str, cc: str = "gcc") -> subprocess.CompletedProcess:
@@ -43,7 +53,7 @@ def harness_runs(ubsan: bool) -> list:
 
 def check_task(t, ubsan: bool = True) -> list:
     """Problems found with one task (empty list = fine)."""
-    problems = []
+    problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)]
     for cc in ["gcc"] + (["clang"] if CLANG else []):
         for opt in OPTS:
             r = compile_check(t.source(), opt, cc)

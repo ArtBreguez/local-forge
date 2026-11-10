@@ -102,7 +102,7 @@ int proc(const char *pw) {{
     main = (f'int main(void) {{\n    printf("%d\\n", proc("{secret}"));\n    printf("%d\\n", proc("{secret}x"));\n'
             '    printf("%d\\n", proc(""));\n    return 0;\n}')
     return Task(kind=FAMILY, variant="decode_secret", body=body, helpers=["helper"],
-                question=f"{CALLEE} Which input string makes proc return 1?", truth={"score": "exact", "accept": [secret]},
+                question=f"{CALLEE} Which input string makes proc return 1?", truth={"score": "exact_head", "accept": [secret]},
                 params={"secret": secret, "k": k}, wrong=secret[:-1] + ("0" if secret[-1] != "0" else "1"), check=(main, "1\n0\n0\n"))
 
 

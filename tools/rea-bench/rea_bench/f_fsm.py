@@ -151,7 +151,7 @@ def _machine_task(rng, variant, code_fn, ask):
         # a shorter one, which cannot, because d is the shortest accepting length
         bad = next(("".join(p) for p in itertools.product(alphabet, repeat=d) if "".join(p) not in good), alphabet[0] * (d - 1))
         main = input_harness(alphabet, d, acc)
-        return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "tokens", "accept": [good]},
+        return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "tokens", "accept": [good], "cand": f"[{''.join(alphabet)}]{{2,}}"},
                     params={"delta": delta, "alphabet": alphabet, "d": d}, wrong=bad, check=(main, "".join(g + "\n" for g in good)))
     q = "This state machine starts in state 0 and proc returns the state it ends in. How many distinct states does it have (decimal)?"
     return Task(kind=FAMILY, variant=variant, body=body, question=q, truth={"score": "tokens", "accept": [dec(s)]},

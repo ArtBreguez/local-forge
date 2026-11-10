@@ -118,6 +118,91 @@ class Scorer(unittest.TestCase):
         self.assertFalse(scoring.score("AbCd", t))
         self.assertFalse(scoring.score("abcd", t))
 
+    def test_only_the_headline_counts(self):
+        """B1: numbers a justification restates must not turn a wrong headline into a match (reviewer's three repros)."""
+        s = scoring.score
+        tok = lambda *g, **k: {"score": "tokens", "accept": list(g), **k}
+        self.assertFalse(s("1 byte; the loop stops at n - 2 and compares p[n - 2]", tok(core.dec(2))))
+        self.assertFalse(s("8 states (numbered 0 to 7), from the 8-row transition table", tok(core.dec(7))))
+        self.assertFalse(s("Lowest 1571, highest 1750 (the code tests v > 1570 && v < 1751)", tok(core.dec(1570), core.dec(1751))))
+        self.assertTrue(s("**2**\nThe loop stops at n - 2, so 7 bytes are skipped in p[n - 1].", tok(core.dec(2))))
+        self.assertFalse(s("The loop stops at n - 3.\n2", tok(core.dec(2))), "the headline is the first line, not any line")
+        self.assertTrue(s("Answer:\n\n`0x10`\nit is read at p + 0x20", tok(core.hx(0x10))), "a bare lead-in line is skipped")
+        self.assertEqual(scoring.headline("```\n- **0x18** bytes\n```"), "0x18 bytes")
+        self.assertEqual(scoring.headline("  \n\n"), "")
+
+    def test_a_reply_that_lists_candidates_is_not_an_answer(self):
+        s = scoring.score
+        one = {"score": "tokens", "accept": [core.dec(2)]}
+        for reply in ("0 1 2", "1 2 3", "2 or 3", "2, maybe 0x10", "0 1 2 3 4 8 16 32 64 255 256 0x10 0x20"):
+            self.assertFalse(s(reply, one), reply)
+        self.assertTrue(s("2", one) and s("0x2", one) and s("it is 2.", one))
+        off = {"score": "tokens", "accept": [core.hx(0x10)]}
+        self.assertFalse(s("0x10 0x20", off) or s("0x10 or edb88320", off))
+        fsm = {"score": "tokens", "accept": [["bcd", "bdc"]], "cand": "[bcd]{2,}"}
+        self.assertTrue(s("bcd", fsm) and s("b c d", fsm) and s("b, d, c", fsm))
+        self.assertFalse(s("bcd or ccd", fsm))
+        self.assertTrue(s("bcd or bdc", fsm), "both are shortest inputs")
+
+    def test_bounds_must_come_in_order(self):
+        both = {"score": "tokens", "accept": [core.dec(1570), core.dec(1751)]}
+        self.assertTrue(scoring.score("Lowest 1570, highest 1751", both))
+        self.assertTrue(scoring.score("1570 to 1751", both))
+        self.assertFalse(scoring.score("highest 1751, lowest 1570", both))
+        self.assertFalse(scoring.score("1751 1570", both))
+        self.assertFalse(scoring.score("1570", both))
+
+    def test_number_spellings(self):
+        """M3: padded hex, C suffixes and digit separators are the same number; units are not converted."""
+        s = scoring.score
+        small = {"score": "tokens", "accept": [core.hx(8)]}
+        for r in ("0x8", "0x08", "0x0008", "0X8"):
+            self.assertTrue(s(r, small), r)
+        self.assertTrue(s("8", small), "the same number in decimal")
+        self.assertFalse(s("10", {"score": "tokens", "accept": [core.hx(0x10)]}), "bare 10 is decimal ten, not 0x10")
+        self.assertTrue(s("16", {"score": "tokens", "accept": [core.hx(0x10)]}))
+        poly = {"score": "tokens", "accept": [core.hx(0xedb88320, 8), ["reflected"]], "reject": ["normal"]}
+        for r in ("0xedb88320, reflected", "0xEDB88320u, reflected", "0xedb88320UL reflected", "edb88320 reflected", "0x0edb88320 reflected"):
+            self.assertTrue(s(r, poly), r)
+        self.assertFalse(s("0xedb88320, normal", poly))
+        thr = {"score": "tokens", "accept": [core.dec(250000000)]}
+        for r in ("250000000", "250,000,000 ns", "250_000_000", "250'000'000", "250000000ull"):
+            self.assertTrue(s(r, thr), r)
+        self.assertFalse(s("250 ms", thr) or s("250000", thr) or s("250,000", thr))
+        self.assertTrue(s("-37", {"score": "tokens", "accept": [core.dec(-37)]}))
+        self.assertFalse(s("37", {"score": "tokens", "accept": [core.dec(-37)]}))
+
+    def test_reject_looks_at_the_headline_only(self):
+        tracer = {"score": "tokens", "accept": [["tracerpid"], core.dec(3)], "reject": ["ptrace", "env", "timing"]}
+        self.assertTrue(scoring.score("tracerpid, returns 3\nIt notices that a debugger is ptrace-attached via /proc.", tracer))
+        self.assertFalse(scoring.score("tracerpid or ptrace, returns 3", tracer))
+
+    def test_bare_hex_words_are_not_accepted(self):
+        """m1: 'a', 'be', 'ad', 'dead' are words and '10' is decimal ten; only 0x... (or an unambiguous long bare form) counts."""
+        self.assertEqual(core.hx(0xa), ["0xa"])
+        self.assertEqual(core.hx(0xbe, 2), ["0xbe"])
+        self.assertEqual(core.hx(0x10), ["0x10"])
+        self.assertEqual(core.hx(0xdead, 4), ["0xdead"])
+        self.assertEqual(core.hx(0xa001, 4), ["0xa001", "a001"])
+        self.assertEqual(core.hx(0), ["0x0", "0"])
+        wordy = {"score": "tokens", "accept": [core.hx(0xa)]}
+        self.assertFalse(scoring.score("It is a field, and a flag", wordy))
+        self.assertTrue(scoring.score("0xa", wordy))
+
+    def test_exact_head_and_unknown_modes(self):
+        t = {"score": "exact_head", "accept": ["admin_login42"]}
+        self.assertTrue(scoring.score("`admin_login42`\nXOR 0x37", t))
+        self.assertTrue(scoring.score("Here is the string:\nAdmin_Login42", t))
+        self.assertFalse(scoring.score("I do not know.\nadmin_login42", t))
+        with self.assertRaises(ValueError):
+            scoring.score("x", {"score": "fuzzy", "accept": ["x"], "id": "t1"})
+        self.assertEqual(scoring.canonical(t), "admin_login42")
+
+    def test_legacy_modes_still_score_the_whole_reply(self):
+        """The 34/60 -> 50/60 numbers were measured with whole-reply substring scoring; that must not change."""
+        self.assertTrue(scoring.score("Probably a guess.\nThe key is 0xAB", {"score": "exact", "accept": ["ab"]}))
+        self.assertTrue(scoring.score("first line says nothing\nseed 7 and 0x1f", {"score": "all", "accept": ["7", "1f"]}))
+
     def test_canonical_roundtrip(self):
         for t in ({"score": "tokens", "accept": [["a1", "0xa1"], ["tea"]]}, {"score": "exact", "accept": ["x"]},
                   {"score": "all", "accept": ["12", "ff"]}, {"score": "all_groups", "accept": [["djb"], ["12ab"]]}):
@@ -129,6 +214,30 @@ class Scorer(unittest.TestCase):
         self.assertNotIn("def _score", src)
         self.assertIn("task.get(\"cc\", \"gcc\")", src)
         self.assertIn('"clang"', (ROOT / "tools" / "modal" / "modal_rea.py").read_text())
+
+
+class ContentFreeReplies(unittest.TestCase):
+    """B1: replies with no answer in them ("0 1 2", "0x10 0x20", every common number at once) must fail every task of every new
+    family. The reviewer measured 56% of pktsum tasks passing "0 1 2" with whole-reply token matching."""
+    SEEDS = (3, 4, 5)
+    N = 600
+
+    def test_no_new_family_accepts_a_filler_reply(self):
+        for fam in families.modules():
+            if fam == "legacy":
+                continue
+            total = passed = 0
+            for seed in self.SEEDS:
+                for t in families.generate(fam, self.N, seed):
+                    total += 1
+                    hit = verify.filler_passes(t)
+                    passed += bool(hit)
+                    self.assertFalse(hit, f"{t.id} ({t.variant}) accepts {hit}: {t.truth}")
+            self.assertEqual(passed, 0, f"{fam}: {passed}/{total} tasks accept a filler reply")
+
+    def test_the_fillers_are_what_the_review_used(self):
+        self.assertEqual(verify.FILLER_REPLIES[:3], ["0 1 2", "1 2 3", "0x10 0x20"])
+        self.assertIn("0 1 2 3 4 8 16 32 64 255 256 0x10 0x20", verify.FILLER_REPLIES)
 
 
 class Regressions(unittest.TestCase):
@@ -210,7 +319,7 @@ class FamilyChecks:
             self.assertEqual(meta["kind"], self.family)
             self.assertIn(meta["cc"], core.CCS)
             self.assertIn(meta["opt"], core.OPTS)
-            self.assertIn(meta["score"], ("exact", "any", "all", "all_groups", "tokens", "exact_case"))
+            self.assertIn(meta["score"], ("tokens", "exact_case", "exact_head"), "new families use headline-only modes")
             self.assertTrue(meta["accept"])
             self.assertLessEqual(len(t.question), 400, "short, self-contained question")
             self.assertRegex(t.source(), r"\bproc\s*\(")

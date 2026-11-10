@@ -25,12 +25,17 @@ def rword(rng, n):
     return "".join(rng.choice(string.ascii_lowercase + string.digits) for _ in range(n))
 
 
+def _bare_hex_ok(s: str) -> bool:
+    """A hex spelling without 0x is only safe when no plain word or decimal number can be mistaken for it: all zeros, or 3+ digits
+    holding both a letter a-f and a digit ('a', 'be', 'ad', 'bad', 'dead' are words; '10' is decimal ten, not 0x10)."""
+    return set(s) == {"0"} or (len(s) >= 3 and any(c in "abcdef" for c in s) and any(c.isdigit() for c in s))
+
+
 def hx(v: int, digits: int = 0) -> list:
-    """Spellings of a hex answer: 0x1a2b, 1a2b and the zero-padded forms (the question says 'hex', so bare hex is fine)."""
-    out = [f"0x{v:x}", f"{v:x}"]
-    if digits:
-        out += [f"0x{v:0{digits}x}", f"{v:0{digits}x}"]
-    return list(dict.fromkeys(out))
+    """Spellings of a hex answer: 0x1a2b and, where unambiguous (see _bare_hex_ok), 1a2b. The scorer compares 0x literals by value,
+    so 0x08, 0x0008 and 0x8 are one spelling; `digits` only adds the zero-padded bare form."""
+    forms = [f"0x{v:x}", f"{v:x}"] + ([f"{v:0{digits}x}"] if digits else [])
+    return list(dict.fromkeys(f for f in forms if f.startswith("0x") or _bare_hex_ok(f)))
 
 
 def dec(v: int) -> list:
