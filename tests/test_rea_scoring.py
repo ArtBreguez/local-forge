@@ -253,7 +253,19 @@ class StoredTarget(unittest.TestCase):
 
     def test_a_failed_request_is_never_stored(self):
         self.assertIsNone(scoring.sft_target("[error TimeoutError('x')]", self.t))
-        self.assertFalse(scoring.score_strict("[error TimeoutError('x')]", {"score": "any", "accept": ["0x0a", "0a", "10"]}))
+        skip = {"score": "any", "accept": ["0x0a", "0a", "10"]}
+        err = "[error <HTTPError 500: 'Internal Server Error'>]"
+        self.assertFalse(scoring.score_strict("[error TimeoutError('x')]", skip))
+        self.assertTrue("a" in err and scoring._legacy_score(err, skip), "the frozen matcher alone would take the letter a in the error text")
+        self.assertFalse(scoring.score(err, skip) or scoring.score_any_line(err, skip), "neither scorer accepts the text of a failed request")
+
+    def test_a_right_headline_is_always_stored_and_a_short_first_sentence_is_dropped(self):
+        """A stored line that is no sentence would read as a list when the text is scored again: it is dropped instead, the headline stays."""
+        for body in ("U.S. English. Next node at 8.", "It is 0x8. Actually the field at 0x10 is the real one.", "Yes. The pointer follows the payload in the node."):
+            r = scoring.sft_target(f"0x8\n{body}", self.t)
+            self.assertIsNotNone(r, body)
+            self.assertEqual((r["text"], r["sentence_dropped"], r["truncated"]), ("0x8", True, True), body)
+            self.assertTrue(scoring.score_strict(r["text"], self.t))
 
 
 class DataPathAgainstEvaluation(unittest.TestCase):

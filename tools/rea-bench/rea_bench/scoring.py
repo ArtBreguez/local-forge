@@ -269,6 +269,8 @@ def score(answer: str, t: dict) -> bool:
     """EVALUATION scorer: the frozen whole-reply substring scoring for the legacy modes (comparable with earlier numbers), the whitelist
     grammar on the headline for the modes of the generated families."""
     check_mode(t)
+    if is_error_reply(answer):
+        return False                                           # the text of a failed request is an answer to nothing, in either scorer
     if t["score"] in LEGACY_MODES:
         return _legacy_score(answer, t)
     return _headline_score(answer, t)
@@ -286,6 +288,8 @@ def score_any_line(answer: str, t: dict) -> bool:
     line 1 and answers on line 4 scores 0 under `score` and 1 here; the gap is the share of misses that are formatting. Not
     used for training data, only to read a held-out score next to the strict one."""
     check_mode(t)
+    if is_error_reply(answer):
+        return False
     if t["score"] in LEGACY_MODES:
         return _legacy_score(answer, t)
     return score(answer, t) or any(score(line, t) for line in answer.splitlines() if line.strip())
@@ -387,7 +391,7 @@ def sft_target(reply: str, t: dict):
     sentence, more, dropped = "", rest, False
     if rest:
         sent, more = _first_sentence(rest)
-        if len(sent) > MAX_SENTENCE or not justification_ok(sent, s):
+        if len(sent) > MAX_SENTENCE or not _is_prose(sent) or not justification_ok(sent, s):          # a stored line that is no sentence would read as a list
             dropped, more = True, rest
         else:
             sentence = sent
