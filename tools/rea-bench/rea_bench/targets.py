@@ -99,7 +99,11 @@ def _qint(t: dict, pattern: str, what: str) -> int:
     return int(s, 16) if s.lower().startswith("0x") else int(s)
 
 
-EXACT = ("{s}", "The string is: {s}", "It writes: {s}", "Plaintext: {s}")
+# Headline tuples shared by several keys must be TRUE FOR EVERY KEY that uses them (round 7, B1: `multi/decode_secret` shared the strobf tuple and said
+# "It writes: <secret>" of a function that only compares its input). A verb or label belongs to the keys whose `proc` does it: `tests/rea_sentences.py`
+# HEAD_VERBS registers each verb with the keys it is true for, and the lint in tests/test_rea_claims.py rejects any other use.
+EXACT = ("{s}", "The string is: {s}", "It writes: {s}", "Plaintext: {s}")                 # strobf: proc WRITES the string into its argument
+ACCEPTED = ("{s}", "The string is: {s}", "Input: {s}", "The input is: {s}")               # decode_secret, password: proc COMPARES its input with the string
 NUM = ("{n}", "It is {n}.", "Answer: {n}", "{n}.")
 OFFSET = ("{off:#x}", "Offset {off:#x}", "The offset is {off:#x}.", "byte offset {off:#x}")
 
@@ -507,7 +511,7 @@ def _(t):
     return {"k": _val(t["accept"][0]), "seed": _qint(t, r"seed\s*=\s*(\d+)", "seed")}
 
 
-@spec("multi/decode_secret", EXACT,
+@spec("multi/decode_secret", ACCEPTED,
       ("proc returns 1 when its input is exactly this string of {len} characters, and for other inputs it does not.",
        "Only this string of {len} characters makes proc return 1.",
        "The secret that proc accepts has {len} characters, and it is this string."))
@@ -533,7 +537,7 @@ def _(t):
 
 # ---- legacy: the original ten templates ---------------------------------------------------------------------------------------------
 
-@spec("xor-key", ("{s}", "The key is: {s}", "Key: {s}", "It writes: {s}"),
+@spec("xor-key", ("{s}", "The key is: {s}", "Key: {s}", "XOR key: {s}"),
       ("The function XORs every byte of the buffer with this key, and the key repeats every {len} bytes.",
        "Each byte of the buffer is XORed with a character of the key string, taken in turn.",
        "The key is a string of {len} characters that is repeated along the whole buffer."))
@@ -541,7 +545,7 @@ def _(t):
     return _plain(t)
 
 
-@spec("password", ("{s}", "The string is: {s}", "Input: {s}", "The input is: {s}"),
+@spec("password", ACCEPTED,
       ("The function returns 1 only when its argument is equal to this string.",
        "Only an input of exactly {len} characters that equals this string makes the function return 1.",
        "The password check succeeds for this string and for no other input."))
@@ -549,7 +553,7 @@ def _(t):
     return _plain(t)
 
 
-@spec("keycount", ("{s}", "The key is: {s}", "Key: {s}", "It counts: {s}"),
+@spec("keycount", ("{s}", "The key is: {s}", "Key: {s}", "The counted key is: {s}"),
       ("The function counts the lines that start with this key followed by an equals sign and a value that is not empty, and it skips comment lines.",
        "A line is counted when it begins with this key and an equals sign and has something after it.",
        "The lines that are counted begin with this {len}-character key and an equals sign, and have something after it."))

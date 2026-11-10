@@ -365,3 +365,76 @@ TABLE.update({
           "threshold_values"),
         P("The {lb:lower|upper} bound is {lo:i} and the {ub:upper|lower} bound is {hi:i}, both inclusive.", "threshold_values")],
 })
+
+
+# ---- headlines: the words a headline may use, and the keys each is TRUE for (round 7, B1) -------------------------------------------------------
+#
+# A headline is the first line of the stored message. `multi/decode_secret` shared the strobf tuple and said "It writes: <secret>" of a function that only
+# compares its input: a verb or a label that is true for one key was reused for another. Every literal word of every headline template is registered
+# here with the keys it is true for (prefixes of `kind/variant`, or the legacy kind); a word used by a key outside its prefixes fails
+# `HeadWording` in tests/test_rea_claims.py. A neutral word (a copula, a connective) is registered for every key.
+
+_ANY = ("",)
+HEAD_WORDS = {
+    # neutral: they say nothing about proc
+    "a": _ANY, "and": _ANY, "answer": _ANY, "at": _ANY, "from": _ANY, "is": _ANY, "it": _ANY, "the": _ANY, "to": _ANY,
+    "s": _ANY, "x": _ANY,                   # the plural suffix after a placeholder (`{Dir}s`), the hex prefix of `0x{m:08x}`
+    # labels and units, each true for the keys whose question and proc they describe
+    "alphabet": ("encoding/", "alphabet"),
+    "bits": ("rotate",),
+    "byte": ("structs/", "pktsum/", "multi/key_helper", "skip", "bounds/char_class"),
+    "bytes": ("structs/", "cipher/rc4"),
+    "cases": ("fsm/opcode_count",),
+    "characters": ("multi/limit_helper",),
+    "chars": ("multi/limit_helper",),
+    "check": ("antidebug/",),
+    "counted": ("keycount",),
+    "distinct": ("fsm/table_states", "fsm/switch_states"),
+    "endian": ("pktsum/",),
+    "getenv": ("antidebug/env",),
+    "has": ("fsm/table_states", "fsm/switch_states"),
+    "highest": ("bounds/range_chain", "bounds/window", "bounds/index_limit", "bounds/clamp", "threshold"),
+    "input": ("fsm/table_input", "fsm/switch_input", "password", "multi/decode_secret"),
+    "iterations": ("cipher/tea_", "cipher/xtea_"),
+    "key": ("xor-key", "keycount"),
+    "lowest": ("bounds/range_chain", "bounds/window", "bounds/index_limit", "bounds/clamp", "threshold"),
+    "ns": ("antidebug/timing_ns",),
+    "offset": ("structs/", "pktsum/"),
+    "opcode": ("fsm/opcode_",),
+    "opcodes": ("fsm/opcode_",),
+    "plaintext": ("strobf/",),
+    "polynomial": ("crc/",),
+    "record": ("structs/array_stride",),
+    "returns": ("antidebug/ptrace", "antidebug/tracerpid", "bounds/loop_iterations"),
+    "rounds": ("cipher/chacha", "cipher/salsa", "lcg"),
+    "size": ("structs/array_stride", "structs/alloc_size"),
+    "states": ("fsm/table_states", "fsm/switch_states"),
+    "string": ("strobf/", "multi/decode_secret", "password"),
+    "structure": ("structs/alloc_size",),
+    "us": ("antidebug/timing_us",),
+    "value": ("crc/", "skip"),
+    "values": ("bounds/char_class",),
+    "writes": ("strobf/",),                  # proc WRITES the string into its argument; decode_secret and password compare, xor-key writes the buffer
+    "xor": ("xor-key",),
+}
+
+
+def head_words(template: str) -> list:
+    """The literal words of a headline template (every placeholder removed), lower-cased."""
+    lit = FIELD.sub(" ", template.replace("{{", " ").replace("}}", " "))
+    lit = re.sub(r"\{[^{}]*\}", " ", lit)
+    return [w.lower() for w in re.findall(r"[A-Za-z][A-Za-z0-9]*", lit)]
+
+
+def head_word_problems(heads: dict) -> list:
+    """[problem] for {key: tuple of headline templates}: a word that is not registered, or registered for other keys than `key`."""
+    out = []
+    for key, templates in heads.items():
+        for i, t in enumerate(templates):
+            for w in head_words(t):
+                prefixes = HEAD_WORDS.get(w)
+                if prefixes is None:
+                    out.append(f"{key} head[{i}] {t!r}: the word {w!r} is not registered in HEAD_WORDS (tests/rea_sentences.py)")
+                elif not any(key.startswith(pre) for pre in prefixes):
+                    out.append(f"{key} head[{i}] {t!r}: the word {w!r} is registered for {sorted(prefixes)}, not for this key")
+    return out

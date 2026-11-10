@@ -342,6 +342,48 @@ class Wording(unittest.TestCase):
         self.assertGreater(n, 40)
 
 
+class HeadWording(unittest.TestCase):
+    """Round 7, B1: a verb or label of a headline is true for the keys that use it. `multi/decode_secret` shared the strobf tuple and said `It writes: <secret>`
+    of a function that only compares its input. Every literal word of every headline is registered (tests/rea_sentences.py HEAD_WORDS) with the keys it is
+    true for; a headline tuple shared by two keys is therefore true for both or the lint fails."""
+
+    def heads(self):
+        return {key: spec.heads for key, spec in targets.SPECS.items()}
+
+    def test_every_word_of_every_headline_is_registered_for_the_key_that_uses_it(self):
+        self.assertEqual(RS.head_word_problems(self.heads()), [])
+
+    def test_the_registry_has_no_word_and_no_key_prefix_that_no_headline_uses(self):
+        used = collections.defaultdict(set)
+        for key, templates in self.heads().items():
+            for t in templates:
+                for w in RS.head_words(t):
+                    used[w].add(key)
+        self.assertEqual(sorted(set(RS.HEAD_WORDS) - set(used)), [], "a registered word that no headline uses")
+        for w, prefixes in RS.HEAD_WORDS.items():
+            for pre in prefixes:
+                self.assertTrue(any(k.startswith(pre) for k in used[w]), f"{w!r} is registered for {pre!r}, no key under it uses the word")
+
+    def test_the_lint_rejects_the_headlines_of_round_7(self):
+        """The edit that was in the tree: the strobf tuple (`It writes:`) on decode_secret, and on the legacy xor-key and keycount."""
+        bad = RS.head_word_problems({"multi/decode_secret": targets.EXACT})
+        self.assertTrue(any("'writes'" in b and "not for this key" in b for b in bad), bad)
+        self.assertTrue(RS.head_word_problems({"xor-key": ("{s}", "The key is: {s}", "Key: {s}", "It writes: {s}")}))
+        self.assertTrue(RS.head_word_problems({"keycount": ("{s}", "The key is: {s}", "Key: {s}", "It counts: {s}")}))
+        self.assertTrue(RS.head_word_problems({"strobf/xor_const": ("{s}", "The string is: {s}", "It reads: {s}", "Plaintext: {s}")}), "an unregistered verb")
+        self.assertTrue(RS.head_word_problems({"antidebug/timing_us": ("{tech}, {thr}", "{tech}, {thr} ns")}), "a unit of the other variant")
+        self.assertFalse(RS.head_word_problems({"strobf/xor_const": targets.EXACT, "multi/decode_secret": targets.ACCEPTED}))
+
+    def test_no_decode_secret_or_xor_key_record_says_it_writes(self):
+        for key in ("multi/decode_secret", "xor-key", "password", "keycount"):
+            for i, h in enumerate(targets.SPECS[key].heads):
+                self.assertNotIn("writes", h.lower(), f"{key} head[{i}]")
+        tasks = [t for t in families.generate("multi", 5 * 200, 99) if t.variant == "decode_secret"] + [t for t in families.generate("legacy", 12 * 200, 99) if t.kind == "xor-key"]
+        self.assertGreater(len(tasks), 150)
+        for t in tasks:
+            self.assertNotIn("writes", targets.render(t.meta())["headline"].lower(), t.id)
+
+
 class Golden(unittest.TestCase):
     def test_every_headline_and_sentence_with_a_sentinel_per_placeholder(self):
         """Any edit of a template shows here: the diff of tests/golden/rea_sentences.txt is the review of the text."""
