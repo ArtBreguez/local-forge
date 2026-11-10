@@ -53,6 +53,8 @@ QUANTIFIED = {
     "The function returns 1 only when its argument is equal to this string.": ("password_equal_only", "neighbours"),
     "Only an input of exactly {len} characters that equals this string makes the function return 1.": ("password_equal_only", "neighbours"),
     "The password check succeeds for this string and for no other input.": ("password_equal_only", "neighbours"),
+    "The decoder returns the position of its argument in this string of {len} characters, or {miss} for any other printable character.":
+        ("alphabet_position", "printable"),
     "A header is valid only if its first four bytes, read as a little-endian 32-bit word, are 0x{m:08x}, and a version above {v} is rejected.":
         ("magic_header", "bits"),
     "The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.": ("skip_one_value", "all256"),

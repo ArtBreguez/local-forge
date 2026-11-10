@@ -1,23 +1,32 @@
-"""Round 5: the claims table. Every sentence of every truth template makes claims; every claim has a checker (tests/rea_claims.py) that verifies it against
-the task's C source and its compiled behaviour; the checkers run over at least REA_CLAIMS_N (default 200) generated tasks of every variant at each of two seeds
-(a training seed and the held-out seed), every code form of the variant included.
+"""Rounds 5 and 6: the claims table. Every sentence of every truth template has a PATTERN and makes claims (tests/rea_sentences.py); every claim has a checker
+(tests/rea_claims.py) that reads the numbers, names and direction words FROM THE RENDERED SENTENCE and verifies them against the task's C source and its
+compiled behaviour; the checkers run over at least REA_CLAIMS_N (default 200) generated tasks of every variant at each of two seeds (a training seed and the
+held-out seed), every code form of the variant included, and EVERY sentence of the template is rendered for every task (not only the one the seeded RNG picks).
 
-  * TABLE            template key -> for each sentence of the template, the names of the claims it makes. A template without an entry, a sentence without a claim, a
-                     claim without a checker, a checker that no sentence uses: each fails `TableIsComplete`.
-  * LINT             a sentence never uses a word of the code-structure list (loop, array, switch, table, comparison, stack, copied, shifts, ...): `NoStructureWords`.
+  * TABLE            template key -> for each sentence of the template, its pattern and the names of the claims it makes (tests/rea_sentences.py). A template without
+                     an entry, a sentence without a pattern or a claim, a claim without a checker, a checker that no sentence uses, a pattern that does not match its
+                     own template: each fails `TableIsComplete`.
+  * WORDING          a rendered sentence that matches no pattern fails ("wording the table does not know"): a sentence contains only its pattern's literal text and its
+                     captured groups. This replaces the structure-word blacklist of round 5. A group that no claim reads fails too.
+  * GOLDEN           tests/golden/rea_sentences.txt: every headline and sentence of every template rendered with a named sentinel per placeholder, so that any edit of a
+                     template shows in review (REA_GOLDEN_UPDATE=1 rewrites it).
   * CHECKERS         `ClaimsHold`: for every family, every task of every variant, every claim of every sentence that could be rendered for it (for the families whose
-                     tasks ask one of several questions - encoding: the identity or the alphabet, pktsum: endianness, start or length byte - the claims of the other
-                     questions are checked too, with the facts the template would state for that question).
-  * TEETH            `Teeth`: a false fact (one more iteration, another initial CRC value, the wrong byte order, the name MurmurHash2 over the murmur-style loop, a window
-                     one wider) makes the checker fail, so a checker that always says yes cannot pass.
-  * REFERENCES       `References`: the Python references the checkers use are anchored (MurmurHash2 against Austin Appleby's C, FNV-1a against its published values, the delta
-                     parameter of TEA/XTEA against f_cipher's fixed one).
+                     tasks ask one of several questions - encoding: the identity or the alphabet, pktsum: endianness, start or length byte - the sentences of the other
+                     questions are checked too).
+  * TEETH            `Teeth`: a false value in a group of the sentence (one more iteration, another initial CRC value, the wrong byte order, the name MurmurHash2 over
+                     the murmur-style loop, a window one wider, a width of 32 over a reflected 16-bit CRC) makes the checker fail.
+  * REFERENCES       `References`: the Python references the checkers use are anchored to the standard library or to published vectors (MurmurHash2 against Austin
+                     Appleby's C, FNV-1a, RC4, ChaCha against RFC 8439, Salsa20, the CRCs against zlib and binascii, base64/base32 against base64, base58 against the
+                     Bitcoin vectors).
+  * MUTATIONS        tests/test_rea_claims_mutations.py: 79 one-edit false sentences are applied to a copy of targets.py; the table must reject every one.
 
     REA_CLAIMS_N=8 python3 -m unittest tests.test_rea_claims      a quick run (the full run compiles about 30,000 programs)
     REA_CLAIMS_WORKERS=1                                           one process instead of two
 """
 from __future__ import annotations
 
+import base64
+import binascii
 import collections
 import concurrent.futures
 import multiprocessing
@@ -25,101 +34,38 @@ import os
 import random
 import re
 import shutil
+import string
 import sys
 import unittest
+import zlib
 
 from .helpers import ROOT
 from . import rea_claims as RC
+from . import rea_sentences as RS
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import core, f_cipher, f_pktsum, families, targets  # noqa: E402
+from rea_bench import core, f_cipher, f_crc, f_encoding, f_pktsum, families, targets  # noqa: E402
 
 N = int(os.environ.get("REA_CLAIMS_N", "200"))
 WORKERS = int(os.environ.get("REA_CLAIMS_WORKERS", "2"))
 SEEDS = (4241, core.HELDOUT_SEED)
 GCC = bool(shutil.which("gcc"))
-
-
-def same(*names, n=3):
-    return [tuple(names)] * n
-
-
-# key -> one tuple of claim names per sentence of the template (the order of targets.SPECS[key].sentences)
-TABLE: dict = {
-    "structs/array_stride": same("stride_records"),
-    "structs/field_read": same("field_read_offset"),
-    "structs/init_magic": [("init_magic_offset",), ("init_magic_offset", "init_other_fields"), ("init_magic_offset", "init_other_fields")],
-    "structs/alloc_size": same("alloc_structure_size"),
-    "structs/nested_offset": same("nested_field_offset"),
-    "structs/linked_next": same("linked_pointer_offset"),
-    "fsm/table_input": [("fsm_input_final",), ("fsm_input_final",), ("fsm_input_final", "fsm_input_shortest")],
-    "fsm/switch_input": [("fsm_input_final",), ("fsm_input_final",), ("fsm_input_final", "fsm_input_shortest")],
-    "fsm/table_states": [("fsm_states_count",), ("fsm_states_count",), ("fsm_states_reachable", "fsm_states_count")],
-    "fsm/switch_states": [("fsm_states_count",), ("fsm_states_count",), ("fsm_states_reachable", "fsm_states_count")],
-    "fsm/opcode_value": [("opcode_returns_expr",), ("opcode_returns_expr", "opcode_unique"), ("opcode_returns_expr", "opcode_unique")],
-    "fsm/opcode_count": same("opcode_count_handled", "opcode_default"),
-    "crc/bitwise_poly": same("crc_poly_form"), "crc/table_poly": same("crc_poly_form"),
-    "crc/bitwise_init": same("crc_init_value"), "crc/table_init": same("crc_init_value"),
-    "crc/bitwise_xorout": same("crc_xorout_value"), "crc/table_xorout": same("crc_xorout_value"),
-    "cipher/tea_enc": same("tea_reference"), "cipher/tea_dec": same("tea_reference"),
-    "cipher/xtea_enc": same("tea_reference"), "cipher/xtea_dec": same("tea_reference"),
-    "cipher/rc4": same("rc4_reference"),
-    "cipher/chacha": same("stream_reference"), "cipher/salsa": same("stream_reference"),
-    "strobf/stack_string": same("writes_exact_string"), "strobf/xor_const": same("writes_exact_string"), "strobf/xor_rolling": same("writes_exact_string"),
-    "strobf/alt_xor": same("writes_exact_string"), "strobf/sub_const": same("writes_exact_string"), "strobf/reverse_xor": same("writes_exact_string"),
-    "strobf/rot_n": same("writes_exact_string"),
-    "bounds/range_chain": same("returns_one_exactly_in_range"),
-    "bounds/window": same("returns_one_for_window"),
-    "bounds/index_limit": same("index_limit_range"),
-    "bounds/clamp": same("clamp_interval"),
-    "bounds/loop_iterations": same("returns_loop_value"),
-    "bounds/char_class": same("char_class_count"),
-    "antidebug/ptrace": same("ptrace_request"), "antidebug/ptrace_raw": same("ptrace_request"),
-    "antidebug/tracerpid": same("tracerpid_status"),
-    "antidebug/env": same("env_variable_read"),
-    "antidebug/timing_ns": same("timing_threshold"), "antidebug/timing_us": same("timing_threshold"),
-    "multi/eval_arith": same("returns_for_argument"), "multi/chain": same("returns_for_argument"),
-    "multi/key_helper": same("xors_key_byte"),
-    "multi/decode_secret": same("accepts_only_the_secret"),
-    "multi/limit_helper": same("limit_for_mode"),
-    "xor-key": same("xor_key_repeats"),
-    "password": same("password_equal_only"),
-    "keycount": same("keycount_lines"),
-    "alphabet": same("alphabet_position"),
-    "magic": same("magic_header"),
-    "lcg": same("lcg_reference"),
-    "hash": [("hash_start_value", "hash_final_xor"), ("hash_name_is_the_algorithm", "hash_final_xor"), ("hash_final_xor",)],
-    "skip": same("skip_one_value"),
-    "rotate": same("rotate_reference"),
-    "threshold": same("threshold_values"),
-}
-for _b in ("base64", "base32", "base58"):
-    for _d in ("encode", "decode"):
-        TABLE[f"encoding/{_b}_{_d}"] = same("encoding_reference")
-        TABLE[f"encoding/{_b}_{_d}#alphabet"] = same("alphabet_semantics")
-for _v in ("sum8", "xor8", "sum16_le", "sum16_be", "fletcher16", "crc16", "len_field"):
-    TABLE[f"pktsum/{_v}"] = same("pkt_endian_behaviour") + same("pkt_range_start") + same("pkt_length_byte")      # ends + starts + lens
-
-
-# Words that describe code structure or compiler output (owner decision, round 5). A sentence uses none of them.
-STRUCTURE = re.compile(
-    r"\b(loops?|looping|looped|iterates?|byte by byte|on the stack|stacks?|copied|copies|copy|arrays?|switch(es)?|branch(es)?|comparisons?|compar(e|es|ed|ing)|"
-    r"tables?|look(s|ed|ing)? ?ups?|looks? up|shifts?|shifted|shifting|unsigned|signed|memcpy|strcmp|strncmp|strchr|helpers?|calls?|divides?|divided|"
-    r"again and again|registers?|local|inlined?|immediates?|pseudocode|decompil\w+|opcodes? handler|handlers?|cases?)\b", re.I)
+GOLDEN = ROOT / "tests" / "golden" / "rea_sentences.txt"
+TABLE = RS.TABLE
 
 
 def claims_of(key: str, i: int) -> tuple:
     """The names of the claims that sentence `i` of template `key` makes."""
-    return TABLE[key][i]
+    return TABLE[key][i][1]
 
 
-def applicable(key: str, f: dict) -> range:
+def applicable(key: str, f: dict, T=targets) -> range:
     """The sentences of template `key` that can be rendered for a task with facts `f` (pktsum: the set of the question that was asked)."""
     if key.startswith("pktsum/"):
-        lo, hi = targets.PKT_SETS[key.split("/")[1]][f["ask"]]
+        lo, hi = T.PKT_SETS[key.split("/")[1]][f["ask"]]
         return range(lo, hi)
-    return range(len(targets.SPECS[key].sentences))
+    return range(len(T.SPECS[key].sentences))
 
 
 # ---- the other questions a task could have asked (the claims do not depend on which one it did) ---------------------------------------
@@ -150,24 +96,50 @@ def other_questions(task) -> list:
     return out
 
 
-def exercise(task):
-    """[(key, claim, None | why)] for every claim of every renderable sentence of every question of this task; one compile per probe (shared cache)."""
+def exercise(task, T=targets, affected=None, stop=False):
+    """[(key, claim, None | why)] for every claim of every renderable sentence of every question of this task; one compile per probe (shared cache). Each sentence
+    is rendered by template module `T` (the real one, or a mutated copy), parsed with its pattern, and the claims read the groups. `affected` ({key: {sentence
+    indexes}}) limits the run to those sentences, `stop` returns at the first failure (the mutation test)."""
     cache: dict = {}
     res = []
-    for m in [task.meta()] + other_questions(task):
-        r = targets.render(m)
-        key, f = r["key"], r["facts"]
-        names = sorted({n for i in applicable(key, f) for n in TABLE[key][i]})
-        ctx = RC.Ctx(task, f, key)
-        ctx.cache = cache
-        for name in names:
+    for rec in [task.meta()] + other_questions(task):
+        key = T.key_of(rec)
+        for j, i in enumerate(applicable(key, T.SPECS[key].facts(rec), T)):
+            if affected is not None and i not in affected.get(key, ()):
+                continue
+            pattern, claims = TABLE[key][i]
             try:
-                RC.CLAIMS[name](ctx)
-                res.append((key, name, None))
-            except RC.ClaimFailed as e:
-                res.append((key, name, f"{task.id}: {e}"[:300]))
-            except Exception as e:                       # a crash of a checker is a failure of the claim, with the reason
-                res.append((key, name, f"{task.id}: checker crashed: {type(e).__name__}: {e}"[:300]))
+                sentence = T.render(rec, j)["sentence"]
+            except Exception as e:                       # a template that names a fact the task does not have
+                res.append((key, "wording", f"{task.id}[{i}]: the sentence does not render: {type(e).__name__}: {e}"[:300]))
+                if stop:
+                    return res
+                continue
+            caps = RS.parse(pattern, sentence)
+            if caps is None:
+                res.append((key, "wording", f"{task.id}[{i}]: wording the table does not know: {sentence!r}"[:300]))
+                if stop:
+                    return res
+                continue
+            ctx = RC.Ctx(task, rec, caps, key)
+            ctx.cache = cache
+            ok = True
+            for name in claims:
+                try:
+                    RC.CLAIMS[name](ctx)
+                    res.append((key, name, None))
+                except RC.ClaimFailed as e:
+                    ok = False
+                    res.append((key, name, f"{task.id}[{i}]: {e}"[:300]))
+                except Exception as e:                   # a crash of a checker is a failure of the claim, with the reason
+                    ok = False
+                    res.append((key, name, f"{task.id}[{i}]: checker crashed: {type(e).__name__}: {e}"[:300]))
+                if not ok and stop:
+                    return res
+            if ok and caps.unread():
+                res.append((key, "unread", f"{task.id}[{i}]: the groups {sorted(caps.unread())} of {sentence!r} are read by no claim"[:300]))
+                if stop:
+                    return res
     return res
 
 
@@ -245,37 +217,114 @@ FORM_DOMAINS[("pktsum/len_field", "kind")] = {"sum8", "xor8"}
 FORM_DOMAINS[("pktsum/len_field", "ask")] = {"len_offset", "len_start"}
 
 
+# ---- the sentinel rendering (golden file) ------------------------------------------------------------------------------------------
+
+class Sentinel:
+    """A placeholder value that renders as its own name and format spec: `{off:#x}` -> `<off:#x>`, `{rot[0]}` -> `<rot[0]>`."""
+
+    def __init__(self, name):
+        self.name = name
+
+    def __format__(self, spec):
+        return f"<{self.name}{':' + spec if spec else ''}>"
+
+    def __getitem__(self, i):
+        return Sentinel(f"{self.name}[{i}]")
+
+
+def template_fields(template: str) -> list:
+    """[(group name in the pattern, field name in the template, base name, format spec)] of a template: `rot[0]` is the group `rot0`."""
+    out = []
+    for _lit, field, spec, _conv in string.Formatter().parse(template):
+        if field is None:
+            continue
+        base = re.match(r"\w+", field).group(0)
+        idx = re.findall(r"\[(\d+)\]", field)
+        out.append((base + "".join(idx), field, base, spec))
+    return out
+
+
+def sentinel_text(template: str) -> str:
+    names = {base for _g, _f, base, _s in template_fields(template)}
+    return template.format(**{n: Sentinel(n) for n in names})
+
+
+def golden_lines() -> list:
+    out = []
+    for key, spec in targets.SPECS.items():
+        for i, h in enumerate(spec.heads):
+            out.append(f"{key} head[{i}] {sentinel_text(h)}")
+        for i, s in enumerate(spec.sentences):
+            out.append(f"{key} sentence[{i}] {sentinel_text(s)}")
+    return out
+
+
 class TableIsComplete(unittest.TestCase):
-    def test_every_sentence_of_every_template_has_claims_and_every_claim_a_checker(self):
+    def test_every_sentence_of_every_template_has_a_pattern_and_claims_and_every_claim_a_checker(self):
         missing = [k for k in targets.SPECS if k not in TABLE]
         self.assertEqual(missing, [], "a template without an entry in the claims table")
         self.assertEqual([k for k in TABLE if k not in targets.SPECS], [], "an entry for a template that does not exist")
         for key, spec in targets.SPECS.items():
-            self.assertEqual(len(TABLE[key]), len(spec.sentences), f"{key}: one tuple of claims per sentence")
-            for i, names in enumerate(TABLE[key]):
+            self.assertEqual(len(TABLE[key]), len(spec.sentences), f"{key}: one pattern and one tuple of claims per sentence")
+            for i, (pattern, names) in enumerate(TABLE[key]):
+                RS.compile_pattern(pattern)
                 self.assertTrue(names, f"{key} sentence {i} makes no claim: {spec.sentences[i]}")
                 for name in names:
                     self.assertIn(name, RC.CLAIMS, f"{key} sentence {i}: no checker for the claim {name}")
-        used = {name for names in TABLE.values() for tup in names for name in tup}
+        used = {name for rows in TABLE.values() for _p, names in rows for name in names}
         self.assertEqual(set(RC.CLAIMS) - used, set(), "a checker that no sentence uses")
         self.assertEqual(len(targets.SPECS), 78)
 
+    def test_every_placeholder_of_every_template_is_a_group_of_its_pattern(self):
+        """A number the sentence states is read from the sentence: every placeholder of a template is a captured group of the pattern."""
+        for key, spec in targets.SPECS.items():
+            for i, s in enumerate(spec.sentences):
+                have = RS.groups(TABLE[key][i][0])
+                want = {g for g, _f, _b, _s in template_fields(s)}
+                self.assertEqual(sorted(want - have), [], f"{key}[{i}]: a placeholder of the template that the pattern does not capture: {s}")
+
+    def test_every_pattern_matches_its_template_rendered_with_sample_values(self):
+        """The literal text of a pattern is the literal text of its template: render the template with a sample value of the kind of each group, and parse."""
+        for key, spec in targets.SPECS.items():
+            for i, s in enumerate(spec.sentences):
+                pattern = TABLE[key][i][0]
+                _rx, kinds = RS.compile_pattern(pattern)
+                kw, idx = {}, 7000
+                for group, field, base, fspec in template_fields(s):
+                    idx += 1
+                    kind = kinds[group]
+                    v = idx if kind == "i" else (0x1000 + idx if kind == "h" else None)
+                    if v is None:
+                        v = {"p": "/proc/self/status", "q": "PTRACE_TRACEME", "e": "a ^ b", "w": "Name"}.get(kind) or kind.split("|")[0]
+                    if "[" in field:
+                        kw.setdefault(base, {})[int(re.search(r"\[(\d+)\]", field).group(1))] = v
+                    else:
+                        kw[base] = v
+                kw = {k: ([v[j] for j in sorted(v)] if isinstance(v, dict) else v) for k, v in kw.items()}
+                text = s.format(**kw)
+                self.assertIsNotNone(RS.parse(pattern, text), f"{key}[{i}]: the pattern does not match its template\n  template: {s}\n  rendered: {text}\n  pattern:  {pattern}")
+
     def test_the_summary_numbers(self):
         sentences = sum(len(s.sentences) for s in targets.SPECS.values())
-        claims = sum(len(t) for names in TABLE.values() for t in names)
+        claims = sum(len(names) for rows in TABLE.values() for _p, names in rows)
         self.assertGreaterEqual(sentences, 234)
         self.assertGreaterEqual(claims, sentences)
 
 
-class NoStructureWords(unittest.TestCase):
-    def test_no_sentence_describes_code_structure(self):
-        bad = [(k, i, m.group(0), s) for k, spec in targets.SPECS.items() for i, s in enumerate(spec.sentences) for m in [STRUCTURE.search(s)] if m]
-        self.assertEqual(bad, [])
+class Wording(unittest.TestCase):
+    def test_the_parser_rejects_a_sentence_the_table_does_not_know(self):
+        pat = TABLE["bounds/range_chain"][0][0]
+        good = "proc returns 1 for every integer from 3 to 9, both included, and for no other integer."
+        caps = RS.parse(pat, good)
+        self.assertEqual((caps["ret"], caps["lo"], caps["hi"]), (1, 3, 9))
+        for bad in (good.replace("every", "each"), good.replace("both included", "both included, by a loop"), good + " It is fast.", "It " + good,
+                    good.replace("integer from", "union from"), good.replace("no other", "any other")):
+            self.assertIsNone(RS.parse(pat, bad), bad)
 
-    def test_the_lint_has_teeth(self):
-        for s in ("The string is built byte by byte on the stack.", "A loop shifts the register right.", "A single unsigned comparison accepts it.",
-                  "The encoder divides the input again and again.", "It is copied into a local array.", "The table lookup works on a register.", "It calls a helper."):
-            self.assertTrue(STRUCTURE.search(s), s)
+    def test_a_group_that_no_claim_reads_is_a_failure(self):
+        caps = RS.parse(TABLE["bounds/range_chain"][0][0], "proc returns 1 for every integer from 3 to 9, both included, and for no other integer.")
+        caps["lo"], caps["hi"]
+        self.assertEqual(caps.unread(), {"ret"})
 
     def test_a_checksum_that_is_an_xor_is_never_called_a_sum(self):
         """B2: `pktsum/len_field` said 'how many bytes are summed' over an XOR checksum. No pktsum sentence uses the word sum, summed or sums."""
@@ -291,6 +340,17 @@ class NoStructureWords(unittest.TestCase):
             self.assertIsNone(word.search(targets.render(t.meta())["text"]), t.id)
             n += 1
         self.assertGreater(n, 40)
+
+
+class Golden(unittest.TestCase):
+    def test_every_headline_and_sentence_with_a_sentinel_per_placeholder(self):
+        """Any edit of a template shows here: the diff of tests/golden/rea_sentences.txt is the review of the text."""
+        lines = golden_lines()
+        if os.environ.get("REA_GOLDEN_UPDATE"):
+            GOLDEN.parent.mkdir(exist_ok=True)
+            GOLDEN.write_text("\n".join(lines) + "\n")
+        self.assertTrue(GOLDEN.exists(), "run once with REA_GOLDEN_UPDATE=1")
+        self.assertEqual(GOLDEN.read_text().splitlines(), lines, "a template changed: review the diff, then REA_GOLDEN_UPDATE=1 python3 -m unittest tests.test_rea_claims.Golden")
 
 
 @unittest.skipUnless(GCC, "gcc is needed")
@@ -333,14 +393,66 @@ int main(void) {
             v = (rng.getrandbits(32), rng.getrandbits(32))
             r = rng.choice([8, 16, 32, 64])
             for dec in (False, True):
-                self.assertEqual(RC.tea_ref("TEA", v, k, r, RC.targets.TEA_DELTA, dec), f_cipher.tea(v, k, r, dec))
-                self.assertEqual(RC.tea_ref("XTEA", v, k, r, RC.targets.TEA_DELTA, dec), f_cipher.xtea(v, k, r, dec))
+                self.assertEqual(RC.tea_ref("TEA", v, k, r, targets.TEA_DELTA, dec), f_cipher.tea(v, k, r, dec))
+                self.assertEqual(RC.tea_ref("XTEA", v, k, r, targets.TEA_DELTA, dec), f_cipher.xtea(v, k, r, dec))
             self.assertNotEqual(RC.tea_ref("TEA", v, k, r, 0x9E3779B8, False), f_cipher.tea(v, k, r, False), "another delta is another cipher")
+
+    # ---- m5: the references that the "name" claims lean on, anchored to the standard library or to published vectors -------------------
+
+    def test_rc4_equals_the_published_vectors(self):
+        self.assertEqual(f_cipher.rc4(b"Key", b"Plaintext").hex(), "bbf316e8d940af0ad3")
+        self.assertEqual(f_cipher.rc4(b"Wiki", b"pedia").hex(), "1021bf0420")
+        self.assertEqual(f_cipher.rc4(b"Secret", b"Attack at dawn").hex(), "45a01f645fc35b383552544b9bf5")
+
+    def test_chacha20_block_equals_rfc_8439_section_2_3_2(self):
+        key = [int.from_bytes(bytes(range(i, i + 4)), "little") for i in range(0, 32, 4)]
+        nonce = [0x09000000, 0x4a000000, 0x00000000]
+        want = [0xe4e7f110, 0x15593bd1, 0x1fdd0f50, 0xc47120a3, 0xc7f4d1c7, 0x0368c033, 0x9aaa2204, 0x4e6cd4c3,
+                0x466482d2, 0x09aa9f07, 0x05d7c214, 0xa2028bd9, 0xd19c12b5, 0xb94e16de, 0xe883d0cb, 0x4e3c50a2]
+        self.assertEqual(f_cipher.chacha_block(key, 1, nonce, 20), want)
+
+    def test_salsa20_core_equals_the_specification_s_example(self):
+        """Bernstein's Salsa20 specification, section 8: Salsa20(x) for a 64-byte x, and the identity that the core of 64 zero bytes is zero."""
+        x = bytes([211, 159, 13, 115, 76, 55, 82, 183, 3, 117, 222, 37, 191, 187, 234, 136, 49, 237, 179, 48, 1, 106, 178, 219, 175, 199, 166, 48, 86, 16, 179, 207,
+                   31, 240, 32, 63, 15, 83, 93, 161, 116, 147, 48, 113, 238, 55, 204, 36, 79, 201, 235, 79, 3, 81, 156, 47, 203, 26, 244, 243, 88, 118, 104, 54])
+        want = bytes([109, 42, 178, 168, 156, 240, 248, 238, 168, 196, 190, 203, 26, 110, 170, 154, 29, 29, 150, 26, 150, 30, 235, 249, 190, 163, 251, 48, 69, 144, 51, 57,
+                      118, 40, 152, 157, 180, 57, 27, 94, 107, 42, 236, 35, 27, 111, 114, 114, 219, 236, 232, 135, 111, 155, 110, 18, 24, 232, 95, 158, 179, 19, 48, 202])
+        inp = [int.from_bytes(x[i:i + 4], "little") for i in range(0, 64, 4)]
+        out = f_cipher.salsa_core(inp, 20)
+        self.assertEqual(b"".join(w.to_bytes(4, "little") for w in out), want)
+        self.assertEqual(f_cipher.salsa_core([0] * 16, 20), [0] * 16)
+
+    def test_the_crc_model_equals_zlib_binascii_and_the_catalogue_check_values(self):
+        rng = random.Random(8)
+        for _ in range(10):
+            data = bytes(rng.randrange(256) for _ in range(rng.randint(0, 50)))
+            self.assertEqual(f_crc.crc_ref(data, 32, 0x04C11DB7, 0xFFFFFFFF, True, 0xFFFFFFFF), zlib.crc32(data))
+            self.assertEqual(f_crc.crc_ref(data, 16, 0x1021, 0xFFFF, False, 0), binascii.crc_hqx(data, 0xFFFF), "CRC-16/CCITT-FALSE")
+        self.assertEqual(f_crc.crc_ref(b"123456789", 16, 0x8005, 0, True, 0), 0xBB3D, "CRC-16/ARC")
+        self.assertEqual(f_crc.crc_ref(b"123456789", 16, 0x1021, 0xFFFF, False, 0), 0x29B1, "CRC-16/CCITT-FALSE")
+        self.assertEqual(f_crc.crc_ref(b"123456789", 32, 0x04C11DB7, 0xFFFFFFFF, True, 0xFFFFFFFF), 0xCBF43926, "CRC-32")
+        self.assertEqual(f_pktsum.csum("crc16", b"123456789"), 0xBB3D)
+        self.assertEqual(f_pktsum.csum("fletcher16", b"abcde"), 0xC8F0, "Wikipedia's Fletcher-16 example")
+        self.assertEqual(f_pktsum.csum("fletcher16", b"abcdef"), 0x2057)
+
+    def test_base64_and_base32_equal_the_standard_library_and_base58_the_bitcoin_vectors(self):
+        a64 = string.ascii_uppercase + string.ascii_lowercase + string.digits + "+/"
+        a32 = string.ascii_uppercase + "234567"
+        a58 = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+        rng = random.Random(9)
+        for n in list(range(0, 12)) + [30, 31]:
+            v = bytes(rng.randrange(256) for _ in range(n))
+            self.assertEqual(f_encoding.encode_ref("base64", v, a64, True).encode(), base64.b64encode(v))
+            self.assertEqual(f_encoding.encode_ref("base32", v, a32, True).encode(), base64.b32encode(v))
+            self.assertEqual(f_encoding.encode_ref("base64", v, a64, False).encode(), base64.b64encode(v).rstrip(b"="))
+        self.assertEqual(f_encoding.encode_ref("base58", b"hello world", a58, False), "StV1DL6CwTryKyV")
+        self.assertEqual(f_encoding.encode_ref("base58", b"\x00\x00\x28\x7f\xb4\xcd", a58, False), "11233QC4", "leading zero bytes are leading '1's")
+        self.assertEqual(f_encoding.encode_ref("base58", b"", a58, False), "")
 
 
 @unittest.skipUnless(GCC, "gcc is needed")
 class Teeth(unittest.TestCase):
-    """A false fact must fail its checker (and the true one must pass), or the checker proves nothing."""
+    """A false value in a group of the sentence must fail its checker (and the true one must pass), or the checker proves nothing."""
 
     @classmethod
     def setUpClass(cls):
@@ -351,75 +463,93 @@ class Teeth(unittest.TestCase):
     def task(self, fam, variant, pred=lambda t: True):
         return next(t for t in self.tasks[fam] if (t.variant == variant or t.kind == variant) and pred(t))
 
-    def facts(self, t, **over):
-        r = targets.render(t.meta())
-        return r["key"], {**r["facts"], **over}
-
-    def holds(self, claim, t, **over):
-        key, f = self.facts(t, **over)
-        try:
-            RC.CLAIMS[claim](RC.Ctx(t, f, key))
-            return True
-        except RC.ClaimFailed:
-            return False
+    def holds(self, claim, t, group, over=None):
+        """Parse the first sentence of the task's template that makes `claim` and has the group `group`, put `over` in the group, run the claim."""
+        rec = t.meta()
+        key = targets.key_of(rec)
+        f = targets.SPECS[key].facts(rec)
+        for j, i in enumerate(applicable(key, f)):
+            pattern, names = TABLE[key][i]
+            if claim in names and group in RS.groups(pattern):
+                caps = RS.parse(pattern, targets.render(rec, j)["sentence"])
+                self.assertIsNotNone(caps, f"{key}[{i}]")
+                if over is not None:
+                    caps[group] = over(caps[group]) if callable(over) else over
+                try:
+                    RC.CLAIMS[claim](RC.Ctx(t, rec, caps, key))
+                    return True
+                except RC.ClaimFailed:
+                    return False
+        self.fail(f"no sentence of {key} makes {claim} with a group {group}")
 
     def check(self, claim, t, **over):
-        self.assertTrue(self.holds(claim, t), f"{claim}: the true fact fails")
-        for k, v in over.items():
-            self.assertFalse(self.holds(claim, t, **{k: v(self.facts(t)[1][k]) if callable(v) else v}), f"{claim}: a false {k} passes")
+        for group, v in over.items():
+            self.assertTrue(self.holds(claim, t, group), f"{claim}: the true {group} fails")
+            self.assertFalse(self.holds(claim, t, group, v), f"{claim}: a false {group} passes")
 
     def test_cipher_and_crc(self):
-        self.check("tea_reference", self.task("cipher", "xtea_dec"), rounds=lambda n: n + 1, delta=0x9E3779B8, dir=lambda d: "encrypt")
+        self.check("tea_reference", self.task("cipher", "xtea_dec"), rounds=lambda n: n + 1, delta=0x9E3779B8, done="encrypted", verb="encrypts", key_bits=lambda n: n * 2,
+                   block=16)
         self.check("tea_reference", self.task("cipher", "tea_enc"), alg="XTEA")
         self.check("crc_init_value", self.task("crc", "bitwise_init"), x=lambda x: x ^ 1)
         self.check("crc_xorout_value", self.task("crc", "table_xorout"), x=lambda x: x ^ 0x10)
-        self.check("crc_poly_form", self.task("crc", "bitwise_poly"), lit=lambda x: x ^ 2, refl=lambda r: not r)
-        self.check("stream_reference", self.task("cipher", "chacha"), rounds=lambda n: n + 2)
+        self.check("crc_poly_form", self.task("crc", "bitwise_poly"), lit=lambda x: x ^ 2, dir=lambda d: "normal" if d == "reflected" else "reflected")
+        for refl in (True, False):                       # m3(a): the width is the register's, a 16-bit CRC is not a 32-bit one whatever the values say
+            t = self.task("crc", "bitwise_poly", lambda t: t.params["width"] == 16 and t.params["refl"] == refl)
+            self.check("crc_poly_form", t, w=32)
+        self.check("stream_reference", self.task("cipher", "chacha"), rounds=lambda n: n + 2, rot0=lambda r: r + 1, alg="Salsa", half=lambda h: h + 1, block=32)
+        self.check("rc4_reference", self.task("cipher", "rc4"), n=lambda n: n + 1, state=255, alg="ChaCha")
 
     def test_pktsum_and_bounds(self):
         t = self.task("pktsum", "sum16_le", lambda t: t.params["ask"] == "endian")
         self.check("pkt_endian_behaviour", t, e="big", first="high")
-        t = self.task("pktsum", "sum8", lambda t: t.params["S"] > 1)
+        t = self.task("pktsum", "fletcher16", lambda t: t.params["S"] > 1 and t.params["ask"] == "start")
         self.check("pkt_range_start", t, n=lambda n: n - 1)
-        self.assertFalse(self.holds("pkt_range_start", t, n=t.params["S"] + 1))
+        self.assertFalse(self.holds("pkt_range_start", t, "n", t.params["S"] + 1))
         t = self.task("pktsum", "len_field", lambda t: t.params["ask"] == "len_offset")
         self.check("pkt_length_byte", t, n=lambda n: n + 1)
         t = self.task("bounds", "window")
-        self.check("returns_one_for_window", t, hi=lambda h: h + 1, w=lambda w: w + 1)
+        self.check("returns_one_for_window", t, hi=lambda h: h + 1, w=lambda w: w + 1, ret=0)
         t = self.task("bounds", "range_chain")
-        self.check("returns_one_exactly_in_range", t, lo=lambda x: x - 1)
+        self.check("returns_one_exactly_in_range", t, lo=lambda x: x - 1, lw="highest")
         t = self.task("bounds", "clamp")
-        self.check("clamp_interval", t, hi=lambda h: h + 1)
+        self.check("clamp_interval", t, hi=lambda h: h + 1, d1="above", lb="upper")
+        self.check("index_limit_range", self.task("bounds", "index_limit"), neg=0, o1="inside", lw="largest")
+        self.check("char_class_count", self.task("bounds", "char_class"), n=lambda n: n + 1, total=255, top=254)
 
     def test_legacy_and_strobf(self):
         t = self.task("legacy", "hash", lambda t: t.truth["accept"][0] == ["murmur"])
-        self.assertTrue(self.holds("hash_name_is_the_algorithm", t))
-        self.assertFalse(self.holds("hash_name_is_the_algorithm", t, name="FNV-1a"), "the murmur loop is not FNV-1a")
+        self.assertTrue(self.holds("hash_name_is_the_algorithm", t, "name"))
+        for wrong in ("FNV-1a", "MurmurHash2", "Murmur"):
+            self.assertFalse(self.holds("hash_name_is_the_algorithm", t, "name", wrong), f"the murmur loop is not {wrong}")
         self.check("hash_final_xor", t, c=lambda c: c ^ 1)
         self.check("hash_start_value", t, init=0x9747b28d)
-        self.check("magic_header", self.task("legacy", "magic"), v=lambda v: v + 1)
+        self.check("magic_header", self.task("legacy", "magic"), v=lambda v: v + 1, e=lambda e: "big" if e == "little" else "little")
         self.check("skip_one_value", self.task("legacy", "skip"), b=lambda b: b ^ 1)
-        self.check("lcg_reference", self.task("legacy", "lcg"), r=lambda r: r + 1)
-        t = self.task("strobf", "xor_const")
-        self.check("writes_exact_string", t, s=t.params["plain"][:-1] + "~", len=lambda n: n + 1)
+        self.check("lcg_reference", self.task("legacy", "lcg"), r=lambda r: r + 1, a=lambda a: a + 2)
+        self.check("rotate_reference", self.task("legacy", "rotate"), dir=lambda d: "right" if d == "left" else "left", r=lambda r: r + 1)
+        self.check("threshold_values", self.task("legacy", "threshold"), below=lambda b: b + 1, d1="Above", lb="upper")
+        self.check("writes_exact_string", self.task("strobf", "xor_const"), len=lambda n: n + 1)
 
     def test_structs_encoding_antidebug_fsm_multi(self):
         self.check("stride_records", self.task("structs", "array_stride"), n=lambda n: n + 8)
-        self.check("field_read_offset", self.task("structs", "field_read"), off=lambda o: o + 1)
+        self.check("field_read_offset", self.task("structs", "field_read"), off=lambda o: o + 1, flag="zero")
         self.check("linked_pointer_offset", self.task("structs", "linked_next"), off=lambda o: o + 8)
         self.check("alloc_structure_size", self.task("structs", "alloc_size"), n=lambda n: n + 8)
-        t = self.task("encoding", "base58_encode")
-        key, f = self.facts(t)
-        self.assertTrue(self.holds("encoding_reference", t))
-        self.assertFalse(self.holds("encoding_reference", t, dir="decode"))
-        self.check("ptrace_request", self.task("antidebug", "ptrace"), rv=lambda r: r + 1)
-        self.check("timing_threshold", self.task("antidebug", "timing_ns"), thr=lambda x: x + 1)
+        self.check("init_magic_offset", self.task("structs", "init_magic"), off=lambda o: o + 8)
+        self.check("encoding_reference", self.task("encoding", "base64_encode"), gin=4, radix=63)
+        self.check("ptrace_request", self.task("antidebug", "ptrace"), rv=lambda r: r + 1, outcome="granted", req="PTRACE_ATTACH")
+        self.check("tracerpid_status", self.task("antidebug", "tracerpid"), field="PPid", file="/proc/self/maps")
+        self.check("timing_threshold", self.task("antidebug", "timing_ns"), thr=lambda x: x + 1, unit="microseconds", cmp="below")
+        self.check("timing_threshold", self.task("antidebug", "timing_us"), unit="milliseconds")
         self.check("env_variable_read", self.task("antidebug", "env"), NAME="NOT_THE_VARIABLE")
-        t = self.task("fsm", "table_input")
-        self.check("fsm_input_final", t, final=lambda s: s + 1)
+        self.check("fsm_input_final", self.task("fsm", "table_input"), final=lambda s: s + 1, z=1)
+        self.check("fsm_states_count", self.task("fsm", "table_states"), n=lambda n: n + 1)
         self.check("opcode_returns_expr", self.task("fsm", "opcode_value"), n=lambda n: n + 1)
         self.check("opcode_count_handled", self.task("fsm", "opcode_count"), n=lambda n: n + 1)
-        self.check("returns_for_argument", self.task("multi", "eval_arith"), n=lambda n: n + 1)
+        self.check("opcode_default", self.task("fsm", "opcode_count"), dflt=1)
+        self.check("returns_for_argument", self.task("multi", "eval_arith"), n=lambda n: n + 1, n0=lambda n: n + 1)
+        self.check("xors_key_byte", self.task("multi", "key_helper"), k=lambda k: k ^ 1)
         self.check("limit_for_mode", self.task("multi", "limit_helper"), n=lambda n: n + 1)
 
 

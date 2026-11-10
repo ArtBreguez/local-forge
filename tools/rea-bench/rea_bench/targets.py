@@ -236,7 +236,7 @@ def _tea(t):
             "key_bits": _qint(t, r"(\d+)-bit key", "key width"), "block": _qint(t, r"(\d+)-byte block", "block size")}
 
 
-_TEA_HEADS = ("{alg}, {dir}, {rounds}", "{alg}, {dir}, {rounds} iterations", "{dir}, {alg}, {rounds} rounds", "{alg} {dir}, {rounds} iterations")
+_TEA_HEADS = ("{alg}, {dir}, {rounds}", "{alg}, {dir}, {rounds} iterations", "{dir}, {alg}, {rounds} iterations", "{alg} {dir}, {rounds} iterations")
 _TEA_S = ("proc {verb} a block of {block} bytes with a {key_bits}-bit key, in {rounds} iterations.",
           "This {alg} implementation runs {rounds} iterations and uses the delta constant 0x{delta:08X}.",
           "The block of {block} bytes is {done} with the {key_bits}-bit key over {rounds} iterations, and the delta constant is 0x{delta:08X}.")
@@ -310,7 +310,7 @@ spec("encoding/base58_encode", _ENC_HEADS,
       "The output is the input written in radix {radix}, and the digits are characters of an alphabet of {radix} characters.",
       "The result has digits of radix {radix}, which are characters of an alphabet of {radix} characters."))(_enc_facts)
 spec("encoding/base58_decode", _ENC_HEADS,
-     ("proc reads its input as a number written in base {radix}, a single character of an alphabet of {radix} characters per digit, and returns the bytes of that number.",
+     ("proc reads its input as a number written in base {radix}, a single character of an alphabet of {radix} characters per digit, and writes the bytes of that number into its second argument.",
       "An input character is a digit of radix {radix}, taken from an alphabet of {radix} characters.",
       "The decoded number has the characters of the input as its digits in radix {radix}, and the characters come from an alphabet of {radix} characters."))(_enc_facts)
 
@@ -541,13 +541,13 @@ def _(t):
 @spec("keycount", ("{s}", "The key is: {s}", "Key: {s}", "It counts: {s}"),
       ("The function counts the lines that start with this key followed by an equals sign and a value that is not empty, and it skips comment lines.",
        "A line is counted when it begins with this key and an equals sign and has something after it.",
-       "The lines that are counted begin with this {len}-character key and an equals sign."))
+       "The lines that are counted begin with this {len}-character key and an equals sign, and have something after it."))
 def _(t):
     return _plain(t)
 
 
 @spec("alphabet", ("{s}", "The alphabet is: {s}", "Alphabet: {s}", "\"{s}\""),
-      ("The decoder returns the position of its argument in this string of {len} characters, or {miss} when it is not there.",
+      ("The decoder returns the position of its argument in this string of {len} characters, or {miss} for any other printable character.",
        "The index that the function returns is the position in this alphabet of {len} characters.",
        "The position of a character in this string of {len} characters is the value that proc returns for it."),
       consts=("miss",))
@@ -636,15 +636,16 @@ def known(t: dict) -> bool:
     return key_of(t) in SPECS
 
 
-def render(t: dict) -> dict:
+def render(t: dict, index: int | None = None) -> dict:
     """{"text", "headline", "sentence", "facts", "key", "template", "templates"}: the canonical headline and one factual sentence for task `t`,
-    from the truth alone. The teacher's reply plays no part here."""
+    from the truth alone. The teacher's reply plays no part here. `index` (tests only) renders phrasing `index` of the set that applies to the task
+    instead of the one the seeded RNG picks: the claims table checks every sentence of a template against every task."""
     key = key_of(t)
     if key not in SPECS:
         raise ValueError(f"no truth template for task {t.get('id', '?')} ({key}); add one to rea_bench/targets.py")
     f = SPECS[key].facts(t)
     heads, sentences = _template_set(key, f)
-    i = random.Random(f"{TARGET_SOURCE}/{t.get('id', '')}/{key}").randrange(len(sentences))
+    i = random.Random(f"{TARGET_SOURCE}/{t.get('id', '')}/{key}").randrange(len(sentences)) if index is None else index
     head = heads[i % len(heads)].format(**f)
     sentence = sentences[i].format(**f)
     return {"text": f"{head}\n{sentence}", "headline": head, "sentence": sentence, "facts": f, "key": key, "template": i, "templates": len(sentences)}
