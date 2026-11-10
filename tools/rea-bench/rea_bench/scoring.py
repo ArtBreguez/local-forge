@@ -78,9 +78,11 @@ def _legacy_score(answer: str, t: dict) -> bool:
 # Which accept strings of a legacy task are hex constants (the question asks "(hex)"); every other numeric string is decimal.
 _HEX_AT = {"magic": (0,), "rotate": (0,), "hash": (1,)}
 # Names a reply may use for the legacy hash families (the frozen accept list holds the stem only: "fnv" must also be "FNV-1a"). Only names of THAT
-# algorithm: FNV-1 (multiply, then xor) is not the FNV-1a of the template, MurmurHash3 and djb2a are other hashes (round 4, M2).
+# algorithm: FNV-1 (multiply, then xor) is not the FNV-1a of the template, MurmurHash3 and djb2a are other hashes (round 4, M2). The question asks
+# "which well-known hash is this BASED ON", so the murmur template (a per-byte loop with MurmurHash2's multiplier and seed, not MurmurHash2 itself)
+# accepts the reply "MurmurHash2" while the stored name is "Murmur-style" (round 5, B3).
 _HASH_NAMES = {"fnv": ("fnv", "fnv-1a", "fnv1a", "fnv-32", "fnv32"), "djb2": ("djb2", "djb", "bernstein", "djb-2"),
-               "sdbm": ("sdbm",), "murmur": ("murmur", "murmurhash", "murmur2", "murmurhash2", "murmur-ish")}
+               "sdbm": ("sdbm",), "murmur": ("murmur", "murmurhash", "murmur2", "murmurhash2", "murmur-ish", "murmur-style")}
 # What a constant guess gets right on a legacy task whose answer set is tiny (the generated families carry `chance`; legacy tasks did not).
 # skip: one of 7 byte values. The other templates hide a 32-bit constant (magic, hash, rotate), an exact string, or a pair that no guess gets.
 _LEGACY_CHANCE = {"skip": 0.14}

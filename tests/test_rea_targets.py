@@ -1,4 +1,5 @@
 """Round 4 (B2, M4 stored text, m9): the stored target is rendered from the ground truth, never copied from the teacher.
+Round 5: every sentence is a semantic fact and has a checker (tests/test_rea_claims.py); this file keeps the facts, numbers, names and opposites.
 
 `problems(task, rendered)` is the whole check of ONE rendered target:
   truth        the text scores True under the data scorer and the evaluation scorer; it is a headline line and one prose sentence
@@ -27,10 +28,7 @@ PER_FAMILY = 2000
 SEED = 4242
 
 # Counted words a template may use, with the reason they are true for every task of the variant (checked below where the code can say so).
-WORDS_OK = {"cipher/chacha": {"eight", "two"},      # 8 QR calls per loop body; a double round counts as 2 (the question says so)
-            "cipher/salsa": {"eight", "two"},
-            "multi/chain": {"two", "three"},        # two helpers (task.helpers), three functions (the question says so)
-            "strobf/alt_xor": {"two"},              # k and k1
+WORDS_OK = {"magic": {"four"},                      # the magic field is four bytes (checked in tests/rea_claims.py: it is a little-endian uint32)
             "antidebug/timing_ns": {"two"},         # two clock readings (the question says so)
             "antidebug/timing_us": {"two"}}
 for _v in ("sum8", "xor8", "sum16_le", "sum16_be", "fletcher16", "crc16", "len_field"):
@@ -91,17 +89,16 @@ def expected(key: str, task, meta: dict, f: dict) -> dict:
         code = {op: c for c, op in p["pairs"]}[p["op"]]
         return {"n": code, "expr": OPS.get(p["op"], f["expr"])}
     if base == "fsm/opcode_count":
-        return {"n": len(p["pairs"])}
+        return {"n": len(p["pairs"]), "dflt": 0}
     if base.startswith("crc/") and v.endswith("poly"):
-        out = {"w": p["width"], "lit": p["lit"], "dir": "reflected" if p["refl"] else "normal", "refl": p["refl"],
-               "shift": "right, least significant bit first" if p["refl"] else "left, most significant bit first"}
-        return {**out, "entries": 256} if v.startswith("table") else out
+        return {"w": p["width"], "lit": p["lit"], "dir": "reflected" if p["refl"] else "normal", "refl": p["refl"]}
     if base.startswith("crc/") and v.endswith("init"):
         return {"w": p["width"], "x": p["init"]}
     if base.startswith("crc/") and v.endswith("xorout"):
         return {"w": p["width"], "x": p["xorout"]}
     if base in ("cipher/tea_enc", "cipher/tea_dec", "cipher/xtea_enc", "cipher/xtea_dec"):
-        return {"alg": p["alg"].upper(), "dir": "encrypt" if v.endswith("enc") else "decrypt", "rounds": p["rounds"], "delta": 0x9E3779B9,
+        d = "encrypt" if v.endswith("enc") else "decrypt"
+        return {"alg": p["alg"].upper(), "dir": d, "verb": d + "s", "done": d + "ed", "rounds": p["rounds"], "delta": 0x9E3779B9,
                 "key_bits": 32 * len(p["key"]), "block": 4 * len(p["v"])}
     if base == "cipher/rc4":
         return {"alg": "RC4", "n": p["keylen"], "state": 256}
@@ -113,13 +110,12 @@ def expected(key: str, task, meta: dict, f: dict) -> dict:
         gin, gout, bits = {64: (3, 4, 6), 32: (5, 8, 5), 58: (0, 0, 0)}[radix]
         out = {"base": p["base"], "dir": p["direction"], "radix": radix, "gin": gin, "gout": gout, "bits": bits}
         if key.endswith("#alphabet"):
-            out.update({"s": p["alphabet"], "alen": radix, "agent": "encoder" if p["direction"] == "encode" else "decoder",
-                        "use": "looks up each output character in" if p["direction"] == "encode" else "looks up each input character in"})
+            out.update({"s": p["alphabet"], "alen": radix, "agent": "encoder" if p["direction"] == "encode" else "decoder"})
         else:
             out["Dir"] = p["direction"].capitalize()
         return out
     if kind_of(base) == "strobf":
-        return {"s": p["plain"], "len": len(p["plain"]), **({"modulus": 26} if v == "rot_n" else {})}
+        return {"s": p["plain"], "len": len(p["plain"])}
     if base == "multi/decode_secret":
         return {"s": p["secret"], "len": len(p["secret"])}
     if kind_of(base) == "pktsum":
@@ -146,8 +142,7 @@ def expected(key: str, task, meta: dict, f: dict) -> dict:
         return {"tech": "env", "NAME": p["name"]}
     if base in ("antidebug/timing_ns", "antidebug/timing_us"):
         ns = base.endswith("ns")
-        return {"tech": "timing", "thr": p["thr"], "unit": "nanoseconds" if ns else "microseconds", "call": "clock_gettime" if ns else "gettimeofday",
-                "scale": 10 ** 9 if ns else 10 ** 6}
+        return {"tech": "timing", "thr": p["thr"], "unit": "nanoseconds" if ns else "microseconds", "scale": 10 ** 9 if ns else 10 ** 6}
     if base == "multi/eval_arith" or base == "multi/chain":
         return {"n": f["n"], "n0": p["n0"]}
     if base == "multi/key_helper":
@@ -187,7 +182,7 @@ def legacy_expected(key: str, meta: dict, body: str) -> dict:
         assert f"h ^ 0x{c:08x}u" in body
         init = {"fnv": 2166136261, "djb2": 5381, "sdbm": 0, "murmur": 0x9747b28c}[stem]
         assert {"fnv": "2166136261u", "djb2": "5381u", "sdbm": "h = 0;", "murmur": "0x9747b28cu"}[stem] in body
-        return {"name": {"fnv": "FNV-1a", "djb2": "djb2", "sdbm": "sdbm", "murmur": "MurmurHash2"}[stem], "c": c, "init": init}
+        return {"name": {"fnv": "FNV-1a", "djb2": "djb2", "sdbm": "sdbm", "murmur": "Murmur-style"}[stem], "c": c, "init": init}
     if key == "skip":
         b = int(a[0], 16)
         assert f"p[i] != 0x{b:02x}" in body
@@ -203,51 +198,36 @@ def legacy_expected(key: str, meta: dict, body: str) -> dict:
     raise KeyError(key)
 
 
-# What the C source of every task of a variant must hold for the constants and structural words its sentences state.
+# What the C source of every task of a variant must hold for the CONSTANTS its facts state. The structure of the code is no part of a sentence any
+# more (round 5); what each sentence says about the behaviour of the code is checked by tests/test_rea_claims.py.
 def body_checks(key: str, f: dict, task) -> list:
     v = task.variant
     out = []
     if key.startswith("cipher/") and v in ("tea_enc", "tea_dec", "xtea_enc", "xtea_dec"):
         out += [rf"sum {'\\+=' if v.endswith('enc') else '-='} 0x{f['delta']:08x}u", r"for \(i = 0; i < %d; i\+\+\)" % f["rounds"]]
-        if v.startswith("xtea"):
-            out += [r"k\[sum & 3\]", r"k\[\(sum >> 11\) & 3\]"]
     if key == "cipher/rc4":
         out += [r"S\[256\]"]
     if key in ("cipher/chacha", "cipher/salsa"):
         out += [r"0x61707865u"] + [rf"<< {r}\b|, {r}\)|\b{r}\b" for r in f["rot"]]
     if key.startswith("crc/"):
         w = f["w"]
-        out += [r"table\[256\]"] if v.startswith("table") else [r"for \(int k = 0; k < 8; k\+\+\)"]
         if v.endswith("poly"):
             out += [rf"0x{f['lit']:0{w // 4}x}u", r">> 1" if f["refl"] else r"<< 1"]
         elif v.endswith("init"):
             out += [rf"0x{f['x']:0{w // 4}x}u"]
         else:
             out += [rf"\^ 0x{f['x']:0{w // 4}x}u"]
-    if key.startswith("encoding/") and not key.endswith("#alphabet"):
-        radix = f["radix"]
-        out += {("encode", 64): [r"& 63"], ("encode", 32): [r"& 31"], ("encode", 58): [r"% 58u", r"/=? 58u"],
-                ("decode", 64): [r"<< 6", r"'='"], ("decode", 32): [r"<< 5", r"'='"], ("decode", 58): [r"\* 58u"]}[(f["dir"], radix)]
     if key == "structs/init_magic":
         out += [rf"0x{f['magic']:x}"]
-    if key == "multi/decode_secret":
-        out += [r"strcmp"]
     if key.startswith("antidebug/"):
         out += {"ptrace": [r"ptrace\(PTRACE_TRACEME"], "ptrace_raw": [r"syscall\(SYS_ptrace, PTRACE_TRACEME"], "tracerpid": [r"TracerPid:", r"/proc/self/status"],
-                "env": [rf'getenv\("{f["NAME"]}"\)'] if "NAME" in f else [], "timing_ns": [r"clock_gettime", rf"d > {f.get('thr', 0)}LL"],
-                "timing_us": [r"gettimeofday", rf"d > {f.get('thr', 0)}LL"]}[v]
-    if key == "bounds/char_class":
-        out += [r"unsigned char c"]
+                "env": [rf'getenv\("{f["NAME"]}"\)'] if "NAME" in f else [], "timing_ns": [rf"d > {f.get('thr', 0)}LL"],
+                "timing_us": [rf"d > {f.get('thr', 0)}LL"]}[v]
     if key.startswith("pktsum/"):
-        if f["ask"] == "endian":
-            out += [r"p\[n - 2\] << 8\) \| p\[n - 1\]|\(p\[n - 2\] \| p\[n - 1\] << 8\)|p\[n - 2\] \| \(?p\[n - 1\]"]
-        elif f["ask"] == "start":
+        if f["ask"] == "start":
             out += [rf"i = {f['n']};"]
-        else:
+        elif f["ask"] == "len":
             out += [rf"p\[{f['n']}\]"]
-    if key.startswith("strobf/"):
-        out += {"stack_string": [r"memcpy"], "xor_const": [r"\^ 0x"], "xor_rolling": [r"i \* \d"], "alt_xor": [r"\(i & 1\)"], "sub_const": [r"enc\[i\] - "],
-                "reverse_xor": [r"enc\[n ?- ?1 ?- ?i\]|enc\[\w+ - 1 - i\]"], "rot_n": [rf"% {f.get('modulus', 26)}\b"]}[v]
     return out
 
 

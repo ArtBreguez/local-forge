@@ -210,7 +210,7 @@ class M2LegacyHashNames(unittest.TestCase):
             self.assertTrue(S(r, fnv), r)
         for r in (f"FNV-1, 0x{h}", f"FNV1, 0x{h}", f"fnv-1, 0x{h}"):
             self.assertFalse(S(r, fnv), r)
-        for stem, good, bad in (("murmur", ("murmur", "MurmurHash", "murmur2", "MurmurHash2", "murmur-ish"), ("MurmurHash3", "murmur3", "murmur64")),
+        for stem, good, bad in (("murmur", ("murmur", "MurmurHash", "murmur2", "MurmurHash2", "murmur-ish", "Murmur-style"), ("MurmurHash3", "murmur3", "murmur64")),     # "based on": a reply may say MurmurHash2; the stored name is Murmur-style (round 5, B3)
                                 ("djb2", ("djb2", "djb", "Bernstein", "djb-2"), ("djb2a", "djb2x", "djb1"))):
             t = next(t.meta() for t in families.generate("legacy", 800, 7) if t.meta()["kind"] == "hash" and t.meta()["accept"][0][0] == stem)
             h = t["accept"][1][0]

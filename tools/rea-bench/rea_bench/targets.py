@@ -1,4 +1,4 @@
-"""The SFT target, rendered from the GROUND TRUTH (round 4: B2, M4 stored text, m9).
+"""The SFT target, rendered from the GROUND TRUTH (round 4: B2, M4 stored text, m9; round 5: only semantic sentences).
 
 Rounds 1 to 4 each found free prose that carried a wrong fact past every filter: a sentence that contradicted its own headline
 ("xtea, decrypt, 64" over "It encrypted the data."), numbers in swapped roles, the family's opposite word in another inflection. Every
@@ -10,16 +10,29 @@ filter was a list of bad words or shapes, and the next review found the word tha
     chosen from a per-variant set of 3-6 phrasings by a seeded RNG (`random.Random("truth-template/<task id>/<variant>")`, so a task is
     always rendered the same way and the set of phrasings is spread over the tasks of a variant).
 
-What a sentence may say: only facts that are (1) a value of the task's own truth (`accept`: the key, the round count, the offset, ...), (2) a
-number or name the task's QUESTION states about this very task (the constant it stores, the argument it is called with, the mode, the bit width
-of the CRC), or (3) a constant of the generator's template for that variant, true for every task of it (the TEA/XTEA delta 0x9E3779B9, the
-ChaCha rotations 16/12/8/7, the 256-entry RC4 state, the FNV prime). Every fact is a named entry of the dict `facts(t)` returns, and the
-templates only use `{name}` placeholders of that dict: nothing in a template is typed in as a number or as the name of an algorithm.
+THE RULE FOR A SENTENCE (round 5, owner decision, applies to every template of every family). A sentence states only SEMANTIC facts:
+
+  * what `proc` computes, returns, accepts or writes, as a function of its inputs (`proc returns 1 for every integer from 3 to 9`, `the result is
+    XORed with 0x..`), including what it asks of the operating system (`asks to be traced by its parent`, `reads the environment variable X`);
+  * the values of the task's true parameters (the key, the round count, an offset, the polynomial constant), each a named entry of the dict
+    `facts(t)` returns: a value of the task's own truth (`accept`), a number or name the task's QUESTION states, or a constant of the generator's
+    template for that variant, true for every task of it (the TEA/XTEA delta 0x9E3779B9, the ChaCha rotations 16/12/8/7, the XOR mask 0x7fffffff).
+
+It does NOT describe code structure or compiler output: no "on the stack", "byte by byte", "loop", "comparison", "table lookup", "array",
+"switch", "branch", "copied", "shifts right", "unsigned comparison", no helper that "calls" another. The compiler decides which of those the
+model is shown: gcc turns a stack string into direct stores, clang folds an XOR loop, both rewrite a bound. A structural word is allowed only
+where it is guaranteed to be visible at every cc/opt of the task AND a mechanical check proves it; there is none, structure was dropped instead.
+A specific algorithm is named only where the code computes exactly that reference algorithm (TEA, XTEA, RC4, ChaCha, Salsa, base64, base32,
+base58, FNV-1a, djb2, sdbm: compared with a reference implementation in tests/rea_claims.py); the legacy murmur loop is "Murmur-style".
+
+EVERY SENTENCE HAS A CHECKER. tests/test_rea_claims.py holds the claims table: for every template sentence of every key, the names of the claims
+it makes, and for every claim a function that verifies it against the task's C source and its compiled behaviour (compile and run, a Python
+reference, a parsed C constant, `_Static_assert(offsetof ...)`) over at least 200 generated tasks of every variant at two seeds. A template
+without an entry, or an entry without a checker, fails the test, and so does a sentence that uses a word of the structure list above.
 
 `render(t)` works on the task record as the sample stage has it (`task.meta()` plus the pseudocode): `id`, `kind`, `variant`, `question`, `accept`.
 No generator parameter is needed, so a decompile run made before this module existed can still be sampled. tests/test_rea_targets.py renders
-2,000 tasks per family and checks every rendered text against the truth AND every fact against the generator's own `params` (and the constants
-against the C source), so a template that states the wrong direction, the wrong round count or a constant the code does not have fails there.
+2,000 tasks per family and checks every rendered text against the truth AND every fact against the generator's own `params`.
 """
 from __future__ import annotations
 
@@ -78,39 +91,39 @@ OFFSET = ("{off:#x}", "Offset {off:#x}", "The offset is {off:#x}.", "byte offset
 # ---- structs: the offsets and sizes of the x86-64 layout model ----------------------------------------------------------------------
 
 @spec("structs/array_stride", ("{n} bytes", "{n}", "The record size is {n} bytes.", "Size: {n} bytes"),
-      ("The loop steps through the array a record at a time, and consecutive records are {n} bytes apart.",
-       "Each iteration reads a record of the array, so the stride of the loop is {n} bytes.",
-       "A record is {n} bytes long: that is the distance between the fields the loop reads in turn."))
+      ("Each record that proc reads is {n} bytes long, so consecutive records start {n} bytes apart.",
+       "proc reads its input as a sequence of records of {n} bytes each.",
+       "The distance between a field of one record and the same field of the next record is {n} bytes."))
 def _(t):
     return {"n": _val(t["accept"][0])}
 
 
 @spec("structs/field_read", OFFSET,
-      ("The value that proc returns is the field at byte offset {off:#x}, plus a constant, once a flag field has been tested against zero.",
-       "After testing a flag field against zero, proc returns the field at byte offset {off:#x} of the structure plus a constant.",
-       "The returned field sits at byte offset {off:#x} of the structure."))
+      ("Once its flag field is non-zero, proc returns the field at byte offset {off:#x} of the structure, plus a constant.",
+       "The value that proc returns is the field at byte offset {off:#x}, plus a constant, whenever the flag field is non-zero.",
+       "The field at byte offset {off:#x} of the structure is read by proc and, with a constant added, returned for a non-zero flag field."))
 def _(t):
     return {"off": _val(t["accept"][0])}
 
 
 @spec("structs/init_magic", OFFSET,
-      ("proc stores the constant {magic:#x} at byte offset {off:#x} of the structure.",
-       "The constant {magic:#x} is written to the field at byte offset {off:#x}, among the other fields that proc initialises.",
-       "Among the stores that initialise the structure, the store that writes {magic:#x} goes to byte offset {off:#x}."))
+      ("After proc has run, the constant {magic:#x} is stored at byte offset {off:#x} of the structure.",
+       "proc writes {magic:#x} into the field at byte offset {off:#x}, together with the other fields that it initialises.",
+       "Among the fields that proc initialises, the field that receives {magic:#x} is at byte offset {off:#x}."))
 def _(t):
     return {"off": _val(t["accept"][0]), "magic": _qint(t, r"constant\s+(0x[0-9a-f]+|\d+)", "constant")}
 
 
 @spec("structs/alloc_size", ("{n} bytes", "{n}", "The structure is {n} bytes.", "Size: {n} bytes"),
-      ("The size that proc passes to the allocator for a structure is {n} bytes.",
-       "proc allocates memory for structures of {n} bytes each.",
-       "Each structure that proc allocates is {n} bytes long, whether it allocates a single structure or an array of them."))
+      ("proc allocates memory for a structure of {n} bytes.",
+       "Each structure that proc allocates is {n} bytes long, whether it allocates a single structure or several.",
+       "The memory that proc allocates is made of structures of {n} bytes each."))
 def _(t):
     return {"n": _val(t["accept"][0])}
 
 
 @spec("structs/nested_offset", OFFSET,
-      ("The field that proc returns lives in a nested structure, and counted from the start of the outer structure it sits at byte offset {off:#x}.",
+      ("The value that proc returns is a field of a nested structure, and counted from the start of the outer structure it is at byte offset {off:#x}.",
        "proc returns a field of a nested structure, which is at byte offset {off:#x} of the outer structure.",
        "Adding the offset of the nested structure to the offset of the field inside it gives byte offset {off:#x} of the outer structure."))
 def _(t):
@@ -118,9 +131,9 @@ def _(t):
 
 
 @spec("structs/linked_next", OFFSET,
-      ("The loop follows the pointer at byte offset {off:#x} of each node until it reaches NULL.",
-       "Each iteration moves to the next node through the pointer stored at byte offset {off:#x}.",
-       "The pointer to the next node of the list is at byte offset {off:#x}, and the loop ends when it is NULL."))
+      ("proc follows the pointer at byte offset {off:#x} of each node to reach the next node of the list, and stops at a node whose pointer is NULL.",
+       "The pointer to the next node is at byte offset {off:#x} of a node, and the list ends where that pointer is NULL.",
+       "Each node leads to its successor through the pointer stored at byte offset {off:#x}."))
 def _(t):
     return {"off": _val(t["accept"][0])}
 
@@ -133,48 +146,41 @@ def _fsm_input(t):
 
 
 _FSM_IN = ("{s}", "Input: {s}", "The input is {s}.", "\"{s}\"")
-spec("fsm/table_input", _FSM_IN,
-     ("Starting in state 0, the {d} letters of this input drive the transition table into state {final}, which is what proc returns.",
-      "The machine reads the {d} letters of this string in turn through its table and ends in state {final}.",
-      "This input of {d} letters moves the machine from state 0 to state {final}, the shortest way there."))(_fsm_input)
-spec("fsm/switch_input", _FSM_IN,
-     ("Starting in state 0, the {d} letters of this input drive the switch into state {final}, which is what proc returns.",
-      "The machine reads the {d} letters of this string in turn through its switch and ends in state {final}.",
-      "This input of {d} letters moves the machine from state 0 to state {final}, the shortest way there."))(_fsm_input)
+_FSM_IN_S = ("Starting in state 0, the {d} letters of this input take the machine to state {final}, which is what proc returns.",
+             "The machine reads the {d} letters of this string in turn and ends in state {final}.",
+             "This input of {d} letters moves the machine from state 0 to state {final}, and no shorter input does.")
+spec("fsm/table_input", _FSM_IN, _FSM_IN_S)(_fsm_input)
+spec("fsm/switch_input", _FSM_IN, _FSM_IN_S)(_fsm_input)
 
 
-@spec("fsm/table_states", ("{n} states", "{n}", "{n} distinct states", "It has {n} states."),
-      ("The transition table has a row for each of the {n} states, numbered from 0, and proc returns the state it ends in.",
-       "There are {n} distinct states, numbered 0 to {last}, and the machine starts in state 0.",
-       "The table is indexed by the state, and it has {n} rows: a row for each state."))
-def _(t):
+def _fsm_states(t):
     n = _val(t["accept"][0])
     return {"n": n, "last": n - 1}
 
 
-@spec("fsm/switch_states", ("{n} states", "{n}", "{n} distinct states", "It has {n} states."),
-      ("The switch has a case for each of the {n} states, numbered from 0, and proc returns the state it ends in.",
-       "There are {n} distinct states, numbered 0 to {last}, and the machine starts in state 0.",
-       "Each state has its own case in the switch, and there are {n} of them."))
-def _(t):
-    n = _val(t["accept"][0])
-    return {"n": n, "last": n - 1}
+_FSM_ST_H = ("{n} states", "{n}", "{n} distinct states", "It has {n} states.")
+_FSM_ST_S = ("The machine has {n} states, numbered from 0, and proc returns the state it ends in.",
+             "There are {n} distinct states, numbered 0 to {last}, and the machine starts in state 0.",
+             "Starting from state 0, the machine can reach all of its {n} states.")
+spec("fsm/table_states", _FSM_ST_H, _FSM_ST_S)(_fsm_states)
+spec("fsm/switch_states", _FSM_ST_H, _FSM_ST_S)(_fsm_states)
 
 
 @spec("fsm/opcode_value", ("{n}", "opcode {n}", "It is opcode {n}.", "{n} (opcode)"),
-      ("The case for opcode {n} returns {expr}.",
-       "When the first argument is {n}, the switch returns {expr}.",
-       "Opcode {n} is the opcode whose handler returns {expr}."))
+      ("proc returns {expr} when its first argument is {n}.",
+       "When the first argument is {n}, the function returns {expr}, and no other opcode does.",
+       "Opcode {n} is the opcode for which proc returns {expr}."))
 def _(t):
     return {"n": _val(t["accept"][0]), "expr": _q(t, r"makes it return (.+?)\?", "returned expression")}
 
 
 @spec("fsm/opcode_count", ("{n}", "{n} opcodes", "It is {n}.", "{n} cases"),
-      ("The switch has {n} cases besides the default, so the function handles {n} different opcodes.",
-       "Counting the cases of the switch without the default gives {n} opcodes.",
-       "proc handles {n} different opcodes and falls through to the default for every other value."))
+      ("proc handles {n} different opcodes, each with a result of its own, and returns {dflt} for every other value of the first argument.",
+       "Exactly {n} values of the first argument are handled by proc; any other value returns {dflt}.",
+       "proc tells {n} different opcodes apart and gives {dflt} for the rest."),
+      consts=("dflt",))
 def _(t):
-    return {"n": _val(t["accept"][0])}
+    return {"n": _val(t["accept"][0]), "dflt": 0}
 
 
 # ---- crc ---------------------------------------------------------------------------------------------------------------------------
@@ -184,20 +190,15 @@ def _crc_width(t) -> int:
 
 
 def _crc_poly(t):
-    refl = t["accept"][1][0] == "reflected"
-    return {"w": _crc_width(t), "lit": _val(t["accept"][0]), "dir": t["accept"][1][0], "refl": refl,
-            "shift": "right, least significant bit first" if refl else "left, most significant bit first"}
+    return {"w": _crc_width(t), "lit": _val(t["accept"][0]), "dir": t["accept"][1][0], "refl": t["accept"][1][0] == "reflected"}
 
 
 _CRC_POLY = ("{lit:#x}, {dir}", "{lit:#x} {dir}", "The polynomial is {lit:#x}, {dir}.", "polynomial {lit:#x}, {dir}")
-spec("crc/bitwise_poly", _CRC_POLY,
-     ("The {w}-bit CRC loop shifts the register {shift}, bit by bit, and XORs in the constant {lit:#x}.",
-      "Each bit of every byte is processed in a loop that shifts the register {shift} and XORs in {lit:#x}.",
-      "The code of this {w}-bit CRC contains the polynomial constant {lit:#x}, and its register shifts {shift}."))(_crc_poly)
-spec("crc/table_poly", _CRC_POLY,
-     ("The {entries}-entry table of this {w}-bit CRC is built with the constant {lit:#x} and a register that shifts {shift}.",
-      "The table lookup of this {w}-bit CRC works on a register that shifts {shift}, and the table is made from {lit:#x}.",
-      "The constant {lit:#x} appears in the loop that fills the table of the {w}-bit CRC, which shifts {shift}."))(lambda t: {**_crc_poly(t), "entries": 256})
+_CRC_POLY_S = ("proc computes a {w}-bit CRC with the polynomial constant {lit:#x}, in {dir} form.",
+               "The {w}-bit CRC that proc returns is {dir}, and its polynomial constant is {lit:#x}.",
+               "The polynomial of this {w}-bit CRC is given by the constant {lit:#x}, and the CRC is {dir}.")
+spec("crc/bitwise_poly", _CRC_POLY, _CRC_POLY_S)(_crc_poly)
+spec("crc/table_poly", _CRC_POLY, _CRC_POLY_S)(_crc_poly)
 
 
 def _crc_val(t):
@@ -205,22 +206,16 @@ def _crc_val(t):
 
 
 _CRC_VAL = ("{x:#x}", "It is {x:#x}.", "Answer: {x:#x}", "value {x:#x}")
-spec("crc/bitwise_init", _CRC_VAL,
-     ("The register of this {w}-bit CRC starts at {x:#x} before the first byte is processed.",
-      "Before the loop over the bytes begins, the {w}-bit CRC register is set to {x:#x}.",
-      "The initial value of the {w}-bit CRC register is {x:#x}."))(_crc_val)
-spec("crc/table_init", _CRC_VAL,
-     ("The register of this table-driven {w}-bit CRC starts at {x:#x} before the first byte is looked up.",
-      "Before the loop over the bytes begins, the {w}-bit CRC register is set to {x:#x}.",
-      "The initial value of the {w}-bit CRC register is {x:#x}."))(_crc_val)
-spec("crc/bitwise_xorout", _CRC_VAL,
-     ("After the last byte, the function XORs the {w}-bit register with {x:#x} before it returns it.",
-      "The final value XORed into the register of this {w}-bit CRC is {x:#x}.",
-      "Before returning, the bitwise {w}-bit CRC is XORed with the constant {x:#x}."))(_crc_val)
-spec("crc/table_xorout", _CRC_VAL,
-     ("After the last byte, the function XORs the {w}-bit register with {x:#x} before it returns it.",
-      "The final value XORed into the register of this table-driven {w}-bit CRC is {x:#x}.",
-      "Before returning, the table-driven {w}-bit CRC is XORed with the constant {x:#x}."))(_crc_val)
+_CRC_INIT_S = ("The initial value of this {w}-bit CRC is {x:#x}.",
+               "proc starts the {w}-bit CRC computation from the value {x:#x}.",
+               "Before the first byte is processed, the {w}-bit CRC has the value {x:#x}.")
+_CRC_XOR_S = ("After the last byte, the {w}-bit CRC is XORed with {x:#x} before it is returned.",
+              "The final XOR value of this {w}-bit CRC is {x:#x}.",
+              "The result of the {w}-bit CRC computation is XORed with {x:#x} as its last step.")
+spec("crc/bitwise_init", _CRC_VAL, _CRC_INIT_S)(_crc_val)
+spec("crc/table_init", _CRC_VAL, _CRC_INIT_S)(_crc_val)
+spec("crc/bitwise_xorout", _CRC_VAL, _CRC_XOR_S)(_crc_val)
+spec("crc/table_xorout", _CRC_VAL, _CRC_XOR_S)(_crc_val)
 
 
 # ---- cipher ------------------------------------------------------------------------------------------------------------------------
@@ -231,37 +226,23 @@ _CHACHA_ROT, _SALSA_ROT = (16, 12, 8, 7), (7, 9, 13, 18)
 
 
 def _tea(t):
-    return {"alg": _ALG[t["accept"][0][0]], "dir": t["accept"][1][0], "rounds": _val(t["accept"][2]), "delta": TEA_DELTA,
+    d = t["accept"][1][0]
+    return {"alg": _ALG[t["accept"][0][0]], "dir": d, "verb": d + "s", "done": d + "ed", "rounds": _val(t["accept"][2]), "delta": TEA_DELTA,
             "key_bits": _qint(t, r"(\d+)-bit key", "key width"), "block": _qint(t, r"(\d+)-byte block", "block size")}
 
 
 _TEA_HEADS = ("{alg}, {dir}, {rounds}", "{alg}, {dir}, {rounds} iterations", "{dir}, {alg}, {rounds} rounds", "{alg} {dir}, {rounds} iterations")
-spec("cipher/tea_enc", _TEA_HEADS,
-     ("In each of its {rounds} iterations the loop adds the delta 0x{delta:08X} to the running sum.",
-      "The main loop runs {rounds} iterations, and each of them adds the delta 0x{delta:08X} to the sum.",
-      "The block of {block} bytes is mixed with the {key_bits}-bit key over {rounds} iterations that each add 0x{delta:08X} to the sum."),
-     consts=("delta",))(_tea)
-spec("cipher/tea_dec", _TEA_HEADS,
-     ("In each of its {rounds} iterations the loop subtracts the delta 0x{delta:08X} from the running sum.",
-      "The main loop runs {rounds} iterations, and each of them subtracts the delta 0x{delta:08X} from the sum.",
-      "The block of {block} bytes is mixed with the {key_bits}-bit key over {rounds} iterations that each subtract 0x{delta:08X} from the sum."),
-     consts=("delta",))(_tea)
-spec("cipher/xtea_enc", _TEA_HEADS,
-     ("In each of its {rounds} iterations the loop adds the delta 0x{delta:08X} to the sum and picks key words with the bits of the sum.",
-      "The main loop runs {rounds} iterations, and each of them adds the delta 0x{delta:08X} to the sum.",
-      "The block of {block} bytes is mixed with the {key_bits}-bit key over {rounds} iterations that each add 0x{delta:08X} to the sum, and the key word is chosen by the sum."),
-     consts=("delta",))(_tea)
-spec("cipher/xtea_dec", _TEA_HEADS,
-     ("In each of its {rounds} iterations the loop subtracts the delta 0x{delta:08X} from the sum and picks key words with the bits of the sum.",
-      "The main loop runs {rounds} iterations, and each of them subtracts the delta 0x{delta:08X} from the sum.",
-      "The block of {block} bytes is mixed with the {key_bits}-bit key over {rounds} iterations that each subtract 0x{delta:08X} from the sum, and the key word is chosen by the sum."),
-     consts=("delta",))(_tea)
+_TEA_S = ("proc {verb} a block of {block} bytes with a {key_bits}-bit key, in {rounds} iterations.",
+          "This {alg} implementation runs {rounds} iterations and uses the delta constant 0x{delta:08X}.",
+          "The block of {block} bytes is {done} with the {key_bits}-bit key over {rounds} iterations, and the delta constant is 0x{delta:08X}.")
+for _k in ("tea_enc", "tea_dec", "xtea_enc", "xtea_dec"):
+    spec(f"cipher/{_k}", _TEA_HEADS, _TEA_S, consts=("delta",))(_tea)
 
 
 @spec("cipher/rc4", ("{alg}, {n}", "{alg}, {n} bytes", "{alg}: {n} bytes", "It is {alg}, {n} bytes."),
-      ("The function sets up a state array of {state} bytes from a key of {n} bytes, which is the key schedule of {alg}.",
-       "A permutation of {state} byte values is initialised and then shuffled with the {n} bytes of the key.",
-       "The key has {n} bytes, and the state array that it scrambles has {state} entries."),
+      ("proc applies {alg} with a key of {n} bytes to its buffer.",
+       "The key of this {alg} implementation is {n} bytes long.",
+       "The keystream comes from a key of {n} bytes and a state of {state} byte values."),
       consts=("state",))
 def _(t):
     return {"alg": "RC4", "n": _val(t["accept"][1]), "state": 256}
@@ -276,16 +257,11 @@ def _stream(rot):
 
 
 _STREAM_HEADS = ("{alg}, {rounds}", "{alg}, {rounds} rounds", "{alg}: {rounds} rounds", "It is {alg}, {rounds} rounds.")
-spec("cipher/chacha", _STREAM_HEADS,
-     ("Every iteration of the loop is a double round of eight quarter-rounds, so {rounds} rounds take {half} iterations.",
-      "The quarter-rounds rotate by {rot[0]}, {rot[1]}, {rot[2]} and {rot[3]} bits, and the loop counts a double round as two of the {rounds} rounds.",
-      "The function expands a {key_bits}-bit key into a block of {block} bytes with {rounds} rounds of the quarter-round."),
-     consts=("rot",))(_stream(_CHACHA_ROT))
-spec("cipher/salsa", _STREAM_HEADS,
-     ("Every iteration of the loop is a double round of eight quarter-rounds, so {rounds} rounds take {half} iterations.",
-      "The quarter-rounds rotate by {rot[0]}, {rot[1]}, {rot[2]} and {rot[3]} bits, and the loop counts a double round as two of the {rounds} rounds.",
-      "The function expands a {key_bits}-bit key into a block of {block} bytes with {rounds} rounds of the quarter-round."),
-     consts=("rot",))(_stream(_SALSA_ROT))
+_STREAM_S = ("proc computes the {alg} block function with {rounds} rounds, which is {half} double rounds.",
+             "The function expands a {key_bits}-bit key into a block of {block} bytes with {rounds} rounds of {alg}.",
+             "The rotation amounts are {rot[0]}, {rot[1]}, {rot[2]} and {rot[3]} bits, as in {alg}, and the function runs {rounds} rounds.")
+spec("cipher/chacha", _STREAM_HEADS, _STREAM_S, consts=("rot",))(_stream(_CHACHA_ROT))
+spec("cipher/salsa", _STREAM_HEADS, _STREAM_S, consts=("rot",))(_stream(_SALSA_ROT))
 
 
 # ---- encoding ----------------------------------------------------------------------------------------------------------------------
@@ -314,30 +290,24 @@ def _enc_facts(t):
     return f
 
 
-spec("encoding/base64_encode", _ENC_HEADS,
-     ("Every {gin} input bytes become {gout} characters, each looked up in a table of {radix} characters.",
-      "The encoder turns groups of {gin} bytes into {gout} characters of a {radix}-character alphabet.",
-      "Each output character is an index of {bits} bits into an alphabet of {radix} characters."))(_enc_facts)
-spec("encoding/base64_decode", _ENC_HEADS,
-     ("The decoder maps each character back to its index in a {radix}-character alphabet and stops at the padding character.",
-      "Each input character stands for {bits} bits of an alphabet of {radix} characters, and the loop stops at the padding character.",
-      "Characters of a {radix}-character alphabet are turned back into values and packed into bytes, until the padding character."))(_enc_facts)
-spec("encoding/base32_encode", _ENC_HEADS,
-     ("Every {gin} input bytes become {gout} characters, each looked up in a table of {radix} characters.",
-      "The encoder turns groups of {gin} bytes into {gout} characters of a {radix}-character alphabet.",
-      "Each output character is an index of {bits} bits into an alphabet of {radix} characters."))(_enc_facts)
-spec("encoding/base32_decode", _ENC_HEADS,
-     ("The decoder maps each character back to its index in a {radix}-character alphabet and stops at the padding character.",
-      "Each input character stands for {bits} bits of an alphabet of {radix} characters, and the loop stops at the padding character.",
-      "Characters of a {radix}-character alphabet are turned back into values and packed into bytes, until the padding character."))(_enc_facts)
+_ENC_BITS_E = ("Every {gin} input bytes become {gout} output characters, each chosen from an alphabet of {radix} characters.",
+               "proc turns groups of {gin} bytes into {gout} characters of a {radix}-character alphabet.",
+               "Each output character stands for {bits} bits of the input and comes from an alphabet of {radix} characters.")
+_ENC_BITS_D = ("proc turns each input character back into its value in a {radix}-character alphabet and packs the values into bytes.",
+               "Each input character stands for {bits} bits of the decoded data, and the characters come from an alphabet of {radix} characters.",
+               "The decoded bytes are packed from the values of characters of a {radix}-character alphabet, {bits} bits per character.")
+spec("encoding/base64_encode", _ENC_HEADS, _ENC_BITS_E)(_enc_facts)
+spec("encoding/base64_decode", _ENC_HEADS, _ENC_BITS_D)(_enc_facts)
+spec("encoding/base32_encode", _ENC_HEADS, _ENC_BITS_E)(_enc_facts)
+spec("encoding/base32_decode", _ENC_HEADS, _ENC_BITS_D)(_enc_facts)
 spec("encoding/base58_encode", _ENC_HEADS,
-     ("The encoder divides the input as a big number by {radix} again and again, and each remainder is a character of a {radix}-character alphabet.",
-      "The input is converted to radix {radix}, and every digit is looked up in an alphabet of {radix} characters.",
-      "Remainders of repeated divisions by {radix} are the indexes into the alphabet of {radix} characters."))(_enc_facts)
+     ("proc converts its input to base {radix} and writes each digit as a single character of an alphabet of {radix} characters.",
+      "The output is the input written in radix {radix}, and every digit is a character of an alphabet of {radix} characters.",
+      "The result has digits of radix {radix}, each of them a character of an alphabet of {radix} characters."))(_enc_facts)
 spec("encoding/base58_decode", _ENC_HEADS,
-     ("The decoder multiplies a big number by {radix} for every character and adds the index of that character in the {radix}-character alphabet.",
-      "Each input character is a digit of radix {radix}, looked up in an alphabet of {radix} characters.",
-      "The accumulated number grows by a factor of {radix} per input character, and the characters come from an alphabet of {radix} characters."))(_enc_facts)
+     ("proc reads its input as a number written in base {radix}, a single character of an alphabet of {radix} characters per digit, and returns the bytes of that number.",
+      "Each input character is a digit of radix {radix}, taken from an alphabet of {radix} characters.",
+      "The decoded number has the characters of the input as its digits in radix {radix}, and the characters come from an alphabet of {radix} characters."))(_enc_facts)
 
 
 def _alpha(t):
@@ -345,7 +315,6 @@ def _alpha(t):
     f["s"] = t["accept"][0]
     f["alen"] = _qint(t, r"(\d+)-character alphabet", "alphabet size")
     f["agent"] = "encoder" if f["dir"] == "encode" else "decoder"
-    f["use"] = "looks up each output character in" if f["dir"] == "encode" else "looks up each input character in"
     return f
 
 
@@ -353,41 +322,25 @@ _ALPHA_HEADS = ("{s}", "The alphabet is: {s}", "Alphabet: {s}", "\"{s}\"")
 for _b in ("base64", "base32", "base58"):
     for _d in ("encode", "decode"):
         spec(f"encoding/{_b}_{_d}#alphabet", _ALPHA_HEADS,
-             ("This is the alphabet of {alen} characters that the {agent} indexes, in index order starting at the value 0.",
-              "The {agent} {use} this string of {alen} characters, whose first character stands for the value 0.",
+             ("This is the alphabet of {alen} characters that the {agent} uses, in index order starting at the value 0.",
+              "The {agent} works with this string of {alen} characters as its alphabet: its first character stands for the value 0 and each next character for the next value.",
               "The {alen} characters are listed in index order: the first character stands for the value 0."))(_alpha)
 
 
 # ---- strobf: exact strings ---------------------------------------------------------------------------------------------------------
+# Every variant says the same thing: what proc writes. How the string is stored (on a stack, XOR-encoded, rotated, reversed) is code structure that the
+# compiler decides (it decodes a constant array at compile time, or builds a stack string straight into the output); the `object_gate` of
+# survive.py only keeps the tasks whose compiled object still holds the string encoded.
 
 def _plain(t):
     return {"s": t["accept"][0], "len": len(t["accept"][0])}
 
 
-for _v, _sentences in {
-        "stack_string": ("The string is built byte by byte on the stack and then copied to the output buffer.",
-                         "Each of the {len} characters is stored into a local array first, and the array is copied into the argument.",
-                         "proc assembles the string on the stack with a store for each of its {len} characters."),
-        "xor_const": ("Every stored byte is XORed with the same constant to decode the string.",
-                      "The {len} bytes of the stored data are decoded with a single XOR constant and written into the argument.",
-                      "A single-byte XOR key turns the stored bytes back into this string of {len} characters."),
-        "xor_rolling": ("Every stored byte is XORed with a key that grows by a fixed step at each position.",
-                        "The XOR key changes with the position: it advances by the same step for each of the {len} bytes.",
-                        "The stored bytes are decoded with a rolling XOR key that starts at a constant and increases with the index."),
-        "alt_xor": ("The even and the odd positions are XORed with two different constants.",
-                    "The {len} stored bytes are decoded with an XOR key that alternates between two constants.",
-                    "Two XOR constants are used in turn: a constant for the even positions and another for the odd positions of the string."),
-        "sub_const": ("A constant is subtracted from every stored byte to recover the string.",
-                      "The {len} stored bytes are decoded by subtracting a constant from each of them.",
-                      "Each character is the stored byte minus the same constant."),
-        "reverse_xor": ("The stored bytes are read from the end and XORed with a constant.",
-                        "The string is written in reverse order of the stored data, and each byte is XORed with a constant.",
-                        "The loop walks the stored bytes backwards, XORs them with a constant and writes the {len} characters of the string."),
-        "rot_n": ("The stored text is a lowercase string that is shifted by a fixed amount, modulo {modulus}, to recover the plaintext.",
-                  "Each lowercase letter of the stored string is rotated by the same number of places in the alphabet.",
-                  "The decoder shifts every lowercase letter of the stored string by a constant and leaves the other characters alone."),
-}.items():
-    spec(f"strobf/{_v}", EXACT, _sentences, consts=())(lambda t: {**_plain(t), "modulus": 26} if t["variant"] == "rot_n" else _plain(t))
+_STROBF_S = ("proc writes this string of {len} characters into its argument, followed by a terminating NUL byte.",
+             "The {len} characters of this string, followed by a NUL byte, are what proc writes into its argument.",
+             "After proc has run, its argument holds exactly this string of {len} characters and a terminating NUL byte.")
+for _v in ("stack_string", "xor_const", "xor_rolling", "alt_xor", "sub_const", "reverse_xor", "rot_n"):
+    spec(f"strobf/{_v}", EXACT, _STROBF_S)(_plain)
 
 
 # ---- pktsum ------------------------------------------------------------------------------------------------------------------------
@@ -402,7 +355,7 @@ def _pkt(t):
     return {"ask": "start", "n": _val(t["accept"][0]), "kind": t["variant"]}
 
 
-def _pkt_spec(variant, sums, ends, lens, starts):
+def _pkt_spec(variant, ends, lens, starts):
     """One spec per variant; the facts say which question was asked and the phrasing is picked from the matching set (3 phrasings each)."""
     heads = {"endian": ("{e}", "{e}-endian", "It is {e}-endian.", "{e} endian"), "start": ("{n}", "Offset {n}", "It is {n}.", "byte {n}"),
              "len": ("{n}", "Offset {n}", "It is at offset {n}.", "byte {n}")}
@@ -414,17 +367,17 @@ def _pkt_spec(variant, sums, ends, lens, starts):
 
 PKT_SETS: dict = {}
 PKT_HEADS: dict = {}
-_END_S = ("The two checksum bytes at the end of the packet are combined with the {first} byte first, so the checksum is stored {e}-endian.",
+_END_S = ("proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored {e}-endian, with the {first} byte first.",
           "The stored 16-bit checksum is read {e}-endian: the {first} byte comes first.",
-          "The checksum that the function compares against is stored {e}-endian, with the {first} byte first.")
+          "The checksum that the function accepts is stored {e}-endian, with the {first} byte first.")
 _START_S = ("The checksummed range starts at byte offset {n} of the packet and runs up to the stored checksum.",
-            "The loop over the bytes of the packet begins at offset {n}.",
-            "The bytes before offset {n} are not part of the checksum.")
+            "The bytes before offset {n} do not take part in the checksum.",
+            "Changing any byte of the packet from offset {n} up to the stored checksum makes the checksum fail.")
 _LEN_S = ("The length byte is read from offset {n} of the packet, and the checksum follows that many payload bytes.",
           "The payload length is stored in the byte at offset {n}, and the checksum comes right after the payload.",
-          "The byte at offset {n} says how many bytes are summed, and the checksum is stored behind them.")
+          "The byte at offset {n} says how many bytes the checksum covers, and the checksum is stored behind them.")
 for _v in ("sum8", "xor8", "sum16_le", "sum16_be", "fletcher16", "crc16", "len_field"):
-    _pkt_spec(_v, None, _END_S, _LEN_S, _START_S)
+    _pkt_spec(_v, _END_S, _LEN_S, _START_S)
 
 
 # ---- bounds ------------------------------------------------------------------------------------------------------------------------
@@ -435,14 +388,14 @@ def _bounds(t):
 
 _BOUND_HEADS = ("{lo} to {hi}", "lowest {lo}, highest {hi}", "[{lo}, {hi}]", "from {lo} to {hi}")
 spec("bounds/range_chain", _BOUND_HEADS,
-     ("proc returns 1 for every integer from {lo} to {hi}, both included, however the compiler rewrote the comparisons.",
-      "The function accepts the integers between {lo} and {hi} inclusive and returns 1 for them.",
-      "The tests of the chain describe a single interval of integers: its lowest value is {lo} and its highest is {hi}."))(_bounds)
+     ("proc returns 1 for every integer from {lo} to {hi}, both included, and for no other integer.",
+      "The function accepts exactly the integers between {lo} and {hi} inclusive and returns 1 for them.",
+      "The lowest integer for which proc returns 1 is {lo}, and the highest is {hi}."))(_bounds)
 
 
 @spec("bounds/window", _BOUND_HEADS,
-      ("A single unsigned comparison accepts a window of {w} integers: it starts at {lo} and ends at {hi}.",
-       "The window of accepted values begins at {lo}, ends at {hi} and holds {w} integers.",
+      ("proc returns 1 for a window of {w} consecutive integers: it starts at {lo} and ends at {hi}.",
+       "The accepted values begin at {lo}, end at {hi} and make up {w} integers.",
        "proc returns 1 for the {w} integers from {lo} to {hi}, and for no other integer."))
 def _(t):
     f = _bounds(t)
@@ -451,9 +404,9 @@ def _(t):
 
 
 spec("bounds/index_limit", _BOUND_HEADS,
-     ("The function returns -1 for an index outside the range from {lo} to {hi}, and a table value for an index inside it.",
-      "Indexes from {lo} to {hi} are looked up in the table, and any other index is rejected with -1.",
-      "The smallest index that is accepted is {lo} and the largest is {hi}."))(_bounds)
+     ("proc returns -1 for every index outside the range from {lo} to {hi}, and a non-negative value for every index inside it.",
+      "The indexes from {lo} to {hi} are accepted: for them proc returns a byte value, and any other index gives -1.",
+      "The smallest index for which proc returns something other than -1 is {lo}, and the largest is {hi}."))(_bounds)
 spec("bounds/clamp", _BOUND_HEADS,
      ("proc limits its argument to the interval from {lo} to {hi}, both included.",
       "A value below {lo} becomes {lo} and a value above {hi} becomes {hi}.",
@@ -461,17 +414,17 @@ spec("bounds/clamp", _BOUND_HEADS,
 
 
 @spec("bounds/loop_iterations", ("{n}", "It returns {n}.", "returns {n}", "Answer: {n}"),
-      ("For the argument {n0}, the loop runs to its end and proc returns the counter, which is {n}.",
-       "Calling proc with {n0} makes the counter end at {n}, and that is the return value.",
-       "The loop is evaluated for {n0}, and the value that comes out is {n}."))
+      ("For the argument {n0}, proc returns {n}.",
+       "Calling proc with {n0} gives the return value {n}.",
+       "The value that proc returns when it is called with {n0} is {n}."))
 def _(t):
     return {"n": _val(t["accept"][0]), "n0": _qint(t, r"called with\s+(\d+)", "argument")}
 
 
 @spec("bounds/char_class", ("{n}", "{n} values", "It is {n}.", "{n} byte values"),
-      ("The tests of the function accept {n} of the {total} possible byte values.",
-       "Counting the byte values from 0 to {top} that make proc return 1 gives {n}.",
-       "Exactly {n} byte values pass the character class, and the other values fail it."),
+      ("proc returns 1 for {n} of the {total} possible byte values.",
+       "Counting the byte values from 0 to {top} for which proc returns 1 gives {n}.",
+       "Exactly {n} byte values make proc return 1; for the other byte values it does not."),
       consts=("total", "top"))
 def _(t):
     return {"n": _val(t["accept"][0]), "total": 256, "top": 255}
@@ -484,81 +437,79 @@ def _ad_rv(t):
 
 
 _AD_HEADS = ("{tech}, {rv}", "{tech}, returns {rv}", "It is a {tech} check; returns {rv}.", "{tech} check, {rv}")
-spec("antidebug/ptrace", _AD_HEADS,
-     ("proc calls ptrace with PTRACE_TRACEME and returns {rv} when that call shows that a debugger is attached.",
-      "The check is a ptrace call that asks to be traced by the parent, and the function returns {rv} if it fails.",
-      "When ptrace(PTRACE_TRACEME) fails because a debugger is already attached, proc returns {rv}."))(_ad_rv)
-spec("antidebug/ptrace_raw", _AD_HEADS,
-     ("proc issues the ptrace system call directly with PTRACE_TRACEME and returns {rv} when it shows that a debugger is attached.",
-      "The check is a raw ptrace system call that asks to be traced by the parent, and the function returns {rv} if it fails.",
-      "When the raw ptrace system call fails because a debugger is already attached, proc returns {rv}."))(_ad_rv)
+_PTRACE_S = ("proc asks to be traced by its parent with ptrace(PTRACE_TRACEME) and returns {rv} when that request fails, which shows that a debugger is attached.",
+             "The check is a ptrace request to be traced by the parent, and the function returns {rv} if the request is refused.",
+             "When ptrace(PTRACE_TRACEME) fails because a debugger is already attached, proc returns {rv}.")
+spec("antidebug/ptrace", _AD_HEADS, _PTRACE_S)(_ad_rv)
+spec("antidebug/ptrace_raw", _AD_HEADS, _PTRACE_S)(_ad_rv)
 spec("antidebug/tracerpid", _AD_HEADS,
-     ("proc reads /proc/self/status, looks for the TracerPid line and returns {rv} when a tracer is attached.",
-      "The function scans the status file of its own process for TracerPid, and a tracer makes it return {rv}.",
+     ("proc reads the TracerPid line of /proc/self/status and returns {rv} when it names a tracer.",
+      "The function reads the status file of its own process for TracerPid, and a tracer makes it return {rv}.",
       "A TracerPid that shows a tracer makes proc return {rv}."))(_ad_rv)
 
 
 @spec("antidebug/env", ("{tech}, {NAME}", "{tech} check, {NAME}", "{NAME}, {tech}", "getenv, {NAME}"),
-      ("proc looks at the environment variable {NAME} with getenv.",
-       "The function calls getenv(\"{NAME}\") to see whether a debugging variable is set.",
+      ("proc looks at the environment variable {NAME}.",
+       "The function tests the environment variable {NAME} as a debugging variable.",
        "The check reads the environment variable {NAME}, and that is what makes it an environment-based test."))
 def _(t):
     return {"tech": t["accept"][0][0], "NAME": t["accept"][1][0].upper()}
 
 
-def _timing(unit, call, scale):
+def _timing(unit, scale):
     def f(t):
-        return {"tech": t["accept"][0][0], "thr": _val(t["accept"][1]), "unit": unit, "call": call, "scale": scale}
+        return {"tech": t["accept"][0][0], "thr": _val(t["accept"][1]), "unit": unit, "scale": scale}
     return f
 
 
 spec("antidebug/timing_ns", ("{tech}, {thr}", "{tech}, {thr} ns", "{tech}: {thr} ns", "{thr} ns, {tech}"),
-     ("The function reads clock_gettime twice and reports a debugger when the elapsed time is above {thr} nanoseconds.",
+     ("proc measures the time between two clock readings and reports a debugger when it is above {thr} nanoseconds.",
       "A debugger is reported when more than {thr} nanoseconds pass between the two clock readings.",
-      "proc compares the time between two calls of clock_gettime with {thr} nanoseconds."))(_timing("nanoseconds", "clock_gettime", 10 ** 9))
+      "The largest time between the two clock readings that proc still lets pass is {thr} nanoseconds."))(_timing("nanoseconds", 10 ** 9))
 spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}, {thr} us", "{tech}: {thr} us", "{thr} us, {tech}"),
-     ("The function reads gettimeofday twice and reports a debugger when the elapsed time is above {thr} microseconds.",
+     ("proc measures the time between two clock readings and reports a debugger when it is above {thr} microseconds.",
       "A debugger is reported when more than {thr} microseconds pass between the two clock readings.",
-      "proc compares the time between two calls of gettimeofday with {thr} microseconds."))(_timing("microseconds", "gettimeofday", 10 ** 6))
+      "The largest time between the two clock readings that proc still lets pass is {thr} microseconds."))(_timing("microseconds", 10 ** 6))
 
 
 # ---- multi -------------------------------------------------------------------------------------------------------------------------
+# The pseudocode of a helper is shown with proc's, but whether the compiler inlined it is its own business: a sentence says what proc returns.
 
 @spec("multi/eval_arith", NUM,
-      ("Evaluating proc by hand for the argument {n0}: it calls the helper, uses its result, and returns {n}.",
-       "For the argument {n0}, proc calls the helper, uses what it returns, and the value that proc returns is {n}.",
-       "Calling proc with {n0} gives {n}, once the result of the helper is used."))
+      ("For the argument {n0}, proc returns {n}.",
+       "Calling proc with {n0} gives {n}.",
+       "The value that proc returns when it is called with {n0} is {n}."))
 def _(t):
     return {"n": _val(t["accept"][0]), "n0": _qint(t, r"called with\s+(\d+)", "argument")}
 
 
 @spec("multi/key_helper", ("{k:#x}", "It is {k:#x}.", "Answer: {k:#x}", "byte {k:#x}"),
-      ("With the seed {seed}, the helper derives the byte {k:#x}, and proc XORs it into every byte of the buffer.",
-       "proc calls the helper for the seed {seed} and XORs the byte it gets, {k:#x}, into each byte of the buffer.",
-       "The key byte for the seed {seed} is {k:#x}, and the loop XORs it into the whole buffer."))
+      ("When it is called with the seed {seed}, proc XORs the byte {k:#x} into every byte of the buffer.",
+       "The byte that proc XORs into each byte of the buffer for the seed {seed} is {k:#x}.",
+       "For the seed {seed}, every byte of the buffer is XORed with {k:#x}."))
 def _(t):
     return {"k": _val(t["accept"][0]), "seed": _qint(t, r"seed\s*=\s*(\d+)", "seed")}
 
 
 @spec("multi/decode_secret", EXACT,
-      ("The helper decodes a XOR-encoded copy of this string, and proc returns 1 when its input is equal to it.",
-       "proc compares its input with the decoded secret using strcmp, and only this string makes it return 1.",
-       "The secret never appears in the code in clear: the helper decodes it, and the comparison succeeds for this {len}-character string."))
+      ("proc returns 1 when its input is exactly this string of {len} characters, and for any other input it does not.",
+       "Only this string of {len} characters makes proc return 1.",
+       "The secret that proc accepts has {len} characters, and it is this string."))
 def _(t):
     return _plain(t)
 
 
 @spec("multi/chain", NUM,
-      ("For the argument {n0}, proc passes the value through a helper that calls a second helper, masks the result, and returns {n}.",
-       "Calling proc with {n0} goes through two helpers, where the first calls the second, and returns {n}.",
-       "The chain of three functions turns the argument {n0} into {n}."))
+      ("For the argument {n0}, proc returns {n}.",
+       "Calling proc with {n0} gives {n}.",
+       "The value that proc returns when it is called with {n0} is {n}."))
 def _(t):
     return {"n": _val(t["accept"][0]), "n0": _qint(t, r"called with\s+(\d+)", "argument")}
 
 
 @spec("multi/limit_helper", ("{n}", "{n} characters", "It is {n}.", "{n} chars"),
-      ("For the mode {mode}, the helper returns the limit {n}, and proc returns 1 for strings of up to {n} characters.",
-       "proc accepts a string while its length is at most the limit that the helper computes from the mode {mode}, which is {n}.",
+      ("With the mode {mode}, proc returns 1 for strings of up to {n} characters and does not for longer ones.",
+       "proc accepts a string with the mode {mode} only while its length is at most {n} characters.",
        "The longest string that passes with the mode {mode} has {n} characters."))
 def _(t):
     return {"n": _val(t["accept"][0]), "mode": _qint(t, r"mode\s*=\s*(\d+)", "mode")}
@@ -569,13 +520,13 @@ def _(t):
 @spec("xor-key", ("{s}", "The key is: {s}", "Key: {s}", "It writes: {s}"),
       ("The function XORs every byte of the buffer with this key, and the key repeats every {len} bytes.",
        "Each byte of the buffer is XORed with a character of the key string, taken in turn.",
-       "The key is a string of {len} characters that is applied to the buffer again and again."))
+       "The key is a string of {len} characters that is repeated along the whole buffer."))
 def _(t):
     return _plain(t)
 
 
 @spec("password", ("{s}", "The string is: {s}", "Input: {s}", "The input is: {s}"),
-      ("The function compares its argument with this string and returns 1 only when they are equal.",
+      ("The function returns 1 only when its argument is equal to this string.",
        "Only an input of exactly {len} characters that equals this string makes the function return 1.",
        "The password check succeeds for this string and for no other input."))
 def _(t):
@@ -583,9 +534,9 @@ def _(t):
 
 
 @spec("keycount", ("{s}", "The key is: {s}", "Key: {s}", "It counts: {s}"),
-      ("The function counts the lines that start with the key followed by an equals sign, and it skips comment lines.",
+      ("The function counts the lines that start with this key followed by an equals sign and a value that is not empty, and it skips comment lines.",
        "A line is counted when it begins with this key and an equals sign and has something after it.",
-       "The key that is compared at the start of each line is this {len}-character string."))
+       "The lines that are counted begin with this {len}-character key and an equals sign."))
 def _(t):
     return _plain(t)
 
@@ -593,37 +544,40 @@ def _(t):
 @spec("alphabet", ("{s}", "The alphabet is: {s}", "Alphabet: {s}", "\"{s}\""),
       ("The decoder returns the position of its argument in this string of {len} characters, or {miss} when it is not there.",
        "The index that the function returns is the position in this alphabet of {len} characters.",
-       "These {len} characters are searched with strchr, and the position of a match is the value."),
+       "The position of a character in this string of {len} characters is the value that proc returns for it."),
       consts=("miss",))
 def _(t):
     return {**_plain(t), "miss": -1}
 
 
 @spec("magic", ("0x{m:08x}, {v}", "0x{m:08x} and {v}", "0x{m:08x}; {v}", "0x{m:08x} / {v}"),
-      ("The header must start with the magic value 0x{m:08x}, and a version above {v} is rejected.",
-       "proc compares the magic field at the start of the header with 0x{m:08x}, and the highest version it accepts is {v}.",
-       "A header is valid when it starts with 0x{m:08x} and its version is at most {v}."))
+      ("A header is valid only if its first four bytes, read as a little-endian 32-bit word, are 0x{m:08x}, and a version above {v} is rejected.",
+       "The 32-bit magic word at the start of the header, read little-endian, must be 0x{m:08x}, and the highest version that proc accepts is {v}.",
+       "A header is valid when its first four bytes, read as a little-endian 32-bit value, are 0x{m:08x} and its version is at most {v}."))
 def _(t):
     return {"m": int(t["accept"][0], 16), "v": int(t["accept"][1])}
 
 
 @spec("lcg", ("{a}, {r}", "{a} and {r} rounds", "{a}, {r} rounds", "{a}; {r} rounds"),
-      ("The loop multiplies the seed by {a} and runs {r} rounds, and the result is masked with 0x{mask:08x} after each round.",
-       "Each of the {r} rounds computes seed * {a} plus a constant and keeps the low bits with the mask 0x{mask:08x}.",
+      ("The seed is multiplied by {a} in each of {r} rounds, and the result is masked with 0x{mask:08x} after each round.",
+       "Each of the {r} rounds computes a new seed from the previous seed with the multiplier {a} and keeps the low bits with the mask 0x{mask:08x}.",
        "This is a linear congruential generator with the multiplier {a}, applied {r} times."),
       consts=("mask",))
 def _(t):
     return {"a": int(t["accept"][0]), "r": int(t["accept"][1]), "mask": 0x7fffffff}
 
 
-_HASH_NAME = {"fnv": "FNV-1a", "djb2": "djb2", "sdbm": "sdbm", "murmur": "MurmurHash2"}
+# The reference algorithm of a name only where the legacy C computes exactly it (tests/rea_claims.py compares the C with a Python port of each):
+# FNV-1a, djb2 and sdbm do; the "murmur-ish" per-byte loop with the MurmurHash2 multiplier and seed does NOT (MurmurHash2 reads 32-bit blocks,
+# starts from seed ^ length, mixes a tail and finishes with two more steps), so its name is "Murmur-style" (round 5, B3).
+_HASH_NAME = {"fnv": "FNV-1a", "djb2": "djb2", "sdbm": "sdbm", "murmur": "Murmur-style"}
 _HASH_INIT = {"fnv": 2166136261, "djb2": 5381, "sdbm": 0, "murmur": 0x9747b28c}      # what `h` starts from in legacy.py's template of each hash
 
 
 @spec("hash", ("{name}, 0x{c:08x}", "{name} and 0x{c:08x}", "It is {name}, 0x{c:08x}.", "{name}: 0x{c:08x}"),
       ("The hash starts from the value {init:#x}, and the result is XORed with 0x{c:08x} before it is returned.",
        "The hash is {name}, and the final step XORs the result with the constant 0x{c:08x}.",
-       "After the loop over the characters, the function returns the hash XORed with 0x{c:08x}."),
+       "For every input string, the function returns the hash of the string XORed with 0x{c:08x}."),
       consts=("init",))
 def _(t):
     stem = t["accept"][0][0]
@@ -633,7 +587,7 @@ def _(t):
 @spec("skip", ("0x{b:02x}", "It is 0x{b:02x}.", "The value is 0x{b:02x}.", "byte 0x{b:02x}"),
       ("The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.",
        "Bytes with the value 0x{b:02x} are left out of the sum, and the length of the input is added at the end.",
-       "The comparison in the loop skips a single byte value, which is 0x{b:02x}."))
+       "Exactly one byte value does not count in the sum, and it is 0x{b:02x}."))
 def _(t):
     return {"b": int(t["accept"][0], 16)}
 
