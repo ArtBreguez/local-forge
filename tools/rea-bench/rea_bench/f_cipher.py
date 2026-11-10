@@ -9,7 +9,7 @@ TEA and XTEA vectors).
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, c_u32s, dec, rword, with_decoys
+from .core import Task, c_bytes, c_u32s, dec, near, rword, with_decoys
 
 FAMILY = "cipher"
 M = 0xFFFFFFFF
@@ -140,18 +140,22 @@ def v_rc4(rng):
     key = (rword(rng, klen).encode() if as_text else bytes(rng.randrange(1, 256) for _ in range(klen)))
     if as_text:
         decl, size = f'static const char key[] = "{key.decode()}";', f"(sizeof key - 1)"
-        idx = f"(uint8_t)key[i % {size}]"
+        idx = "(uint8_t)key[kp]"
     else:
         decl, size = f"static const uint8_t key[] = {{{c_bytes(key)}}};", "sizeof key"
-        idx = f"key[i % {size}]"
+        idx = "key[kp]"
+    # The key index wraps with a compare, not `i % keylen`: gcc and clang turn the modulo into a multiply by a magic constant and the
+    # key length is no longer in the code (reviewer, M2).
+    wrap = [f"if (++kp == {size}) kp = 0;", f"kp = (kp + 1 == {size}) ? 0 : kp + 1;", f"kp++;\n        if (kp >= {size}) kp = 0;"][rng.randrange(3)]
     body = f"""void proc(uint8_t *buf, size_t n) {{
     {decl}
     uint8_t S[256];
-    unsigned i, j = 0;
+    unsigned i, j = 0, kp = 0;
     for (i = 0; i < 256; i++) S[i] = (uint8_t)i;
     for (i = 0; i < 256; i++) {{
         j = (j + S[i] + {idx}) & 255;
         uint8_t t = S[i]; S[i] = S[j]; S[j] = t;
+        {wrap}
     }}
     i = j = 0;
     for (size_t k = 0; k < n; k++) {{
@@ -170,10 +174,11 @@ def v_rc4(rng):
     printf("\\n");
     return 0;
 }}"""
-    q = "This function transforms a buffer in place. Which cipher is it, and how many bytes long is its key (decimal)?"
+    q = ("This function transforms a buffer in place. Which cipher is it, and how many bytes long is its key (decimal)? "
+         "A comparison may show the length one off (`> N - 1` for `>= N`).")
     return Task(kind=FAMILY, variant="rc4", body=body, question=q, truth=_truth("rc4", [dec(klen)]),
                 params={"key": key, "keylen": klen}, wrong=f"RC4, key length {klen + 1}",
-                check=(main, rc4(key, data).hex() + "\n"))
+                check=(main, rc4(key, data).hex() + "\n"), facts=[near(klen)])
 
 
 def _tea_task(rng, alg, direction):
@@ -182,58 +187,62 @@ def _tea_task(rng, alg, direction):
     v = [rng.getrandbits(32), rng.getrandbits(32)]
     ref = (tea if alg == "tea" else xtea)
     start = (DELTA * rounds) & M
+    # `i` is declared outside the loop and returned: gcc replaces a loop counter by `sum` (the exit test becomes a compare with
+    # DELTA*rounds) so the round count would not be in the code at all (reviewer, M2); a returned count stays a constant.
     if alg == "tea" and direction == "enc":
         loop = f"""    uint32_t sum = 0;
-    for (int i = 0; i < {rounds}; i++) {{
+    for (i = 0; i < {rounds}; i++) {{
         sum += 0x9e3779b9u;
         v0 += ((v1 << 4) + k[0]) ^ (v1 + sum) ^ ((v1 >> 5) + k[1]);
         v1 += ((v0 << 4) + k[2]) ^ (v0 + sum) ^ ((v0 >> 5) + k[3]);
     }}"""
     elif alg == "tea":
         loop = f"""    uint32_t sum = 0x{start:08x}u;
-    for (int i = 0; i < {rounds}; i++) {{
+    for (i = 0; i < {rounds}; i++) {{
         v1 -= ((v0 << 4) + k[2]) ^ (v0 + sum) ^ ((v0 >> 5) + k[3]);
         v0 -= ((v1 << 4) + k[0]) ^ (v1 + sum) ^ ((v1 >> 5) + k[1]);
         sum -= 0x9e3779b9u;
     }}"""
     elif direction == "enc":
         loop = f"""    uint32_t sum = 0;
-    for (int i = 0; i < {rounds}; i++) {{
+    for (i = 0; i < {rounds}; i++) {{
         v0 += (((v1 << 4) ^ (v1 >> 5)) + v1) ^ (sum + k[sum & 3]);
         sum += 0x9e3779b9u;
         v1 += (((v0 << 4) ^ (v0 >> 5)) + v0) ^ (sum + k[(sum >> 11) & 3]);
     }}"""
     else:
         loop = f"""    uint32_t sum = 0x{start:08x}u;
-    for (int i = 0; i < {rounds}; i++) {{
+    for (i = 0; i < {rounds}; i++) {{
         v1 -= (((v0 << 4) ^ (v0 >> 5)) + v0) ^ (sum + k[(sum >> 11) & 3]);
         sum -= 0x9e3779b9u;
         v0 -= (((v1 << 4) ^ (v1 >> 5)) + v1) ^ (sum + k[sum & 3]);
     }}"""
-    body = f"""void proc(uint32_t v[2]) {{
+    body = f"""unsigned proc(uint32_t v[2]) {{
     static const uint32_t k[4] = {{{c_u32s(key)}}};
     uint32_t v0 = v[0], v1 = v[1];
+    unsigned i;
 {loop}
     v[0] = v0;
     v[1] = v1;
+    return i;
 }}"""
     body = with_decoys(body, rng, rng.choice([0, 0, 1, 2]))
     main = f"""int main(void) {{
     uint32_t v[2] = {{0x{v[0]:08x}u, 0x{v[1]:08x}u}};
-    proc(v);
-    printf("%08x %08x\\n", (unsigned)v[0], (unsigned)v[1]);
+    unsigned r = proc(v);
+    printf("%08x %08x %u\\n", (unsigned)v[0], (unsigned)v[1], r);
     return 0;
 }}"""
     out = ref(v, key, rounds, decrypt=(direction == "dec"))
-    q = (f"This function transforms an 8-byte block (two 32-bit words) with a 128-bit key. Which cipher is it, does it encrypt or decrypt, "
-         "and how many iterations does its main loop run (decimal)?")
+    q = (f"This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it "
+         "encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off)?")
     other = "xtea" if alg == "tea" else "tea"
     flip = "decrypt" if direction == "enc" else "encrypt"
     wrong = {("tea", "enc"): f"TEA, {flip}, {rounds}", ("tea", "dec"): f"TEA, decrypt, {rounds + 16}",
              ("xtea", "enc"): f"{other}, encrypt, {rounds}", ("xtea", "dec"): f"XTEA, {flip}, {rounds}"}[(alg, direction)]
     return Task(kind=FAMILY, variant=f"{alg}_{direction}", body=body, question=q,
                 truth=_truth(alg, [dec(rounds)], direction), params={"key": key, "rounds": rounds, "v": v, "alg": alg},
-                wrong=wrong, check=(main, f"{out[0]:08x} {out[1]:08x}\n"))
+                wrong=wrong, check=(main, f"{out[0]:08x} {out[1]:08x} {rounds}\n"), facts=[near(rounds)])
 
 
 def _stream_task(rng, alg):
@@ -308,11 +317,11 @@ def _stream_task(rng, alg):
 }}"""
     expect = "".join(f"{w:08x}" + ("\n" if i % 4 == 3 else " ") for i, w in enumerate(ref))
     q = ("This function expands a 256-bit key, a counter and a nonce into a 64-byte block. Which cipher family is it, and how many rounds "
-         "does it run in total (a double round counts as 2; decimal)?")
+         "does it run in total (a double round counts as 2, so a loop of N double rounds is 2N; the bound may show one off; decimal)?")
     wrong = f"salsa20, {rounds}" if alg == "chacha" else f"Salsa20, {rounds + 4}"
     return Task(kind=FAMILY, variant=alg, body=body, question=q, truth=_truth(alg, [dec(rounds)]),
                 params={"key": key, "rounds": rounds, "counter": counter, "nonce": nonce, "style": style},
-                wrong=wrong, check=(main, expect))
+                wrong=wrong, check=(main, expect), facts=[near(rounds) + near(rounds // 2)])
 
 
 VARIANTS = {"rc4": v_rc4,

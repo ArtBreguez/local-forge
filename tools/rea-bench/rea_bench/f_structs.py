@@ -98,10 +98,12 @@ def offq(extra=""):
     return f"At which byte offset (hex, like 0x1c) {extra}"
 
 
-def _off_task(variant, st, body, question, off, params, check_main, expected):
+def _off_task(variant, st, body, question, off, params, check_main, expected, facts=()):
+    """`facts`: besides the offset itself (a displacement in the code; never 0, `[rdi]` has none) what must survive."""
+    assert off > 0
     return Task(kind=FAMILY, variant=variant, headers=HEADERS, body=st.definition() + body, question=question,
                 truth={"score": "tokens", "accept": [hx(off)]}, params={**params, "offset": off, "size": st.size},
-                wrong=f"0x{off + 4:x}", check=(check_main, expected))
+                wrong=f"0x{off + 4:x}", check=(check_main, expected), facts=[[off], *facts])
 
 
 def _fill(rng, st, names, var="s"):
@@ -129,12 +131,13 @@ def v_array_stride(rng):
     q = "proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
     return Task(kind=FAMILY, variant="array_stride", headers=HEADERS, body=st.definition() + body, question=q,
                 truth={"score": "tokens", "accept": [dec(st.size)]}, params={"size": st.size, "offset": st.offsets[f]},
-                wrong=str(st.size + 8), check=(main, f"{st.size} {st.offsets[f]}\n{sum(vals)}\n"))
+                wrong=str(st.size + 8), check=(main, f"{st.size} {st.offsets[f]}\n{sum(vals)}\n"), facts=[[st.size]])
 
 
 def v_field_read(rng):
     st = make(rng, 5, 9)
-    g, f = rng.sample(scalars(st), 2)
+    f = rng.choice([n for n in scalars(st) if st.offsets[n] > 0])
+    g = rng.choice([n for n in scalars(st) if n != f])
     k = rng.randint(1, 90)
     body = f"""uint64_t proc(const struct {st.name} *p) {{
     if (p->{g} == 0) return 0;
@@ -165,7 +168,7 @@ def v_init_magic(rng):
             v = st.ty(n).draw(rng)
         seen.add(v)
         vals[n] = v
-    target = rng.choice(names)
+    target = rng.choice([n for n in names if st.offsets[n] > 0])
     stores = "".join(f"    p->{n} = {st.ty(n).lit(vals[n])};\n" for n in names)
     body = f"void proc(struct {st.name} *p) {{\n{stores}}}"
     ty = st.ty(target)
@@ -180,7 +183,7 @@ def v_init_magic(rng):
 }}"""
     off = st.offsets[target]
     q = offq(f"of the structure does proc store the constant 0x{vals[target]:x}?")
-    return _off_task("init_magic", st, body, q, off, {"field": target}, main, f"{off}\n{vals[target]}\n")
+    return _off_task("init_magic", st, body, q, off, {"field": target}, main, f"{off}\n{vals[target]}\n", facts=[[vals[target]]])
 
 
 def v_alloc_size(rng):
@@ -219,7 +222,7 @@ def v_alloc_size(rng):
          "What is the size in bytes (decimal) of one structure?")
     return Task(kind=FAMILY, variant="alloc_size", headers=HEADERS, body=st.definition() + body, question=q,
                 truth={"score": "tokens", "accept": [dec(st.size)]}, params={"size": st.size, "form": form},
-                wrong=str(st.size + 8), check=(main, f"{st.size}\n77\n"))
+                wrong=str(st.size + 8), check=(main, f"{st.size}\n77\n"), facts=[[st.size]])
 
 
 def v_nested_offset(rng):
@@ -246,7 +249,7 @@ def v_nested_offset(rng):
     q = offq("of the outer structure is the value that proc returns? (the field lives inside a nested structure; count from the start of the outer one.)")
     t = Task(kind=FAMILY, variant="nested_offset", headers=HEADERS, body=inner.definition() + outer.definition() + body, question=q,
              truth={"score": "tokens", "accept": [hx(off)]}, params={"offset": off, "size": outer.size, "field": f},
-             wrong=f"0x{inner.offsets[f]:x}" if inner.offsets[f] != off else f"0x{off + 4:x}", check=(main, f"{off}\n{val}\n"))
+             wrong=f"0x{inner.offsets[f]:x}" if inner.offsets[f] != off else f"0x{off + 4:x}", check=(main, f"{off}\n{val}\n"), facts=[[off]])
     return t
 
 
@@ -255,8 +258,11 @@ def v_linked_next(rng):
     nf, vf = names[0], names[1]                       # the next pointer and the value that is summed
     st_name = rng.choice(STRUCT_NAMES)
     fields = rand_fields(rng, names[2:]) + [(nf, Scalar(f"struct {st_name} *", 8, ptr=True)), (vf, rng.choice(INTS))]
-    rng.shuffle(fields)
-    st = Struct(st_name, fields)
+    while True:
+        rng.shuffle(fields)
+        st = Struct(st_name, fields)
+        if st.offsets[nf] > 0:              # the offset asked for must not be 0
+            break
     body = f"""uint64_t proc(const struct {st.name} *n) {{
     uint64_t s = 0;
     while (n) {{

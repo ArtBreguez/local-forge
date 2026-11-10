@@ -85,6 +85,11 @@ def with_decoys(body: str, rng, count: int, forbidden=()) -> str:
     return body[:m.end()] + decoys(rng, count, forbidden) + body[m.end():]
 
 
+def near(v: int) -> list:
+    """v and its neighbours: a bound the compiler may show one off (`v > 9` as `v >= 10`)."""
+    return [v - 1, v, v + 1]
+
+
 def c_bytes(bs) -> str:
     return ", ".join(f"0x{b:02x}" for b in bs)
 
@@ -109,6 +114,7 @@ class Task:
     params: dict = field(default_factory=dict)
     wrong: str = ""                 # a plausible wrong answer the scorer must reject
     check: tuple | None = None      # (C main, expected stdout[, preamble]): a harness that proves the truth
+    facts: list = field(default_factory=list)   # groups of alternatives (int immediates / str data) the compiled code must still hold (survive.py)
 
     def source(self, main: str | None = None, preamble: str = "") -> str:
         """The generated file; with `main` a harness instead of the stub main, with `preamble` (macros that swap a libc call for a
@@ -124,26 +130,39 @@ class Task:
             d["variant"] = self.variant
         if self.helpers:
             d["helpers"] = list(self.helpers)
+        if self.facts:
+            d["facts"] = self.facts
         d.update(self.truth)
         return d
 
 
-def pick_flags(family: str, seed: int, i: int, cc: str = "mix") -> tuple:
+def pick_flags(family: str, seed: int, i: int, cc: str = "mix", attempt: int = 0) -> tuple:
     """Compiler and optimisation level for task i, from an rng that does not touch the template's own stream."""
-    rng = random.Random(f"flags/{family}/{seed}/{i}")
+    rng = random.Random(f"flags/{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
     opt = rng.choices(OPTS, OPT_WEIGHTS)[0]
     chosen = rng.choices(CCS, CC_WEIGHTS)[0]
     return opt, (chosen if cc == "mix" else cc)
 
 
-def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix") -> list:
+MAX_TRIES = 60
+
+
+def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=None) -> list:
+    """Task i is variant i mod len(variants), drawn from its own rng. With a `gate` (survive.Gate) a draw whose asked fact is not in
+    the code compiled at its own cc/opt is thrown away and the task is drawn again (new parameters, new cc/opt) from the stream
+    "<family>/<seed>/<i>/r<attempt>"; attempt 0 is the stream of the ungated generator, so a gate only changes the tasks it rejects."""
     names = list(variants)
     out = []
     for i in range(n):
-        rng = random.Random(f"{family}/{seed}/{i}")
-        t = variants[names[i % len(names)]](rng)
-        t.id = f"{t.kind}-{seed}-{i:04d}"
-        t.opt, t.cc = pick_flags(family, seed, i, cc)
+        for attempt in range(MAX_TRIES):
+            rng = random.Random(f"{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
+            t = variants[names[i % len(names)]](rng)
+            t.id = f"{t.kind}-{seed}-{i:04d}"
+            t.opt, t.cc = pick_flags(family, seed, i, cc, attempt)
+            if gate is None or gate(t):
+                break
+        else:
+            raise RuntimeError(f"{family}/{names[i % len(names)]}: no draw in {MAX_TRIES} keeps its fact in the code (task {i}, seed {seed})")
         out.append(t)
     return out
 

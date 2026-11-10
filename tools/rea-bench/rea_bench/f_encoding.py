@@ -237,7 +237,7 @@ def _make(rng, base, direction):
         truth = {"score": "tokens", "accept": [same, BASE_NAMES[base]], "reject": reject}
         wrong_dir = "decodes" if direction == "encode" else "encodes"
         wrong = f"It {wrong_dir} {base}"
-    return Task(kind=FAMILY, variant=f"{base}_{direction}", body=body, question=q, truth=truth,
+    return Task(kind=FAMILY, variant=f"{base}_{direction}", body=body, question=q, truth=truth, facts=[[alpha]] if ask_alpha else [],
                 params={"base": base, "direction": direction, "alphabet": alpha, "custom": custom, "pad": pad, "asked": "alphabet" if ask_alpha else "ident"},
                 wrong=wrong, check=(main, expect))
 

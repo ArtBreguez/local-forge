@@ -170,16 +170,20 @@ def _make(rng, form, ask):
         truth = {"score": "tokens", "accept": [hx(lit, d), [word]], "reject": [other]}
         wrong = f"0x{lit:0{d}x} {other}"
     elif ask == "init":
-        q = f"This function computes a {width}-bit CRC. What is the initial value of the CRC register (hex)?"
+        q = (f"This function computes a {width}-bit CRC. What is the initial value of the CRC register (hex, written at the CRC's width: "
+             f"an all-ones value is 0x{(1 << width) - 1:x} even where the code loads a wider -1)?")
         truth = {"score": "tokens", "accept": [hx(init, d)]}
         wrong = f"0x{init ^ 0x1:0{d}x}"
     else:
-        q = (f"This function computes a {width}-bit CRC. What value is XORed into the register after the last byte (hex)? "
-             "Answer 0 if nothing is XORed.")
+        q = (f"This function computes a {width}-bit CRC. What value is XORed into the register after the last byte (hex, written at the CRC's "
+             f"width: an all-ones value is 0x{(1 << width) - 1:x})? Answer 0 if nothing is XORed.")
         truth = {"score": "tokens", "accept": [hx(xorout, d)]}
         wrong = f"0x{xorout ^ 0x1:0{d}x}"
+    asked = {"poly": lit, "init": init, "xorout": xorout}[ask]
+    if asked == (1 << width) - 1:                    # all ones is loaded as a wider -1 (`mov edx, 0xffffffff`) in a 16-bit register
+        asked = [asked, 0xffffffff, 0xffffffffffffffff]
     return Task(kind=FAMILY, variant=f"{form}_{ask}", body=body, question=q, truth=truth, params=params, wrong=wrong,
-                check=harness(width, (poly, init, refl, xorout), rng))
+                check=harness(width, (poly, init, refl, xorout), rng), facts=[asked if isinstance(asked, list) else [asked]])
 
 
 def _variant(form, ask):

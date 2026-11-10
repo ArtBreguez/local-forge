@@ -9,7 +9,9 @@ Compiling is sequential and each file is tiny; the whole module takes about a mi
 """
 from __future__ import annotations
 
+import contextlib
 import hashlib
+import io
 import json
 import pathlib
 import shutil
@@ -23,7 +25,7 @@ from .helpers import ROOT
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, dedupe, families, scoring, verify  # noqa: E402
+from rea_bench import core, dedupe, families, scoring, survive, verify  # noqa: E402
 from rea_bench.verify import CLANG, compile_check, run_harness  # noqa: E402
 
 
@@ -358,7 +360,8 @@ class ModalScripts(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             root = pathlib.Path(d)
             with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data.subprocess, "run"), \
-                    mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)):
+                    mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=fake_starmap)), \
+                    contextlib.redirect_stdout(io.StringIO()):
                 self.data.main(stage="decompile", n=600, seed=7, family="legacy,crc")
                 out = [json.loads(l) for l in (root / "results" / "phase6" / "rea-data" / "decompiled-seed7.jsonl").read_text().splitlines()]
         held = dedupe.heldout_keys()
@@ -437,6 +440,148 @@ class Disjointness(unittest.TestCase):
         self.assertEqual(dedupe.exclusion_seed(7), 1001)
         self.assertIsNone(dedupe.exclusion_seed(1001))
         self.assertIsNone(dedupe.exclusion_seed(7, 0))
+
+
+GCC_OBJDUMP = bool(shutil.which("gcc") and shutil.which("objdump"))
+
+
+class FactGate(unittest.TestCase):
+    """M2: the asked fact must still be in the code compiled at the task's own cc/opt (survive.py)."""
+
+    DIS = """0000000000000000 <proc>:
+   0:\tlea    eax,[rdi-0x610]
+   6:\tcmp    eax,0x18b
+   b:\tshl    eax,1
+   e:\tmov    rcx,QWORD PTR [rip+0x0]        # 15 <proc+0x15>
+  15:\tmovzx  eax,BYTE PTR [rax+rcx*4]
+  19:\tcall   0 <helper>
+
+0000000000000020 <main>:
+  20:\tmov    edi,0x99
+"""
+
+    def test_numbers_come_from_instructions_not_addresses_comments_or_main(self):
+        nums = survive.numbers(self.DIS)
+        self.assertTrue({0x610, 0x18b, 1, 4} <= nums, nums)
+        self.assertNotIn(0x99, nums, "main is not part of the answer")
+        self.assertNotIn(0x15, nums, "addresses and the # comment are not constants")
+        self.assertNotIn(0x20, nums)
+
+    def test_forms_and_strings(self):
+        nums = {0x610, 0xfffffe0c, 8}
+        present = lambda g: survive.group_present(g, nums, b"..LD_PRELOAD..")
+        self.assertTrue(present([0x610]) and present([-0x610]), "magnitude, either sign")
+        self.assertTrue(present([500]), "x - lo is `add 0xfffffe0c` (= -500 as 32 bits)")
+        self.assertTrue(present([-500]))
+        self.assertTrue(present([7, 8]), "any alternative of the group")
+        self.assertFalse(present([7, 9]))
+        self.assertTrue(present(["LD_PRELOAD"]) and not present(["LD_AUDIT"]))
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_gate_accepts_a_present_constant_and_rejects_a_missing_one(self):
+        src = core.HDR + "int proc(int v) { return v * 7 + 0x4d2; }\n" + core.MAIN
+        self.assertTrue(survive.check([[0x4d2]], src, "gcc", "-O2")[0])
+        ok, why = survive.check([[0x4d3]], src, "gcc", "-O2")
+        self.assertFalse(ok)
+        self.assertIn("gcc -O2", why)
+        self.assertFalse(survive.check([[0x4d2], [0x4d3]], src, "gcc", "-O2")[0], "every group must be present")
+        with self.assertRaises(RuntimeError):
+            survive.check([[1]], "int proc(void) { syntax error", "gcc", "-O0")
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_check_task_reports_a_lost_fact_as_a_problem(self):
+        t = families.generate("antidebug", 1, 5, gate=survive.Gate())[0]       # drawn until its fact survives (the first draw, rv=128, is a shift)
+        self.assertEqual([p for p in verify.check_task(t, ubsan=False) if "fact does not survive" in p], [])
+        t.facts = [[0x7fedcba9]]
+        self.assertTrue([p for p in verify.check_task(t, ubsan=False) if "fact does not survive" in p])
+
+    def test_resampling_changes_only_the_rejected_task_and_attempt_zero_is_the_ungated_stream(self):
+        plain = families.generate("crc", 6, 5)
+        self.assertEqual([t.meta() for t in families.generate("crc", 6, 5, gate=lambda t: True)], [t.meta() for t in plain])
+        calls = []
+
+        def gate(t):
+            calls.append(t.id)
+            return not (t.id.endswith("0002") and calls.count(t.id) == 1)      # reject task 2 once
+
+        again = families.generate("crc", 6, 5, gate=gate)
+        self.assertEqual(calls.count("crc-5-0002"), 2)
+        for i in (0, 1, 3, 4, 5):
+            self.assertEqual(again[i].meta(), plain[i].meta())
+        self.assertNotEqual(again[2].source(), plain[2].source(), "task 2 was drawn again (new parameters)")
+        self.assertEqual(again[2].id, plain[2].id)
+        self.assertEqual(again[2].variant, plain[2].variant)
+        with self.assertRaises(RuntimeError):
+            families.generate("crc", 1, 5, gate=lambda t: False)
+
+    def test_facts_are_well_formed_and_contain_the_asked_value(self):
+        for fam in families.modules():
+            if fam == "legacy":
+                continue
+            for t in families.generate(fam, 120, 9):
+                json.dumps(t.meta())
+                for g in t.facts:
+                    self.assertTrue(g and all((isinstance(a, int) and not isinstance(a, bool)) or (isinstance(a, str) and a) for a in g), (t.id, g))
+                p = t.params
+                if t.variant in ("field_read", "init_magic", "linked_next", "nested_offset"):
+                    self.assertIn(p["offset"], t.facts[0])
+                    self.assertGreater(p["offset"], 0, "offset 0 has no displacement in the code")
+                if t.variant in ("array_stride", "alloc_size"):
+                    self.assertEqual(t.facts, [[p["size"]]])
+                if fam == "crc":
+                    self.assertTrue(t.facts and ({"poly": p["lit"], "init": p["init"], "xorout": p["xorout"]}[t.variant.split("_")[1]] in t.facts[0]))
+                if t.variant == "env":
+                    self.assertEqual(t.facts, [[p["name"]]])
+                if fam in ("structs", "crc", "cipher", "bounds", "antidebug") and t.variant != "loop_iterations":   # that answer is computed, not read
+                    self.assertTrue(t.facts, f"{t.id} ({t.variant}) asks for a constant and must be gated")
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_tea_round_count_and_rc4_key_length_survive_optimisation(self):
+        """The reviewer: TEA's loop counter became a compare with DELTA*rounds (no round count in the code at -O1 and up, xtea_dec
+        showed neither) and rc4's `i % klen` a magic multiply. Now proc returns the count and the key index wraps with a compare."""
+        tea = [t for s in (31, 32) for t in families.generate("cipher", 14, s) if t.variant.startswith(("tea", "xtea"))]
+        self.assertGreaterEqual(len(tea), 16)
+        for t in tea:
+            for opt in ("-O1", "-O2", "-O3", "-Os"):
+                ok, why = survive.check(t.facts, t.source(), "gcc", opt)
+                self.assertTrue(ok, f"{t.id} ({t.variant}) rounds={t.params['rounds']}: {why}")
+        rc4 = [t for s in (31, 32, 33) for t in families.generate("cipher", 7, s) if t.variant == "rc4"]
+        for opt in ("-O1", "-O2", "-Os"):
+            self.assertGreaterEqual(sum(survive.check(t.facts, t.source(), "gcc", opt)[0] for t in rc4), len(rc4) - 1, opt)
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_gated_generation_keeps_every_fact(self):
+        gate = survive.Gate()
+        for fam in ("crc", "bounds", "structs"):
+            for t in families.generate(fam, 18, 41, gate=gate):
+                self.assertTrue(survive.check_task(t)[0], f"{t.id} ({t.variant}) {t.cc} {t.opt}")
+        self.assertGreater(gate.tried, 0)
+
+    def test_modal_decompile_returns_an_error_record_for_a_lost_fact(self):
+        from unittest import mock
+        import types
+        fake = mock.MagicMock(name="modal")
+        fake.App.return_value.function.side_effect = lambda *a, **k: (lambda f: f)
+        fake.App.return_value.local_entrypoint.side_effect = lambda *a, **k: (lambda f: f)
+        with mock.patch.dict(sys.modules, {"modal": fake}):
+            sys.path.insert(0, str(ROOT / "tools" / "modal"))
+            try:
+                for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+                    sys.modules.pop(name, None)
+                import modal_rea_data
+                task = {"id": "x-1", "kind": "x", "opt": "-O2", "cc": "gcc", "facts": [[1234567]], "score": "tokens", "accept": [["1"]]}
+                with mock.patch.object(modal_rea_data, "_sh", return_value=""), \
+                        mock.patch.object(modal_rea_data.survive, "check", return_value=(False, "gcc -O2: none of [1234567] in the code")):
+                    rec = modal_rea_data.decompile_task(task, "int proc(void){return 0;}")
+                self.assertIn("fact not in the compiled code", rec["error"])
+                self.assertEqual(rec["id"], "x-1")
+                with mock.patch.object(modal_rea_data, "_sh", return_value=""), \
+                        mock.patch.object(modal_rea_data.survive, "check", side_effect=RuntimeError("no objdump")):
+                    self.assertIn("gate failed", modal_rea_data.decompile_task(task, "int proc(void){return 0;}")["error"])
+            finally:
+                for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+                    sys.modules.pop(name, None)
+                sys.path.remove(str(ROOT / "tools" / "modal"))
 
 
 def sample_tasks(family: str, seeds=(101, 202)) -> list:

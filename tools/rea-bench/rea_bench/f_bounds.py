@@ -8,13 +8,22 @@ the outputs at the edges) so an off-by-one in the source text fails the test.
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, dec, with_decoys
+from .core import Task, c_bytes, dec, near, with_decoys
 
 FAMILY = "bounds"
 
 
+REWRITE = " The compiler may have rewritten the tests (a subtraction and a width, a bound one off); give the values the source intends."
+
+
 def both(lo, hi):
     return {"score": "tokens", "accept": [dec(lo), dec(hi)]}
+
+
+def span(lo, hi):
+    """Facts for a lowest/highest answer: the low bound (or one off), and the high bound in any of the forms a range test takes after
+    optimisation (hi, one off, the width hi - lo)."""
+    return [near(lo), near(hi) + near(hi - lo)]
 
 
 def lit(v):
@@ -34,8 +43,8 @@ def v_range_chain(rng):
     main = ('int main(void) {\n    int first = 0, last = 0, cnt = 0;\n    for (int v = -1000; v <= 6000; v++)\n'
             '        if (proc(v)) { if (!cnt) first = v; last = v; cnt++; }\n    printf("%d %d %d\\n", first, last, cnt);\n    return 0;\n}')
     return Task(kind=FAMILY, variant="range_chain", body=body, truth=both(lo, hi), params={"lo": lo, "hi": hi, "form": form},
-                question="For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal).",
-                wrong=f"{lo + 1} and {hi}", check=(main, f"{lo} {hi} {hi - lo + 1}\n"))
+                question="For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal)." + REWRITE,
+                wrong=f"{lo + 1} and {hi}", check=(main, f"{lo} {hi} {hi - lo + 1}\n"), facts=span(lo, hi))
 
 
 def v_window(rng):
@@ -47,8 +56,8 @@ def v_window(rng):
     main = ('int main(void) {\n    int first = 0, last = 0, cnt = 0;\n    for (int v = -1000; v <= 1000; v++)\n'
             '        if (proc(v)) { if (!cnt) first = v; last = v; cnt++; }\n    printf("%d %d %d\\n", first, last, cnt);\n    return 0;\n}')
     return Task(kind=FAMILY, variant="window", body=body, truth=both(lo, hi), params={"lo": lo, "hi": hi, "w": w},
-                question="For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal).",
-                wrong=f"{lo} and {hi + 1}", check=(main, f"{lo} {hi} {w}\n"))
+                question="For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal)." + REWRITE,
+                wrong=f"{lo} and {hi + 1}", check=(main, f"{lo} {hi} {w}\n"), facts=[near(lo), near(w) + near(hi)])
 
 
 def v_index_limit(rng):
@@ -74,8 +83,8 @@ def v_index_limit(rng):
     main = (f'int main(void) {{\n    int first = -1, last = -1;\n    for (unsigned i = 0; i < {n + 20}; i++)\n'
             '        if (proc(i) != -1) { if (first < 0) first = (int)i; last = (int)i; }\n    printf("%d %d\\n", first, last);\n    return 0;\n}')
     return Task(kind=FAMILY, variant="index_limit", body=body, truth=both(lo, hi), params={"lo": lo, "hi": hi, "form": form, "n": n},
-                question="proc looks a byte up in a table and returns -1 for an index it rejects. Give the smallest and the largest index for which it returns a table value (decimal).",
-                wrong=f"{lo} and {hi + 1}", check=(main, f"{lo} {hi}\n"))
+                question="proc looks a byte up in a table and returns -1 for an index it rejects. Give the smallest and the largest index for which it returns a table value (decimal)." + REWRITE,
+                wrong=f"{lo} and {hi + 1}", check=(main, f"{lo} {hi}\n"), facts=([near(lo) + near(hi - lo)] if lo else []) + [near(hi) + near(hi - lo)])
 
 
 def count_ref(form, a, s, n):
@@ -117,7 +126,7 @@ def v_clamp(rng):
     clamp = lambda v: min(max(v, lo), hi)
     return Task(kind=FAMILY, variant="clamp", body=body, truth=both(lo, hi), params={"lo": lo, "hi": hi, "form": form},
                 question="proc limits its argument to an interval. Give the lower and the upper bound of that interval (inclusive, decimal).",
-                wrong=f"{lo} and {hi - 1}", check=(main, "".join(f"{clamp(p)}\n" for p in probes)))
+                wrong=f"{lo} and {hi - 1}", check=(main, "".join(f"{clamp(p)}\n" for p in probes)), facts=[near(lo), near(hi)])
 
 
 def v_char_class(rng):
@@ -145,8 +154,10 @@ def v_char_class(rng):
         accepted.add(single)
     main = 'int main(void) {\n    int cnt = 0;\n    for (int c = 0; c < 256; c++) cnt += proc((unsigned char)c) ? 1 : 0;\n    printf("%d\\n", cnt);\n    return 0;\n}'
     return Task(kind=FAMILY, variant="char_class", body=body, truth={"score": "tokens", "accept": [dec(len(accepted))]},
-                params={"ranges": ranges, "single": single}, question="How many different byte values (0 to 255) make proc return 1 (decimal)?",
-                wrong=str(len(accepted) + 1), check=(main, f"{len(accepted)}\n"))
+                params={"ranges": ranges, "single": single},
+                question="How many different byte values (0 to 255) make proc return 1 (decimal)?" + REWRITE.replace("give the values the source intends", "count what the source accepts"),
+                wrong=str(len(accepted) + 1), check=(main, f"{len(accepted)}\n"),
+                facts=[g for a, b in ranges for g in (near(a), near(b) + near(b - a))] + ([[single]] if single else []))
 
 
 VARIANTS = {"range_chain": v_range_chain, "window": v_window, "index_limit": v_index_limit, "loop_iterations": v_loop_iterations,

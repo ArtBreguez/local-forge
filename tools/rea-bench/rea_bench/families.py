@@ -12,16 +12,17 @@ def modules() -> dict:
     return {m.FAMILY: m for m in [legacy, *NEW_MODULES]}
 
 
-def generate(family: str, n: int, seed: int, cc: str = "mix") -> list:
+def generate(family: str, n: int, seed: int, cc: str = "mix", gate=None) -> list:
+    """`gate` (survive.Gate) resamples tasks whose asked fact does not survive compilation; legacy is frozen and never gated."""
     m = modules()[family]
     if hasattr(m, "generate"):
         return m.generate(n, seed, cc)
-    return build(m.FAMILY, m.VARIANTS, n, seed, cc)
+    return build(m.FAMILY, m.VARIANTS, n, seed, cc, gate)
 
 
-def generate_many(names: list, n: int, seed: int, cc: str = "mix") -> list:
+def generate_many(names: list, n: int, seed: int, cc: str = "mix", gate=None) -> list:
     """n tasks over the named families (split_counts), in family order."""
-    return [t for nm, c in zip(names, split_counts(n, len(names))) for t in generate(nm, c, seed, cc)]
+    return [t for nm, c in zip(names, split_counts(n, len(names))) for t in generate(nm, c, seed, cc, gate)]
 
 
 def split_counts(n: int, k: int) -> list:

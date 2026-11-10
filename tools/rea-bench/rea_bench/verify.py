@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 
-from . import scoring
+from . import scoring, survive
 from .core import OPTS
 
 CLANG = shutil.which("clang")
@@ -53,9 +53,14 @@ def harness_runs(ubsan: bool) -> list:
     return [("-O0", ()), ("-O2", ())] + ([("-O1", UBSAN_FLAGS)] if ubsan else [])
 
 
-def check_task(t, ubsan: bool = True) -> list:
-    """Problems found with one task (empty list = fine)."""
+def check_task(t, ubsan: bool = True, survive_check: bool = True) -> list:
+    """Problems found with one task (empty list = fine): a filler reply scores, the C does not compile clean, a harness disagrees
+    with the truth, or (survive_check) the asked constant is not in the code compiled at the task's own cc/opt."""
     problems = [f"{t.id} ({t.variant}) accepts the content-free reply {r!r}" for r in filler_passes(t)]
+    if survive_check and t.facts:
+        ok, why = survive.check_task(t)
+        if not ok:
+            problems.append(f"{t.id} ({t.variant}) fact does not survive: {why}")
     for cc in ["gcc"] + (["clang"] if CLANG else []):
         for opt in OPTS:
             r = compile_check(t.source(), opt, cc)

@@ -2,7 +2,8 @@
 
 Stage 1 (CPU, parallel): generate tasks with tools/rea-bench (python3 tools/rea-bench list shows the families), compile each
 one stripped with the task's own compiler and -O level (`cc` and `opt` in its JSON; gcc and -O1/-O2/-Os when absent), decompile `proc`
-(and any `helpers` it calls) with REA + Ghidra, store pseudocode + question + truth.
+(and any `helpers` it calls) with REA + Ghidra, store pseudocode + question + truth. A task whose asked constant is not in the code
+compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled.
     modal run tools/modal/modal_rea_data.py --stage decompile --n 300 [--family legacy|all|crc,cipher,...] [--cc mix|gcc|clang]
 Stage 2 (GPU): an uncensored model answers each task K times at T=0.7; only answers that match the truth are kept
 (rejection sampling). Output: SFT pairs in results/phase6/rea-data/.
@@ -30,7 +31,7 @@ if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
-from rea_bench import dedupe, families  # noqa: E402  (stdlib-only)
+from rea_bench import dedupe, families, survive  # noqa: E402  (stdlib-only)
 from rea_bench.scoring import check_mode, score  # noqa: E402  (stdlib-only, unit-tested without Modal; same scorer modal_rea.py uses)
 
 image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
@@ -64,6 +65,13 @@ def decompile_task(task: dict, src: str, seed: int = 7) -> dict:
     pathlib.Path(d, "t.c").write_text(src)
     cc, opt = task.get("cc", "gcc"), task["opt"]
     _sh(f"{cc} {opt} -fno-lto -o t.sym t.c && {cc} {opt} -fno-lto -s -o t t.c", d)
+    if task.get("facts"):   # the generator checked this with ITS compilers; these are the ones that built the binary
+        try:
+            ok, why = survive.check(task["facts"], src, cc, opt)
+        except Exception as e:      # never raise out of a remote function: it aborts the whole starmap
+            ok, why = False, f"gate failed: {e!r}"[:200]
+        if not ok:
+            return {**task, "error": f"fact not in the compiled code ({why})"}
     t0 = time.time()
     code, err = _decompile_fn(d, "proc")
     if err:

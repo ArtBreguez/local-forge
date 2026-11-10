@@ -96,7 +96,8 @@ static long fake_ptrace(int req, ...) {
     pre = "#include <stdarg.h>\n" + pre
     return Task(kind=FAMILY, variant="ptrace_raw" if raw else "ptrace", headers=HEADERS, body=body,
                 question=question("what does proc return when the call shows that a debugger is attached (decimal)?"),
-                truth=truth("ptrace", dec(rv)), params={"rv": rv, "raw": raw, "form": form}, wrong=f"timing, {rv}", check=(main, f"0\n{rv}\n1\n", pre))
+                truth=truth("ptrace", dec(rv)), params={"rv": rv, "raw": raw, "form": form}, wrong=f"timing, {rv}", check=(main, f"0\n{rv}\n1\n", pre),
+                facts=[[rv]])
 
 
 def v_ptrace(rng):
@@ -120,7 +121,7 @@ def v_env(rng):
     other = rng.choice([n for n in ENV_VARS if n != name])
     t = truth("env", [name.lower()])
     return Task(kind=FAMILY, variant="env", headers=HEADERS, body=body, question=question("which environment variable does it look at?"),
-                truth=t, params={"name": name, "rv": rv, "form": form}, wrong=f"env, {other}", check=(main, f"0\n{rv}\n"))
+                truth=t, params={"name": name, "rv": rv, "form": form}, wrong=f"env, {other}", check=(main, f"0\n{rv}\n"), facts=[[name]])
 
 
 def _timing(rng, unit):
@@ -181,9 +182,10 @@ static int fake_gettimeofday(struct timeval *t, void *tz) {
             '        printf("%d\\n", proc());\n    }\n    return 0;\n}')
     return Task(kind=FAMILY, variant=f"timing_{unit}", headers=HEADERS, body=body,
                 question=question(f"above how many {name} between the two clock readings does it report a debugger? "
-                                  f"Answer with a plain integer in {name}: no separators, no other unit."),
+                                  f"Answer with a plain integer in {name}: no separators, no other unit. (The code may test `>= N + 1`; "
+                                  f"N is the largest elapsed time it still lets pass.)"),
                 truth=truth("timing", dec(thr)), params={"thr": thr, "unit": unit, "work": work, "form": form}, wrong=f"timing, {thr * 2}",
-                check=(main, "0\n0\n1\n", pre))
+                check=(main, "0\n0\n1\n", pre), facts=[[thr, thr + 1]])
 
 
 def v_timing_ns(rng):
@@ -231,7 +233,7 @@ static FILE *fake_fopen(const char *path, const char *mode) {
             '    snprintf(fake_buf, sizeof fake_buf, "Name:\\tx\\nTracerPid:\\t4242\\nUid:\\t1\\n");\n    printf("%d\\n", proc());\n    return 0;\n}')
     return Task(kind=FAMILY, variant="tracerpid", headers=HEADERS, body=body,
                 question=question("what does proc return when a tracer is attached (decimal)?"), truth=truth("tracerpid", dec(rv)),
-                params={"rv": rv, "form": form, "size": size}, wrong=f"tracerpid, {rv + 1}", check=(main, f"0\n{rv}\n", pre))
+                params={"rv": rv, "form": form, "size": size}, wrong=f"tracerpid, {rv + 1}", check=(main, f"0\n{rv}\n", pre), facts=[[rv]])
 
 
 VARIANTS = {"ptrace": v_ptrace, "ptrace_raw": v_ptrace_raw, "env": v_env, "timing_ns": v_timing_ns, "timing_us": v_timing_us,

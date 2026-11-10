@@ -176,7 +176,8 @@ def _make(rng, variant, kind, endian=None, len_field=False):
         wrong = str(val + 1)
     pkts = spec.packets(rng)
     expect = "".join(f"{spec.verdict(p)}\n" for p in pkts)
-    return Task(kind=FAMILY, variant=variant, body=body, question=QUESTIONS[ask], truth=truth,
+    asked = {"start": spec.S, "tail": spec.W, "len_offset": spec.L, "len_start": spec.H}.get(ask)
+    return Task(kind=FAMILY, variant=variant, body=body, question=QUESTIONS[ask], truth=truth, facts=[[asked]] if asked is not None and ask != "tail" else [],
                 params={"H": spec.H, "S": spec.S, "W": spec.W, "L": spec.L, "endian": spec.endian, "kind": kind, "ask": ask, "magic": spec.magic},
                 wrong=wrong, check=(_main(spec, pkts), expect))
 
