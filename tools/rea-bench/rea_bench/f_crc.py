@@ -7,7 +7,7 @@ compares with `crc_ref`, a Python implementation of the Rocksoft model (tests al
 """
 from __future__ import annotations
 
-from .core import Task, hx, with_decoys
+from .core import Task, hx, pool, with_decoys
 
 FAMILY = "crc"
 
@@ -38,6 +38,11 @@ STANDARD = [
 ]
 
 
+# Algorithms only the held-out seed draws (the program of a standard algorithm is fixed by its parameters: without a reserved part a
+# held-out task would have a training twin that differs only in its decoys).
+HELD_STANDARD = [a for a in STANDARD if a[0] in ("crc32-bzip2", "crc16-usb", "crc16-maxim", "crc16-genibus", "crc32q", "crc16-dnp", "crc16-teledisk")]
+
+
 def reflect(v: int, width: int) -> int:
     return int(format(v, f"0{width}b")[::-1], 2)
 
@@ -65,7 +70,7 @@ def draw_params(rng, need_init=False, need_xor=False):
     """(width, poly, init, refl, xorout, label); half standard algorithms, half random polynomials."""
     for _ in range(50):
         if rng.random() < 0.5:
-            label, width, poly, init, refl, xorout = rng.choice(STANDARD)
+            label, width, poly, init, refl, xorout = rng.choice(pool(rng, STANDARD, HELD_STANDARD))
         else:
             width = rng.choice([16, 32])
             mask = (1 << width) - 1

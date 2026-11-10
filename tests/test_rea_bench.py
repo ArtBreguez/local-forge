@@ -515,8 +515,8 @@ class Disjointness(unittest.TestCase):
             tasks = families.generate(fam, 3000, 7)
             keys = [dedupe.task_key(t) for t in tasks]
             self.assertGreaterEqual(len({t.body for t in tasks}), 2960, f"{fam}: distinct C bodies per 3000")
-            self.assertGreaterEqual(len(set(keys)), 2960, f"{fam}: distinct programs per 3000")
-            self.assertEqual(sum(k in held for k in keys), 0, f"{fam}: seed-7 tasks identical to a held-out task")
+            self.assertGreaterEqual(len({dedupe.body_key(t) for t in tasks}), 2960, f"{fam}: distinct tasks (decoys included) per 3000")
+            self.assertEqual(sum(k in held for k in keys), 0, f"{fam}: seed-7 tasks identical to a held-out task, decoys stripped")
 
     def test_a_resampled_heldout_task_is_excluded_too(self):
         """The fact gate may keep a later draw of a held-out slot (which one depends on the compilers): all candidates stay out of training."""

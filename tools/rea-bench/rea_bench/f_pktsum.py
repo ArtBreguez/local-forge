@@ -9,7 +9,7 @@ stored bytes must fail (so the byte order is proven), a wrong magic or a truncat
 """
 from __future__ import annotations
 
-from .core import Task, dec, with_decoys
+from .core import Task, dec, pick_int, with_decoys
 from .f_crc import crc_ref
 
 FAMILY = "pktsum"
@@ -61,7 +61,7 @@ class Spec:
         self.H = rng.randint(3, 6) if len_field else rng.randint(2, 6)
         self.S = self.H if len_field else rng.randint(1, self.H)
         self.L = rng.randint(1, self.H - 1) if len_field else None
-        self.magic = rng.randint(0x10, 0xEE)
+        self.magic = pick_int(rng, 0x10, 0xEE, 5)       # multiples of 5 only in the held-out seed (core.pool)
 
     def covered(self, n, pkt):
         if self.len_field:

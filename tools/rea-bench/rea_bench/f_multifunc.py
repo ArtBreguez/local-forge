@@ -8,7 +8,7 @@ one is needed and ask for a number or the secret string; the truth is evaluated 
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, dec, hx, rword, with_decoys
+from .core import Task, c_bytes, dec, hx, pick_int, rword, with_decoys
 
 FAMILY = "multi"
 M32 = 0xFFFFFFFF
@@ -54,7 +54,7 @@ def v_eval_arith(rng):
 uint32_t proc(uint32_t x) {{
     return {call};
 }}"""
-    n0 = rng.randint(3, 60)
+    n0 = pick_int(rng, 3, 60, 5)                 # multiples of 5 only in the held-out seed (core.pool)
     body = with_decoys(body, rng, rng.choice([0, 1, 1, 2]), {n0, ref(n0), k2, d})
     probes = [n0, n0 + 1, 0, 5]
     return Task(kind=FAMILY, variant="eval_arith", body=body, helpers=["helper"],

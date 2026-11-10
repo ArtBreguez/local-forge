@@ -3,6 +3,10 @@
 Every family module exposes `FAMILY` (its name) and `VARIANTS` (variant name -> function(rng) -> Task). `build()` runs the
 variants round-robin; each task draws from its own `random.Random(f"{family}/{seed}/{i}")`, so adding or tuning one family
 never shifts what another family (or another task of the same family) produces for a seed.
+
+The held-out seed (HELDOUT_SEED) draws from reserved parameter values: `pool()` splits a family's small discrete choices (standard
+CRC algorithms, ChaCha/Salsa round counts, return codes, standard alphabets) into a training part and a held-out part, so the program
+a held-out task asks about is never one a training seed can make, with or without decoys (round-2 review, M2).
 """
 from __future__ import annotations
 
@@ -13,6 +17,8 @@ import re
 import string
 from dataclasses import dataclass, field
 
+HELDOUT_SEED = 1001
+
 HDR = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdint.h>\n\n"
 MAIN = '\n\nint main(int argc, char **argv) { (void)argc; (void)argv; puts("ok"); return 0; }\n'
 
@@ -20,6 +26,28 @@ OPTS = ["-O0", "-O1", "-O2", "-O3", "-Os"]
 OPT_WEIGHTS = [1, 3, 4, 2, 2]
 CCS = ["gcc", "clang"]
 CC_WEIGHTS = [3, 2]
+
+
+class TaskRng(random.Random):
+    """The rng of one task. Same stream as random.Random(x); `held` is True for the held-out seed (see pool())."""
+    held = False
+
+
+def is_held(rng) -> bool:
+    return bool(getattr(rng, "held", False))
+
+
+def pool(rng, items, held_items) -> list:
+    """The values this task may draw from: only `held_items` for the held-out seed, everything else for any other seed. Whole parameter
+    values are reserved this way where a family has so few programs that decoys alone cannot keep a held-out program from a training
+    seed (standard alphabets, standard CRC algorithms, cipher round counts)."""
+    hs = list(held_items)
+    return [x for x in items if (x in hs) == is_held(rng)]
+
+
+def pick_int(rng, lo: int, hi: int, mod: int = 5) -> int:
+    """randint(lo, hi) restricted by residue: multiples of `mod` for the held-out seed, all other values for training seeds."""
+    return rng.choice([v for v in range(lo, hi + 1) if (v % mod == 0) == is_held(rng)])
 
 
 def rword(rng, n):
@@ -206,7 +234,8 @@ def draw(family: str, variants: dict, i: int, seed: int, cc: str = "mix", attemp
     """Draw `attempt` of task i. Which attempt a gate keeps depends on the compilers, the set of possible draws does not."""
     from .chance import CHANCE
     names = list(variants)
-    rng = random.Random(f"{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
+    rng = TaskRng(f"{family}/{seed}/{i}" + (f"/r{attempt}" if attempt else ""))
+    rng.held = seed == HELDOUT_SEED
     t = variants[names[i % len(names)]](rng)
     t.id = f"{t.kind}-{seed}-{i:04d}"
     t.opt, t.cc = pick_flags(family, seed, i, cc, attempt)

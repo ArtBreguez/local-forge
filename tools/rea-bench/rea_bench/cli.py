@@ -53,6 +53,15 @@ def make_gate(a):
     return survive.Gate()
 
 
+def warn_heldout_range(names, n: int, seed: int) -> None:
+    """A seed-1001 run beyond HELDOUT_N tasks per family: its extra tasks are not in the pinned list (m7)."""
+    if seed == dedupe.HELDOUT_SEED:
+        over = [nm for nm, c in zip(names, families.split_counts(n, len(names))) if c > dedupe.HELDOUT_N]
+        if over:
+            print(f"warning: seed {seed} is the held-out split: only its first {dedupe.HELDOUT_N} tasks per family are pinned and excluded from "
+                  f"training; {', '.join(over)} get more", file=sys.stderr)
+
+
 def cmd_gen(a) -> None:
     names = pick_families(a)
     stale = sorted(p.name for p in a.out.glob("*") if TASK_FILE.match(p.name)) if a.out.is_dir() else []
@@ -62,6 +71,7 @@ def cmd_gen(a) -> None:
         (a.out / name).unlink()
     counts = families.split_counts(a.n, len(names))
     gate = make_gate(a)
+    warn_heldout_range(names, a.n, a.seed)
     total = 0
     for nm, c in zip(names, counts):
         tasks = families.generate(nm, c, a.seed, a.cc, gate)
@@ -77,6 +87,7 @@ def cmd_check(a) -> None:
     ubsan = verify.ubsan_available() and not a.no_ubsan
     a.cc = "mix"
     gate = make_gate(a)
+    warn_heldout_range(names, a.n, a.seed)
     print(f"checking with gcc{' + clang' if verify.CLANG else ' (clang not installed)'}, UBSan harness {'on' if ubsan else 'off'}, "
           f"fact gate {'off' if gate is None else 'on'}")
     bad = 0
@@ -117,12 +128,12 @@ def cmd_heldout(a) -> None:
 def cmd_stats(a) -> None:
     held = dedupe.heldout_keys()
     print(f"seed {a.seed}, n={a.n} per family; held-out list: {len(held)} keys ({dedupe.HELDOUT_N} per family at seed {dedupe.HELDOUT_SEED})")
-    print(f"{'family':10s} {'bodies':>7s} {'programs':>8s} {'overlap':>8s}   (bodies: distinct C text; programs: distinct normalized body+question;"
-          f" overlap: tasks whose program is held out)")
+    print(f"{'family':10s} {'bodies':>7s} {'programs':>8s} {'no-decoy':>8s} {'overlap':>8s}   (bodies: distinct C text; programs: distinct normalized body+question;"
+          f" no-decoy: distinct programs once the decoys are stripped; overlap: tasks whose program without decoys is held out)")
     for nm in pick_families(a, allow_small=True):
         tasks = families.generate(nm, a.n, a.seed, "mix")
         keys = [dedupe.task_key(t) for t in tasks]
-        print(f"{nm:10s} {len({t.body for t in tasks}):7d} {len(set(keys)):8d} {sum(k in held for k in keys):8d}")
+        print(f"{nm:10s} {len({t.body for t in tasks}):7d} {len({dedupe.body_key(t) for t in tasks}):8d} {len(set(keys)):8d} {sum(k in held for k in keys):8d}")
 
 
 def cmd_survival(a) -> None:

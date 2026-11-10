@@ -10,7 +10,7 @@ TEA and XTEA vectors).
 """
 from __future__ import annotations
 
-from .core import Task, c_bytes, c_u32s, dec, near, rword, with_decoys
+from .core import Task, c_bytes, c_u32s, dec, near, pool, rword, with_decoys
 
 FAMILY = "cipher"
 M = 0xFFFFFFFF
@@ -254,8 +254,11 @@ def _tea_task(rng, alg, direction):
                 facts=[near(rounds) + [{"at": r"for \(i = 0; i < (\d+); i\+\+\)", "kind": "near"}]])
 
 
+HELD_ROUNDS = [10, 14, 18, 22, 26, 30, 34, 38]      # ChaCha/Salsa round counts only the held-out seed draws (no key in the source: a tiny program space)
+
+
 def _stream_task(rng, alg):
-    rounds = rng.choice([20, 20, 12, 8] + list(range(4, 41, 2)))
+    rounds = rng.choice(pool(rng, [20, 20, 12, 8] + list(range(4, 41, 2)), HELD_ROUNDS))
     key = [rng.getrandbits(32) for _ in range(8)]
     counter = rng.getrandbits(32)
     nonce = [rng.getrandbits(32) for _ in range(3 if alg == "chacha" else 2)]

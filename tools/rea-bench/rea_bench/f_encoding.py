@@ -11,7 +11,7 @@ from __future__ import annotations
 import base64
 import string
 
-from .core import Task, c_bytes, with_decoys
+from .core import Task, c_bytes, is_held, with_decoys
 
 FAMILY = "encoding"
 
@@ -194,7 +194,9 @@ def src_b58_dec(alpha, table):
 # ---- tasks ----------------------------------------------------------------------------------------------------------
 
 def _alphabet(rng, base):
-    if rng.random() < 0.5:
+    """Standard alphabet (training seeds, half the tasks) or a random shuffle. The held-out seed draws shuffles only: a standard-alphabet
+    encoder is one of about 18 programs, so a held-out one would always have a training twin that differs only in its decoys."""
+    if rng.random() < 0.5 and not is_held(rng):
         return STD[base], False
     chars = list(STD[base])
     rng.shuffle(chars)

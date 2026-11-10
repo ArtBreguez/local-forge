@@ -13,7 +13,7 @@ the same program only by accident (tools/rea-bench `check` reports duplicates).
 """
 from __future__ import annotations
 
-from .core import HDR, Task, dec, with_decoys
+from .core import HDR, Task, dec, pick_int, with_decoys
 
 FAMILY = "antidebug"
 HEADERS = (HDR.rstrip("\n") + "\n#include <unistd.h>\n#include <time.h>\n#include <sys/time.h>\n#include <sys/ptrace.h>\n"
@@ -49,7 +49,9 @@ def question(detail):
 
 
 def returns(rng) -> int:
-    return rng.randint(1, 250)
+    """A return code 1..250; the held-out seed draws the multiples of 5, training seeds the other values (a ptrace check is a few lines,
+    so without a reserved part a held-out task would have a training twin that differs only in its decoys)."""
+    return pick_int(rng, 1, 250, 5)
 
 
 RV_AT = r"(?:return |\? )([1-9]\d*)(?:;| : 0;)"        # where proc returns the asked code (never `return 0;`)
