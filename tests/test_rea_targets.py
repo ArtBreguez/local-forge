@@ -114,7 +114,7 @@ def expected(key: str, task, meta: dict, f: dict) -> dict:
         out = {"base": p["base"], "dir": p["direction"], "radix": radix, "gin": gin, "gout": gout, "bits": bits}
         if key.endswith("#alphabet"):
             out.update({"s": p["alphabet"], "alen": radix, "agent": "encoder" if p["direction"] == "encode" else "decoder",
-                        "use": "looks up each output character in" if p["direction"] == "encode" else "searches each input character in"})
+                        "use": "looks up each output character in" if p["direction"] == "encode" else "looks up each input character in"})
         else:
             out["Dir"] = p["direction"].capitalize()
         return out

@@ -345,7 +345,7 @@ def _alpha(t):
     f["s"] = t["accept"][0]
     f["alen"] = _qint(t, r"(\d+)-character alphabet", "alphabet size")
     f["agent"] = "encoder" if f["dir"] == "encode" else "decoder"
-    f["use"] = "looks up each output character in" if f["dir"] == "encode" else "searches each input character in"
+    f["use"] = "looks up each output character in" if f["dir"] == "encode" else "looks up each input character in"
     return f
 
 
@@ -526,7 +526,7 @@ spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}, {thr} us", "{tech}: {thr}
 
 @spec("multi/eval_arith", NUM,
       ("Evaluating proc by hand for the argument {n0}: it calls the helper, uses its result, and returns {n}.",
-       "For the argument {n0}, the helper's result is combined with the argument and proc returns {n}.",
+       "For the argument {n0}, proc calls the helper, uses what it returns, and the value that proc returns is {n}.",
        "Calling proc with {n0} gives {n}, once the result of the helper is used."))
 def _(t):
     return {"n": _val(t["accept"][0]), "n0": _qint(t, r"called with\s+(\d+)", "argument")}
