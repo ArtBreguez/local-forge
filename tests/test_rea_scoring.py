@@ -274,15 +274,15 @@ class DataPathAgainstEvaluation(unittest.TestCase):
     LEGACY_KINDS = ("xor-key", "password", "magic", "lcg", "hash", "skip", "keycount", "alphabet", "rotate", "threshold")
 
     def test_the_evaluation_scorer_is_still_the_frozen_one(self):
-        skip = {"id": "skip-7-0055", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"]}
+        skip = {"id": "skip-7-0055", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"], "question": "The checksum skips bytes with one specific value. Which value (hex)?"}
         self.assertTrue(scoring.score("the letter a", skip), "the substring scorer accepts any reply with the letter a: frozen on purpose")
         self.assertTrue(scoring.score("magic 0xDEADBEEF version 3", {"score": "all", "accept": ["deadbeef", "3"]}))
 
     def test_the_data_scorer_does_not_accept_what_the_substring_scorer_does(self):
-        skip = {"id": "skip-7-0055", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"]}
-        for r in ("the letter a", "a", "I do not know, maybe 0 1 2 3 a b c d e f", "10 or 11", "not 0x0a"):
-            self.assertFalse(scoring.score_strict(r, skip), r)
-        for r in ("0x0a", "10", "0A", "The value is 0x0a.", "0x0a\nThe checksum skips every byte with this value."):
+        skip = {"id": "skip-7-0055", "kind": "skip", "score": "any", "accept": ["0x0a", "0a", "10"], "question": "The checksum skips bytes with one specific value. Which value (hex)?"}
+        for r in ("the letter a", "a", "I do not know, maybe 0 1 2 3 a b c d e f", "10 or 11", "not 0x0a", "10", "0x10"):
+            self.assertFalse(scoring.score_strict(r, skip), r)         # `10` is 0x10 to a model that answers in hex (round 4, m1)
+        for r in ("0x0a", "0A", "0a", "The value is 0x0a.", "0x0a\nThe checksum skips every byte with this value."):
             self.assertTrue(scoring.score_strict(r, skip), r)
         self.assertIsNone(scoring.sft_target("the letter a", skip))
 
@@ -322,7 +322,7 @@ class Selection(unittest.TestCase):
 
     def test_agreement_only_above_the_chance_threshold(self):
         easy = {"score": "tokens", "accept": [core.dec(5)], "chance": 0.5, "kind": "crc"}
-        hard = {**easy, "chance": 0.05}
+        hard = {**easy, "chance": 0.01}
         legacy = {"score": "exact", "accept": ["ab"], "kind": "xor-key"}
         one = [("5", True), ("6", False), ("7", False)]
         two = [("5", True), ("5\nThe loop stops at five times the stride.", True), ("7", False)]
@@ -358,8 +358,10 @@ class Selection(unittest.TestCase):
         high = sorted(k for k, v in chance.CHANCE.items() if v >= sft.AGREE_CHANCE)
         for v in ("crc/bitwise_init", "pktsum/xor8", "cipher/xtea_dec", "cipher/tea_enc", "cipher/chacha", "structs/linked_next", "encoding/base64_decode"):
             self.assertIn(v, high)
-        for v in ("strobf/xor_const", "multi/decode_secret", "bounds/clamp", "crc/table_poly", "antidebug/timing_ns"):
+        for v in ("strobf/xor_const", "multi/decode_secret", "bounds/clamp", "antidebug/timing_ns", "bounds/index_limit", "bounds/loop_iterations"):
             self.assertNotIn(v, high)
+        for v in ("fsm/opcode_value", "bounds/char_class", "multi/limit_helper", "crc/bitwise_poly", "crc/table_poly"):
+            self.assertIn(v, high, "round 4 (m8): a variant a guess solves 6% of the time kept one lucky sample of six in 31% of its tasks")
 
     def test_chance_is_at_least_the_best_constant_guess_of_the_variant(self):
         """m3 (2): a model that reads the cipher from the code and guesses the round count is right on 28-32% of TEA/XTEA tasks."""

@@ -20,14 +20,14 @@ from __future__ import annotations
 
 import collections
 
-from .scoring import is_error_reply, score_strict, sft_target
+from .scoring import is_error_reply, score_strict, sft_target, strict_task
 
-AGREE_CHANCE = 0.1
+AGREE_CHANCE = 0.05          # round 4 (m8): 0.06-0.063 variants (fsm/opcode_value, bounds/char_class, multi/limit_helper) kept one lucky sample of six in 31% of the tasks
 AGREE_MIN = 2
 
 
 def needs_agreement(t: dict) -> bool:
-    c = t.get("chance")
+    c = strict_task(t).get("chance")                # a legacy task gets its `chance` from the conversion (skip: 0.14)
     return c is not None and c >= AGREE_CHANCE
 
 

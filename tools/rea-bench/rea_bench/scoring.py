@@ -75,9 +75,13 @@ def _legacy_score(answer: str, t: dict) -> bool:
 
 # Which accept strings of a legacy task are hex constants (the question asks "(hex)"); every other numeric string is decimal.
 _HEX_AT = {"magic": (0,), "rotate": (0,), "hash": (1,)}
-# Names a reply may use for the legacy hash families (the frozen accept list holds the stem only: "fnv" must also be "FNV-1a").
-_HASH_NAMES = {"fnv": ("fnv", "fnv-1a", "fnv1a", "fnv-1", "fnv1", "fnv-32", "fnv32"), "djb2": ("djb2", "djb", "bernstein", "djb-2", "djb2a"),
-               "sdbm": ("sdbm",), "murmur": ("murmur", "murmurhash", "murmur2", "murmur3", "murmurhash2", "murmurhash3", "murmur-ish")}
+# Names a reply may use for the legacy hash families (the frozen accept list holds the stem only: "fnv" must also be "FNV-1a"). Only names of THAT
+# algorithm: FNV-1 (multiply, then xor) is not the FNV-1a of the template, MurmurHash3 and djb2a are other hashes (round 4, M2).
+_HASH_NAMES = {"fnv": ("fnv", "fnv-1a", "fnv1a", "fnv-32", "fnv32"), "djb2": ("djb2", "djb", "bernstein", "djb-2"),
+               "sdbm": ("sdbm",), "murmur": ("murmur", "murmurhash", "murmur2", "murmurhash2", "murmur-ish")}
+# What a constant guess gets right on a legacy task whose answer set is tiny (the generated families carry `chance`; legacy tasks did not).
+# skip: one of 7 byte values. The other templates hide a 32-bit constant (magic, hash, rotate), an exact string, or a pair that no guess gets.
+_LEGACY_CHANCE = {"skip": 0.14}
 
 
 def _bare_hex_ok(s: str) -> bool:
@@ -86,41 +90,42 @@ def _bare_hex_ok(s: str) -> bool:
 
 
 def _legacy_group(x: str, hex_const: bool) -> list:
-    """The spellings of one legacy accept string as a grammar group: the stored text, `0x` and (where unambiguous) bare hex, and for a
-    hex constant also its decimal value. No bare `a`..`f` digit: the substring scorer's `variants` offered those and let any reply with
-    that letter pass (round 3, B1/m10)."""
-    out = [x]
+    """The spellings of one legacy accept string as a grammar group. A hex constant: `0x..` and its bare spelling only where it holds a letter and a
+    digit (never the all-digit text of `30312932`, which the grammar reads as the DECIMAL number 30,312,932). A decimal number: itself and `0x..`
+    (and the 32-bit pattern of a negative one), never its bare hex digits (the hex digits of 39 are `27`, which is another number): round 4, B1.
+    The base a group is asked in is enforced by the grammar (`bases`), not by this list."""
     if hex_const and re.fullmatch(r"[0-9a-f]{1,16}", x):
         v = int(x, 16)
-        out += [f"0x{v:x}", f"{v:x}", str(v)]
-    elif re.fullmatch(r"-?\d+", x):
+        return list(dict.fromkeys([f"0x{v:x}"] + [b for b in (x, f"{v:x}") if _bare_hex_ok(b)]))
+    if re.fullmatch(r"-?\d+", x):
         v = int(x)
-        out.append(f"0x{v:x}" if v >= 0 else f"-0x{-v:x}")
+        out = [x, f"0x{v:x}" if v >= 0 else f"-0x{-v:x}"]
         if v < 0:
             out.append(f"0x{v & 0xffffffff:x}")
-        elif abs(v) > 9:
-            out.append(f"{v:x}")
-    return [s for s in dict.fromkeys(out) if s == x or s.startswith(("0x", "-0x")) or s.isdigit() or _bare_hex_ok(s)]
+        return list(dict.fromkeys(out))
+    return [x]
 
 
 def strict_task(t: dict) -> dict:
     """The task as the data path scores it: a task of the new families is returned as it is; a legacy task becomes a `tokens` /
     `exact_head` / `exact_case` task with the same key (`exact` -> an exact string, `any`/`all`/`all_groups` -> grammar groups in the
-    order of its question)."""
+    order of its question), with the base each number is asked in (`bases`) and, where a guess can be right, a `chance`."""
     mode, acc, kind = t["score"], t["accept"], t.get("kind", "")
     if mode not in LEGACY_MODES:
         return t
+    extra = {"chance": _LEGACY_CHANCE[kind]} if kind in _LEGACY_CHANCE and "chance" not in t else {}
     if mode == "exact":
-        return {**t, "score": "exact_case" if kind == "alphabet" else "exact_head", "accept": acc[:1]}
-    if mode == "any":
-        return {**t, "score": "tokens", "accept": [list(dict.fromkeys(acc))]}
+        return {**t, **extra, "score": "exact_case" if kind == "alphabet" else "exact_head", "accept": acc[:1]}
+    if mode == "any":                                    # skip: the value as hex; `acc` holds one value in three spellings ("0x0a", "0a", "10")
+        v = int(acc[0], 16) if re.fullmatch(r"0x[0-9a-f]+", acc[0]) else int(acc[0])
+        return {**t, **extra, "score": "tokens", "accept": [_legacy_group(f"{v:02x}", True)], "bases": ["hex"]}
     if mode == "all":
         hexes = _HEX_AT.get(kind)
-        groups = [_legacy_group(x, (i in hexes) if hexes is not None else bool(re.fullmatch(r"[0-9a-f]{8}", x) and not x.isdigit()))
-                  for i, x in enumerate(acc)]
-        return {**t, "score": "tokens", "accept": groups}
+        is_hex = [(i in hexes) if hexes is not None else bool(re.fullmatch(r"[0-9a-f]{8}", x) and not x.isdigit()) for i, x in enumerate(acc)]
+        return {**t, **extra, "score": "tokens", "accept": [_legacy_group(x, h) for x, h in zip(acc, is_hex)], "bases": ["hex" if h else "dec" for h in is_hex]}
     names = [n for stem in acc[0] for n in (*_HASH_NAMES.get(stem, ()), stem)]
-    return {**t, "score": "tokens", "accept": [list(dict.fromkeys(names))] + [_legacy_group(g[0], True) for g in acc[1:]]}
+    return {**t, **extra, "score": "tokens", "accept": [list(dict.fromkeys(names))] + [_legacy_group(g[0], True) for g in acc[1:]],
+            "bases": [None] + ["hex"] * (len(acc) - 1)}
 
 
 # ---- the reply: lines, lead-in, headline, justification ----------------------------------------------------------------------
@@ -154,9 +159,17 @@ def _words(s: str) -> list:
     return re.findall(r"[a-z']+", normalise(s).lower())
 
 
-def _is_leadin(s: str) -> bool:
-    """A bare lead-in line: ends with a colon, holds no digit and only function words ("Answer:", "Here is the string:")."""
-    return s.endswith(":") and not re.search(r"\d", s) and all(w in grammar.LEADIN_LINE_WORDS for w in _words(s))
+def _is_leadin(s: str, t: dict = None) -> bool:
+    """A bare lead-in line: ends with a colon, holds no digit and only function words and the words of the question ("Answer:", "Here is the string:",
+    "Offset:"); for an exact-string task also the lead-in words of grammar.LEAD_WORDS ("Plaintext:"). Never a free noun such as `key` or `size`."""
+    if not s.endswith(":") or re.search(r"\d", s):
+        return False
+    ok = set(grammar.LEADIN_LINE_WORDS)
+    if t is not None:
+        ok |= set(re.findall(r"[a-z]+", t.get("question", "").lower()))
+        if t.get("score") in ("exact_case", "exact_head"):
+            ok |= grammar.LEAD_WORDS
+    return all(w in ok for w in _words(s))
 
 
 def _is_prose(s: str) -> bool:
@@ -213,13 +226,13 @@ class Reply(NamedTuple):
     pieces: list       # what follows: the rest of that line, then the other lines (all markdown removed)
 
 
-def parse_reply(answer: str):
+def parse_reply(answer: str, t: dict = None):
     """The structure of a reply, or None when it has no headline: nothing but fences, a lead-in with nothing after it, or an answer line
     followed by something that is not a sentence (a second value, a list, a code block with two values: the reply is a candidate list)."""
     lines = _answer_lines(answer)
     if not lines:
         return None
-    i = 1 if _is_leadin(lines[0][1]) else 0
+    i = 1 if _is_leadin(lines[0][1], t) else 0
     if i >= len(lines):
         return None
     line = lines[i][1]
@@ -233,9 +246,10 @@ def parse_reply(answer: str):
     return Reply(lines[0][1] if i else "", head, pieces)
 
 
-def headline(answer: str) -> str:
-    """The headline of the reply, markdown removed; "" if there is none (empty reply, a lead-in with nothing after it, a list)."""
-    r = parse_reply(answer)
+def headline(answer: str, t: dict = None) -> str:
+    """The headline of the reply, markdown removed; "" if there is none (empty reply, a lead-in with nothing after it, a list). `t`: the task, whose
+    question's words may stand in a lead-in line."""
+    r = parse_reply(answer, t)
     return "" if r is None else r.head
 
 
@@ -262,7 +276,7 @@ def _headline_ok(head: str, t: dict) -> bool:
 
 
 def _headline_score(answer: str, t: dict) -> bool:
-    r = parse_reply(answer)
+    r = parse_reply(answer, t)
     return r is not None and _headline_ok(r.head, t)
 
 
@@ -385,7 +399,7 @@ def sft_target(reply: str, t: dict):
     if is_error_reply(reply):
         return None
     s = strict_task(t)
-    r = parse_reply(reply)
+    r = parse_reply(reply, s)
     if r is None or not _headline_ok(r.head, s):
         return None
     rest = " ".join(r.pieces).strip()

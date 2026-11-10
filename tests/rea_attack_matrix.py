@@ -8,6 +8,9 @@
 Rows that the review marked "info" (policy questions) are not counted either way. Where a round changed the policy the old expectation
 is flipped on purpose: a key followed by a parenthesis, spaced-out alphabets, upper-cased plaintexts and `X or Y` over two accepted answers
 (round 2); a number followed by `approximately` (a hedge), a unit the question did not use, a second line that is not a sentence (round 3).
+Round 4: a number asked in hex (the question says "(hex)") is written `0x..` or as a bare hex with a letter; its plain-decimal reading (`18` for 0x12) is
+a WRONG row (m2), and the decimal respelling is only right in parentheses next to the 0x form. Legacy rows add the two reply shapes of B1 (the bare hex
+digits of a decimal number, the digits of an all-digit hex constant read as decimal).
 The name groups (algorithm, direction, base, technique) may be written in any order (round 3, owner's decision), so `Base64 encode` and
 `decrypt, XTEA, 32` are right formats; a number moved relative to the names (`32, XTEA, decrypt`) is still given up and listed as yield.
 
@@ -25,6 +28,7 @@ from .helpers import ROOT
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
 from rea_bench import families  # noqa: E402
+from rea_bench.grammar import Spec  # noqa: E402
 from rea_bench.scoring import num_value, score, strict_task  # noqa: E402
 
 NEW_FAMILIES = [f for f in families.modules() if f != "legacy"]
@@ -67,6 +71,11 @@ def _bare(t):
     return ", ".join(g[0] for g in t["accept"]) if t["score"] == "tokens" else t["accept"][0]
 
 
+def _asked(t, v: int, g: int = 0) -> str:
+    """The number v spelled the way the question asks for it: `0x..` for a hex-asked group, decimal otherwise."""
+    return f"0x{v:x}" if v >= 0 and Spec(t).bases[g] == "hex" else str(v)
+
+
 def _other(v):
     return v + 1 if v < 10 ** 9 else v - 1
 
@@ -85,13 +94,21 @@ def generic_attacks(t) -> list:
            (("W interval-parens" if interval else "R parens"), f"({A})", False if interval else True)]
     if mode == "tokens" and numeric and len(k) == 1:
         v = numeric[0]
+        hexed = Spec(t).bases[[i for i, x in enumerate(k) if x is not None][0]] == "hex" and v >= 0
+        sv = _asked(t, v, [i for i, x in enumerate(k) if x is not None][0])             # the answer in the base the question asks
+        word = next((w for w in ("offset", "size", "count", "value", "number", "length") if w in Spec(t).qwords), "answer")   # a noun the QUESTION uses
         out += [("R hex-dec-both", f"0x{v:x} ({v})" if v >= 0 else f"{v}", True), ("R dec-in-hex-paren", f"{v} (0x{v:x})" if v >= 0 else f"{v}", True),
-                ("R zero-padded", f"0x{v:08x}" if v >= 0 else f"{v}", True), ("R u-suffix", f"{v}u" if v >= 0 else f"{v}", True),
-                ("R ull-suffix hex", f"0x{v:x}ULL" if v >= 0 else f"{v}", True), ("R offset-word", f"Offset {v}", True),
-                ("R it-is", f"It is {v}", True), ("W approx", f"approximately {v}", False), ("R commas", f"{v:,}" if v >= 1000 else f"{v}", True),
-                ("R trailing-colon", f"{v}:", True)]
+                ("R zero-padded", f"0x{v:08x}" if v >= 0 else f"{v}", True), ("R u-suffix", f"{sv}u" if v >= 0 else f"{v}", True),
+                ("R ull-suffix hex", f"0x{v:x}ULL" if v >= 0 else f"{v}", True), ("R offset-word", f"{word.capitalize()} {sv}", True),
+                ("R it-is", f"It is {sv}", True), ("W approx", f"approximately {sv}", False), ("R commas", f"{v:,}" if v >= 1000 and not hexed else sv, True),
+                ("R trailing-colon", f"{sv}:", True)]
         if t.get("kind") in ("structs", "pktsum") or t.get("variant") in ("rc4", "limit_helper"):
-            out.append(("R bytes", f"{v} bytes", True))               # a unit the question uses; `5 bytes` for a state count is a wrong unit
+            out.append(("R bytes", f"{sv} bytes", True))              # a unit the question uses; `5 bytes` for a state count is a wrong unit
+        if hexed and str(v) != f"{v:x}" and int(str(v), 16) != v:
+            out += [("W hex-asked decimal", str(v), False), ("W hex-asked decimal hex label", f"hex {v}", False), ("W hex-asked decimal in parens", f"({v})", False),
+                    ("W hex-asked decimal bytes", f"It is {v}", False), ("W hex-asked decimal tail", f"{v} (hex)", False)]
+        if not hexed and v >= 10:
+            out += [("W decimal-asked 0x label", f"decimal 0x{v:x}", False), ("W decimal-asked bare hex digits", f"{v:x}" if f"{v:x}" != str(v) and v > 9 else f"{v + 1}", False)]
     if mode == "tokens" and numeric:
         v = numeric[0]
 
@@ -114,7 +131,7 @@ def generic_attacks(t) -> list:
                 if lo >= 0:
                     out.append(("R lo-hi hyphen", f"{lo}-{hi}", True))
             else:
-                out.append(("R two numbers", f"{lo}, {hi}", True))
+                out.append(("R two numbers", f"{_asked(t, lo, 0)}, {_asked(t, hi, 1)}" if None not in k else f"{lo}, {hi}", True))
     return out
 
 
@@ -272,32 +289,62 @@ def family_attacks(t) -> list:
 LEGACY_KINDS = ("xor-key", "password", "magic", "lcg", "hash", "skip", "keycount", "alphabet", "rotate", "threshold")
 
 
+def _bare_hex_digits(v: int) -> str:
+    return format(v, "x")
+
+
 def legacy_attacks(t) -> list:
-    """Right and wrong replies for the ten legacy templates as the data path scores them (the task is a `strict_task`)."""
+    """Right and wrong replies for the ten legacy templates as the data path scores them (the task is a `strict_task`).
+    Round 4 (B1): the wrong rows include the two shapes the review found: the bare hex digits of a DECIMAL answer (`27` for 39), and the digits of an
+    all-digit hex constant read as decimal (`0x1ce89e4` for 0x30312932, and the bare `30312932` itself)."""
     kind, acc = t["kind"], t["accept"]
     if kind in ("xor-key", "password", "keycount", "alphabet"):
         k = acc[0]
         return [("legacy right", r, True) for r in (k, f"The key is {k}", f"`{k}`", f'"{k}"', f"{k}.")] + [
             ("legacy wrong exact", r, False) for r in (k[:-1], k + "x", f"x{k}", f"{k} or {k[:-1]}x", f"not {k}", k.upper() if k.upper() != k else k + "9")]
     nums = [[num_value(a.lower()) for a in g if num_value(a.lower()) is not None] for g in acc]
+    bases = t.get("bases") or []
     if kind == "skip":
         v, first, last = nums[0][0], acc[0][0], acc[0][-1]
-        return [("legacy right", r, True) for r in (first, last, f"0x{v:02x}", f"The value is {first}")] + [
-            ("legacy wrong", r, False) for r in ("a", "the letter a", f"{v + 1}", "0x%02x" % ((v + 1) % 256), f"not {first}", f"{first} or {v + 1}")]
+        wrong = ["a", "the letter a", f"{v + 1}", "0x%02x" % ((v + 1) % 256), f"not {first}", f"{first} or {v + 1}",
+                 str(v) if int(str(v), 16) != v else f"{v + 1}", f"{v:02x}" if f"{v:02x}".isdigit() and int(f"{v:02x}") != v else f"{v + 2}"]   # decimal of the value; its bare digits
+        return [("legacy right", r, True) for r in (first, last, f"0x{v:02x}", f"The value is {first}")] + [("legacy wrong", r, False) for r in wrong]
     if kind == "hash":
-        name, h = acc[0][0], acc[1][0]
+        name = acc[0][0]
+        hv = nums[1][0]
+        h = f"{hv:08x}"                                                  # the constant as the template writes it: 8 hex digits
         wrong_name = "sdbm" if name != "sdbm" else "djb2"
-        return [("legacy right", r, True) for r in (f"{name}, 0x{h}", f"{acc[0][-1]}, {h}", f"{name} and {h}", f"{name.upper()}, 0x{h.upper()}")] + [
-            ("legacy wrong", r, False) for r in (f"{wrong_name}, 0x{h}", f"{name}, 0x{h[:-1]}0" if h[-1] != "0" else f"{name}, 0x{h[:-1]}1", f"{name}", f"0x{h}",
-                                                 f"{name} or {wrong_name}, 0x{h}")]
+        wrong = [f"{wrong_name}, 0x{h}", f"{name}, 0x{h[:-1]}0" if h[-1] != "0" else f"{name}, 0x{h[:-1]}1", f"{name}", f"0x{h}",
+                 f"{name} or {wrong_name}, 0x{h}", f"{name}, {hv}"]       # the last: the decimal value of a constant asked in hex (m2)
+        if h.isdigit():
+            wrong += [f"{name}, 0x{int(h):x}", f"{name}, {int(h)}", f"{name}, {h}"]            # B1b: the digits read as decimal, the all-digit text without 0x
+        wrong += [f"{bad}, 0x{h}" for bad in ("FNV-1", "FNV1", "MurmurHash3", "murmur3", "djb2a") if bad.lower() not in {n.lower() for n in acc[0]}]   # M2
+        return [("legacy right", r, True) for r in (f"{name}, 0x{h}", f"{acc[0][-1]}, 0x{h}", f"{name} and 0x{h}", f"{name.upper()}, 0x{h.upper()}")] + [
+            ("legacy wrong", r, False) for r in wrong]
     if kind == "threshold":
         lo, hi = nums[0][0], nums[1][0]
+        wrong = [f"{hi}, {lo}", f"({lo}, {hi})", f"x > {lo} and x < {hi}", f"{lo + 1} to {hi - 1}", f"{lo}"]
+        for gi, v in enumerate((lo, hi)):                                                      # B1: the bare hex digits of a decimal bound
+            if v > 9 and _bare_hex_digits(v) != str(v):
+                wrong.append(f"{_bare_hex_digits(v)}, {hi}" if gi == 0 else f"{lo}, {_bare_hex_digits(v)}")
         return [("legacy right", r, True) for r in (f"{lo} to {hi}", f"[{lo}, {hi}]", f"lowest {lo}, highest {hi}", f"{lo}, {hi}")] + [
-            ("legacy wrong", r, False) for r in (f"{hi}, {lo}", f"({lo}, {hi})", f"x > {lo} and x < {hi}", f"{lo + 1} to {hi - 1}", f"{lo}")]
+            ("legacy wrong", r, False) for r in wrong]
     a, b = nums[0][0], nums[1][0]                                        # magic, lcg, rotate: two values in the order of the question
     unit = " rounds" if kind == "lcg" else " bits" if kind == "rotate" else ""
-    return [("legacy right", r, True) for r in (f"{acc[0][0]}, {b}", f"0x{a:x}, {b}", f"{a} and {b}{unit if unit != ' bits' else ''}", f"{a}; {b}")] + [
-        ("legacy wrong", r, False) for r in (f"{b}, {acc[0][0]}", f"{acc[0][0]}, {b + 1}", f"{acc[0][0]}", f"{b}", f"{acc[0][0]} or {b}")]
+    first_is_hex = bases[:1] == ["hex"]
+    A = f"0x{a:x}" if first_is_hex else str(a)
+    wrong = [f"{b}, {acc[0][0]}", f"{acc[0][0]}, {b + 1}", f"{acc[0][0]}", f"{b}", f"{acc[0][0]} or {b}"]
+    for gi, v in enumerate((a, b)):                                      # B1: the bare hex digits of a decimal group
+        if not (gi == 0 and first_is_hex) and v > 9 and _bare_hex_digits(v) != str(v):
+            wrong.append(f"{_bare_hex_digits(v)}, {b}" if gi == 0 else f"{acc[0][0]}, {_bare_hex_digits(v)}")
+    if first_is_hex:
+        digits = f"{a:08x}"
+        if digits.isdigit():                                              # B1b: the digits of an all-digit hex constant, read as decimal
+            wrong += [f"0x{int(digits):x}, {b}", f"{int(digits)}, {b}", f"{digits}, {b}"]
+        if int(str(a), 16) != a:
+            wrong.append(f"{a}, {b}")                                     # m2: the decimal value of a constant asked in hex
+    return [("legacy right", r, True) for r in (f"{acc[0][0]}, {b}", f"0x{a:x}, {b}", f"{A} and {b}{unit if unit != ' bits' else ''}", f"{A}; {b}")] + [
+        ("legacy wrong", r, False) for r in wrong]
 
 
 def lead_in_attacks(t) -> list:

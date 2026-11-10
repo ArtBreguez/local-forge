@@ -74,7 +74,8 @@ class M1(unittest.TestCase):
             self.assertFalse(S(r, self.t), r)
 
     def test_names(self):
-        bb = {"score": "tokens", "accept": [["bbb", "bbh"]], "cand": "[bhx]{2,}", "kind": "fsm", "variant": "table_input"}
+        bb = {"score": "tokens", "accept": [["bbb", "bbh"]], "cand": "[bhx]{2,}", "kind": "fsm", "variant": "table_input",
+              "question": "Give a shortest input string (letters only) for which proc returns 7."}
         for r in ("bbb", "b b b", "b, b, b", "Input: bbb", "The input is bbb.", "bbb bbh", '"bbb"'):
             self.assertTrue(S(r, bb), r)
         for r in ("bbb or bbh", "not bbb", "bbb, hhh", "bb", "bbbb", "xbbb", "bbb?", "b b b b", "bbb.bbh", "b b b h h h"):
@@ -194,7 +195,7 @@ class M3Context(unittest.TestCase):
             self.assertFalse(S(r, self.tea), r)
 
     def test_a_number_the_question_states_is_allowed_beside_a_right_answer(self):
-        for r in ("RC4, 11 bytes (88 bits)", "RC4, 11 (88 bits)", "RC4: 11 bytes", "Key length: RC4, 11 bytes", "RC4 cipher, 11 bytes", "It is the RC4 cipher, 11 bytes."):
+        for r in ("RC4, 11 bytes (88 bits)", "RC4, 11 (88 bits)", "RC4: 11 bytes", "Key: RC4, 11 bytes", "RC4 cipher, 11 bytes", "It is the RC4 cipher, 11 bytes."):
             self.assertTrue(S(r, self.cip), r)
         for r in ("TEA, encrypt, 48 (128-bit key)", "TEA, encrypt, 48 iterations (a 128-bit key)", "TEA, encrypt, 48 (an 8-byte block)", "TEA, encrypt, 48 (128 bits)",
                   "TEA, encrypt, 48 rounds (32-bit)"):
