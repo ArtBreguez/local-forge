@@ -109,6 +109,11 @@ STRUCTURE = re.compile(
     r"again and again|registers?|local|inlined?|immediates?|pseudocode|decompil\w+|opcodes? handler|handlers?|cases?)\b", re.I)
 
 
+def claims_of(key: str, i: int) -> tuple:
+    """The names of the claims that sentence `i` of template `key` makes."""
+    return TABLE[key][i]
+
+
 def applicable(key: str, f: dict) -> range:
     """The sentences of template `key` that can be rendered for a task with facts `f` (pktsum: the set of the question that was asked)."""
     if key.startswith("pktsum/"):

@@ -96,8 +96,8 @@ OFFSET = ("{off:#x}", "Offset {off:#x}", "The offset is {off:#x}.", "byte offset
 # ---- structs: the offsets and sizes of the x86-64 layout model ----------------------------------------------------------------------
 
 @spec("structs/array_stride", ("{n} bytes", "{n}", "The record size is {n} bytes.", "Size: {n} bytes"),
-      ("Each record that proc reads is {n} bytes long, so consecutive records start {n} bytes apart.",
-       "proc reads its input as a sequence of records of {n} bytes each.",
+      ("A record that proc reads is {n} bytes long, so consecutive records start {n} bytes apart.",
+       "proc reads its input as a sequence of records of {n} bytes.",
        "The distance between a field of one record and the same field of the next record is {n} bytes."))
 def _(t):
     return {"n": _val(t["accept"][0])}
@@ -105,7 +105,7 @@ def _(t):
 
 @spec("structs/field_read", OFFSET,
       ("Once its flag field is non-zero, proc returns the field at byte offset {off:#x} of the structure, plus a constant.",
-       "The value that proc returns is the field at byte offset {off:#x}, plus a constant, whenever the flag field is non-zero.",
+       "The value that proc returns is the field at byte offset {off:#x}, plus a constant, when the flag field is non-zero.",
        "The field at byte offset {off:#x} of the structure is read by proc and, with a constant added, returned for a non-zero flag field."))
 def _(t):
     return {"off": _val(t["accept"][0])}
@@ -121,8 +121,8 @@ def _(t):
 
 @spec("structs/alloc_size", ("{n} bytes", "{n}", "The structure is {n} bytes.", "Size: {n} bytes"),
       ("proc allocates memory for a structure of {n} bytes.",
-       "Each structure that proc allocates is {n} bytes long, whether it allocates a single structure or several.",
-       "The memory that proc allocates is made of structures of {n} bytes each."))
+       "A structure that proc allocates is {n} bytes long, whether it allocates a single structure or several.",
+       "The memory that proc allocates is made of structures of {n} bytes."))
 def _(t):
     return {"n": _val(t["accept"][0])}
 
@@ -136,9 +136,9 @@ def _(t):
 
 
 @spec("structs/linked_next", OFFSET,
-      ("proc follows the pointer at byte offset {off:#x} of each node to reach the next node of the list, and stops at a node whose pointer is NULL.",
+      ("proc follows the pointer at byte offset {off:#x} of a node to reach the next node of the list, and stops at a node whose pointer is NULL.",
        "The pointer to the next node is at byte offset {off:#x} of a node, and the list ends where that pointer is NULL.",
-       "Each node leads to its successor through the pointer stored at byte offset {off:#x}."))
+       "A node leads to its successor through the pointer stored at byte offset {off:#x}."))
 def _(t):
     return {"off": _val(t["accept"][0])}
 
@@ -180,8 +180,8 @@ def _(t):
 
 
 @spec("fsm/opcode_count", ("{n}", "{n} opcodes", "It is {n}.", "{n} cases"),
-      ("proc handles {n} different opcodes, each with a result of its own, and returns {dflt} for every other value of the first argument.",
-       "Exactly {n} values of the first argument are handled by proc; any other value returns {dflt}.",
+      ("proc handles {n} different opcodes, each with a result of its own, and returns {dflt} for the other values of the first argument.",
+       "Exactly {n} values of the first argument are handled by proc; the other values return {dflt}.",
        "proc tells {n} different opcodes apart and gives {dflt} for the rest."),
       consts=("dflt",))
 def _(t):
@@ -295,23 +295,23 @@ def _enc_facts(t):
     return f
 
 
-_ENC_BITS_E = ("Every {gin} input bytes become {gout} output characters, each chosen from an alphabet of {radix} characters.",
+_ENC_BITS_E = ("{gin} input bytes become {gout} output characters, chosen from an alphabet of {radix} characters.",
                "proc turns groups of {gin} bytes into {gout} characters of a {radix}-character alphabet.",
-               "Each output character stands for {bits} bits of the input and comes from an alphabet of {radix} characters.")
-_ENC_BITS_D = ("proc turns each input character back into its value in a {radix}-character alphabet and packs the values into bytes.",
-               "Each input character stands for {bits} bits of the decoded data, and the characters come from an alphabet of {radix} characters.",
+               "An output character stands for {bits} bits of the input and comes from an alphabet of {radix} characters.")
+_ENC_BITS_D = ("proc turns an input character back into its value in a {radix}-character alphabet and packs the values into bytes.",
+               "An input character stands for {bits} bits of the decoded data, and the characters come from an alphabet of {radix} characters.",
                "The decoded bytes are packed from the values of characters of a {radix}-character alphabet, {bits} bits per character.")
 spec("encoding/base64_encode", _ENC_HEADS, _ENC_BITS_E)(_enc_facts)
 spec("encoding/base64_decode", _ENC_HEADS, _ENC_BITS_D)(_enc_facts)
 spec("encoding/base32_encode", _ENC_HEADS, _ENC_BITS_E)(_enc_facts)
 spec("encoding/base32_decode", _ENC_HEADS, _ENC_BITS_D)(_enc_facts)
 spec("encoding/base58_encode", _ENC_HEADS,
-     ("proc converts its input to base {radix} and writes each digit as a single character of an alphabet of {radix} characters.",
-      "The output is the input written in radix {radix}, and every digit is a character of an alphabet of {radix} characters.",
-      "The result has digits of radix {radix}, each of them a character of an alphabet of {radix} characters."))(_enc_facts)
+     ("proc converts its input to base {radix} and writes the digits as single characters of an alphabet of {radix} characters.",
+      "The output is the input written in radix {radix}, and the digits are characters of an alphabet of {radix} characters.",
+      "The result has digits of radix {radix}, which are characters of an alphabet of {radix} characters."))(_enc_facts)
 spec("encoding/base58_decode", _ENC_HEADS,
      ("proc reads its input as a number written in base {radix}, a single character of an alphabet of {radix} characters per digit, and returns the bytes of that number.",
-      "Each input character is a digit of radix {radix}, taken from an alphabet of {radix} characters.",
+      "An input character is a digit of radix {radix}, taken from an alphabet of {radix} characters.",
       "The decoded number has the characters of the input as its digits in radix {radix}, and the characters come from an alphabet of {radix} characters."))(_enc_facts)
 
 
@@ -328,7 +328,7 @@ for _b in ("base64", "base32", "base58"):
     for _d in ("encode", "decode"):
         spec(f"encoding/{_b}_{_d}#alphabet", _ALPHA_HEADS,
              ("This is the alphabet of {alen} characters that the {agent} uses, in index order starting at the value 0.",
-              "The {agent} works with this string of {alen} characters as its alphabet: its first character stands for the value 0 and each next character for the next value.",
+              "The {agent} works with this string of {alen} characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.",
               "The {alen} characters are listed in index order: the first character stands for the value 0."))(_alpha)
 
 
@@ -377,7 +377,7 @@ _END_S = ("proc accepts the packet when its last two bytes hold the checksum as 
           "The checksum that the function accepts is stored {e}-endian, with the {first} byte first.")
 _START_S = ("The checksummed range starts at byte offset {n} of the packet and runs up to the stored checksum.",
             "The bytes before offset {n} do not take part in the checksum.",
-            "Changing any byte of the packet from offset {n} up to the stored checksum makes the checksum fail.")
+            "The bytes from offset {n} up to the stored checksum are the bytes that the checksum is computed over.")
 _LEN_S = ("The length byte is read from offset {n} of the packet, and the checksum follows that many payload bytes.",
           "The payload length is stored in the byte at offset {n}, and the checksum comes right after the payload.",
           "The byte at offset {n} says how many bytes the checksum covers, and the checksum is stored behind them.")
@@ -410,12 +410,12 @@ def _(t):
 
 spec("bounds/index_limit", _BOUND_HEADS,
      ("proc returns -1 for every index outside the range from {lo} to {hi}, and a non-negative value for every index inside it.",
-      "The indexes from {lo} to {hi} are accepted: for them proc returns a byte value, and any other index gives -1.",
+      "The indexes from {lo} to {hi} are accepted: for them proc returns a byte value, and the other indexes give -1.",
       "The smallest index for which proc returns something other than -1 is {lo}, and the largest is {hi}."))(_bounds)
 spec("bounds/clamp", _BOUND_HEADS,
      ("proc limits its argument to the interval from {lo} to {hi}, both included.",
       "A value below {lo} becomes {lo} and a value above {hi} becomes {hi}.",
-      "The result always lies between the lower bound {lo} and the upper bound {hi}."))(_bounds)
+      "The result lies between the lower bound {lo} and the upper bound {hi}."))(_bounds)
 
 
 @spec("bounds/loop_iterations", ("{n}", "It returns {n}.", "returns {n}", "Answer: {n}"),
@@ -497,7 +497,7 @@ def _(t):
 
 
 @spec("multi/decode_secret", EXACT,
-      ("proc returns 1 when its input is exactly this string of {len} characters, and for any other input it does not.",
+      ("proc returns 1 when its input is exactly this string of {len} characters, and for other inputs it does not.",
        "Only this string of {len} characters makes proc return 1.",
        "The secret that proc accepts has {len} characters, and it is this string."))
 def _(t):
@@ -564,8 +564,8 @@ def _(t):
 
 
 @spec("lcg", ("{a}, {r}", "{a} and {r} rounds", "{a}, {r} rounds", "{a}; {r} rounds"),
-      ("The seed is multiplied by {a} in each of {r} rounds, and the result is masked with 0x{mask:08x} after each round.",
-       "Each of the {r} rounds computes a new seed from the previous seed with the multiplier {a} and keeps the low bits with the mask 0x{mask:08x}.",
+      ("The seed goes through {r} rounds of a linear congruential step with the multiplier {a}, masked with 0x{mask:08x}.",
+       "A new seed is computed from the previous seed in {r} rounds, with the multiplier {a} and the mask 0x{mask:08x} that keeps the low bits.",
        "This is a linear congruential generator with the multiplier {a}, applied {r} times."),
       consts=("mask",))
 def _(t):
@@ -582,7 +582,7 @@ _HASH_INIT = {"fnv": 2166136261, "djb2": 5381, "sdbm": 0, "murmur": 0x9747b28c} 
 @spec("hash", ("{name}, 0x{c:08x}", "{name} and 0x{c:08x}", "It is {name}, 0x{c:08x}.", "{name}: 0x{c:08x}"),
       ("The hash starts from the value {init:#x}, and the result is XORed with 0x{c:08x} before it is returned.",
        "The hash is {name}, and the final step XORs the result with the constant 0x{c:08x}.",
-       "For every input string, the function returns the hash of the string XORed with 0x{c:08x}."),
+       "The function returns the hash of its input string XORed with 0x{c:08x}."),
       consts=("init",))
 def _(t):
     stem = t["accept"][0][0]
