@@ -24,7 +24,9 @@ from .test_rea_round9_data import literal_lines
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import core, families, sft, survive, verify, visible  # noqa: E402
+from distill.backends import modal_sample  # noqa: E402
+from rea_bench import core, families, survive, verify, visible  # noqa: E402
+from .rea_bound import sft  # noqa: E402
 
 CLANG = bool(shutil.which("clang"))
 
@@ -279,7 +281,7 @@ class LengthRule(ModalCase):
     def test_the_sampling_servers_tokenizer_is_asked_for_the_text_without_special_tokens(self):
         """L09: the training run tokenizes the text and adds the template itself, so the count must not add BOS/EOS on top (`add_special` false)."""
         with mock.patch("urllib.request.urlopen", return_value=io.BytesIO(json.dumps({"tokens": [1, 2, 3]}).encode())) as urlopen:
-            self.assertEqual(self.data._server_token_count("a b c"), 3)
+            self.assertEqual(modal_sample._server_token_count("a b c"), 3)
         req = urlopen.call_args[0][0]
         self.assertEqual(req.full_url, "http://127.0.0.1:8080/tokenize")
         self.assertEqual(json.loads(req.data), {"content": "a b c", "add_special": False})

@@ -1,0 +1,171 @@
+{
+ "sampling": {
+  "False": {
+   "temperature": 0.7
+  },
+  "False-over": {
+   "temperature": 0.5,
+   "top_p": 0.9
+  },
+  "True": {
+   "temperature": 0.6,
+   "top_p": 0.95,
+   "top_k": 20,
+   "min_p": 0.0
+  },
+  "True-over": {
+   "temperature": 0.5,
+   "top_p": 0.9,
+   "top_k": 20,
+   "min_p": 0.0
+  }
+ },
+ "max_tokens": {
+  "False-False": 300,
+  "True-False": 768,
+  "True-True": 4096
+ },
+ "slot": {
+  "768": 8192,
+  "2048": 8192,
+  "4096": 8192,
+  "6000": 10240,
+  "8192": 12288
+ },
+ "fits": {
+  "768": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "2048": [
+   true,
+   true,
+   true,
+   true
+  ],
+  "4096": [
+   true,
+   true,
+   false,
+   false
+  ],
+  "6000": [
+   true,
+   true,
+   true,
+   false
+  ],
+  "8192": [
+   true,
+   true,
+   false,
+   false
+  ]
+ },
+ "errors": {
+  "{\"temperature\": 3}": "sampling out of range: {'temperature': 3} (temperature 0-2, top_p in (0, 1], top_k >= 0 (0 = off), min_p in [0, 1))",
+  "{\"top_k\": -2}": "sampling out of range: {'temperature': 0.7, 'top_k': -2} (temperature 0-2, top_p in (0, 1], top_k >= 0 (0 = off), min_p in [0, 1))",
+  "greedy": "a thinking run is never greedy ({'temperature': 0, 'top_p': 0.95, 'top_k': 20, 'min_p': 0.0}): temperature 0 or top_k 1 makes the reasoning loop and repeat; Qwen3's recommendation is {'temperature': 0.6, 'top_p': 0.95, 'top_k': 20, 'min_p': 0.0}",
+  "quota ''": "--quota is empty: write kind=N[,kind=N...], or leave it out to sample every decompiled task",
+  "quota 'crc'": "bad --quota entry 'crc': write kind=N with N a positive integer, e.g. --quota crc=250,structs=100",
+  "quota 'crc=0'": "bad --quota entry 'crc=0': write kind=N with N a positive integer, e.g. --quota crc=250,structs=100",
+  "quota 'crc=1,crc=2'": "--quota names 'crc' twice",
+  "quota 'x=1'": "--quota names 'x', which is no task kind; known: crc, structs"
+ },
+ "project": {
+  "tasks": 120,
+  "k": 4,
+  "replies": 480,
+  "max_tokens": 768,
+  "usd_per_h": 1.95,
+  "call_hours": 5.0,
+  "low": {
+   "s_per_reply": 5.18,
+   "gpu_hours": 0.69,
+   "usd": 1.35
+  },
+  "expected": {
+   "s_per_reply": 6.73,
+   "gpu_hours": 0.9,
+   "usd": 1.75
+  },
+  "high": {
+   "s_per_reply": 8.28,
+   "gpu_hours": 1.1,
+   "usd": 2.15
+  },
+  "worst": {
+   "s_per_reply": 15.9,
+   "gpu_hours": 2.12,
+   "usd": 4.14
+  },
+  "calls": 1
+ },
+ "cost_line": "projected cost: 120 tasks x k=4 = 480 replies, 6.73 s of GPU each = 0.9 GPU-h on one L40S = about US$1.75 at US$1.95/h (replies 5x to 8x as long as phase A's: 0.69-1.1 GPU-h, US$1.35-US$2.15; worst case, every reply runs to max_tokens=768: 2.12 GPU-h, US$4.14). Assumes phase A's measured 1.04 s per reply (5.5 GPU-h for 19,122 replies) for a reply of ~50 tokens, scaled by length (an overestimate: prefill does not scale); GPU only, no decompile. A sampler call times out after 5 h: this takes ~1 call(s), each after the first with --resume. Tasks: 120 tasks.",
+ "budget_warning": [
+  null,
+  null,
+  "WARNING: the expected cost US$58.33 is over the budget US$30.00: lower --quota or --k, or raise --budget-usd on purpose"
+ ],
+ "thinking": {
+  "project": {
+   "tasks": 40,
+   "k": 2,
+   "replies": 80,
+   "max_tokens": 4096,
+   "usd_per_h": 1.95,
+   "call_hours": 5.0,
+   "low": {
+    "s_per_reply": 5.18,
+    "gpu_hours": 0.12,
+    "usd": 0.22
+   },
+   "expected": {
+    "s_per_reply": 6.73,
+    "gpu_hours": 0.15,
+    "usd": 0.29
+   },
+   "high": {
+    "s_per_reply": 8.28,
+    "gpu_hours": 0.18,
+    "usd": 0.36
+   },
+   "worst": {
+    "s_per_reply": 84.82,
+    "gpu_hours": 1.88,
+    "usd": 3.68
+   },
+   "calls": 1
+  },
+  "line": "projected cost (thinking pilot): 40 tasks x k=2 = 80 replies. No estimate: the 5x-8x length assumption is for visible reasoning, and how long this model reasons is not measured. Worst case, every reply runs to max_tokens=4096: 1.88 GPU-h on one L40S = about US$3.68 at US$1.95/h (an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. The prompt and the reply share one 8,192-token slot of the server (a prompt over 4,096 tokens is not asked and is counted). A sampler call times out after 5 h: the worst case takes ~1 call(s), each after the first with --resume. Tasks: 40 tasks.",
+  "warning": [
+   null,
+   "WARNING: the worst case US$73.51 of this thinking run is over the budget US$30.00; the expected cost is not known: lower --quota, --k or --max-tokens, or raise --budget-usd on purpose",
+   "WARNING: the worst case US$735.15 of this thinking run is over the budget US$30.00; the expected cost is not known: lower --quota, --k or --max-tokens, or raise --budget-usd on purpose"
+  ]
+ },
+ "sampling_record": {
+  "thinking": true,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.0,
+  "max_tokens": 4096,
+  "seed_base": 1234,
+  "slot_context": 8192,
+  "parallel": 4
+ },
+ "quota": {
+  "crc": 250,
+  "structs": 100
+ },
+ "apply_quota": [
+  "crc-7-0001",
+  "structs-7-0005",
+  "xor-key-7-0000",
+  "structs-7-0000"
+ ],
+ "prompt_sha": "9bc64bff93f5db79"
+}

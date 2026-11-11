@@ -1,10 +1,10 @@
-"""Kaggle GPU kernel: a teacher model answers REA tasks, and `python3 tools/rea-bench kaggle-score` turns the replies into SFT records (tools/kaggle/README.md has the commands).
+"""Kaggle GPU kernel: a teacher model answers a subject's tasks, and `python3 -m distill.score_replies` (REA: `python3 tools/rea-bench kaggle-score`) turns the replies into SFT records (tools/kaggle/README.md has the commands).
 
-Standard library only (Kaggle's image has no copy of rea_bench): it is pushed as the kernel's `run.py` by `tools/kaggle/build_tasks.py`. Everything that decides what is asked and what is stored is a
-function of this file, so tests/test_rea_kaggle_kit.py runs it against a stub server and checks it against `rea_bench.reasoning` (the thinking sampling, the stored text, the prompt fingerprint).
+Standard library only (Kaggle's image has no copy of the pipeline): it is pushed as the kernel's `run.py` by `build_tasks.py` (next to this file; `tools/kaggle/build_tasks.py` is its REA wrapper). Everything that decides what is asked and what is stored is a
+function of this file, so tests/test_rea_kaggle_kit.py runs it against a stub server and checks it against `distill.traces` and `distill.config` (the thinking sampling, the stored text, the prompt fingerprint).
 
 What it does, in order:
-  1. reads `tasks.jsonl` ({id, kind, messages}: the exact messages of `reasoning.messages(task)`, SYSTEM_REASONING + the user message) and `config.json` from the attached dataset;
+  1. reads `tasks.jsonl` ({id, kind, messages}: the exact messages of `domain.messages(task, mode)`) and `config.json` from the attached dataset;
   2. gets a llama-server with CUDA for the T4 (sm_75): a prebuilt one from an attached dataset (the `llama-bin` folder a previous run saved), else it builds llama.cpp (about 30 minutes;
      the libcuda stub fix: Kaggle has the driver library but not where cmake looks, so its path is passed as CUDA_cuda_driver_LIBRARY);
   3. downloads the GGUF, starts `llama-server --jinja --reasoning-format deepseek` over the two T4 (layer split), `slots` requests in flight, `ctx_per_slot` tokens each;
@@ -34,10 +34,10 @@ import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 
-# The thinking settings and the length rules are the ones of rea_bench/reasoning.py (THINKING_SAMPLING, DEFAULT_SAMPLING, DEFAULT_THINKING_MAX_TOKENS, ...); tests/test_rea_kaggle_kit.py pins every copy.
+# The thinking settings and the length rules are the ones of distill/config.py (THINKING_SAMPLING, DEFAULT_SAMPLING, DEFAULT_THINKING_MAX_TOKENS, ...); tests/test_rea_kaggle_kit.py pins every copy.
 THINKING_SAMPLING = {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}      # Qwen3's recommended thinking settings
 DEFAULT_SAMPLING = {"temperature": 0.7}                                                 # a run that does not think: phase A's
-LENGTH_OVERHEAD = 32                                                                    # tokens the chat template adds around the messages (rea_bench.sft.LENGTH_OVERHEAD)
+LENGTH_OVERHEAD = 32                                                                    # tokens the chat template adds around the messages (distill.records.LENGTH_OVERHEAD)
 SAMPLING_KEYS = tuple(THINKING_SAMPLING)
 
 DEFAULTS = {
@@ -95,7 +95,7 @@ def request_body(cfg: dict, messages: list, i: int) -> dict:
 
 
 def prompt_sha(messages: list) -> str:
-    """rea_bench.reasoning.prompt_sha: a fingerprint of the messages that were sent, written with every line so that `kaggle-score` can refuse a reply to another prompt."""
+    """distill.outputs.prompt_sha: a fingerprint of the messages that were sent, written with every line so that the scorer can refuse a reply to another prompt."""
     return hashlib.sha256(json.dumps(messages, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:16]
 
 

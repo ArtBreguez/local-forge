@@ -3,8 +3,8 @@
 Why: answer quality depends on the model file and the sampling, not on the card, so the A/B between models (and pass@k for best-of-N)
 can run on rented GPUs while the host keeps measuring speed and the agent. Speed numbers from here mean nothing for the host.
 
-    modal run tools/modal_qbench.py                    # every model in MODELS, both arms
-    modal run tools/modal_qbench.py --only heretic-9b  # one model
+    modal run tools/modal/modal_qbench.py                    # every model in MODELS, both arms
+    modal run tools/modal/modal_qbench.py --only heretic-9b  # one model
 
 Arms (03-agent/quality/run_quality.py, unchanged):
   greedy : temperature 0, seed 1234, thinking off, 1 sample  (= phase 3 arm A)
@@ -17,33 +17,22 @@ from __future__ import annotations
 import json
 import pathlib
 import subprocess
+import sys
 import time
 
 import modal
 
 _HERE = pathlib.Path(__file__).resolve()
 ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
+if (ROOT / "distill").is_dir() and str(ROOT) not in sys.path:      # the pipeline's package; inside the container it is mounted at /root/distill
+    sys.path.insert(0, str(ROOT))
+from distill.teachers import TEACHERS  # noqa: E402  (stdlib-only)
 # ghcr no longer publishes per-build CUDA tags (b12207 has none); pinned by digest, version printed in the meta line
 LLAMA_TAG = "server-cuda12"
 LLAMA_DIGEST = "sha256:f28803153f5ce48a6c8deaef694f58fca09b5dd79baca75fced670ec23b7bd71"
 
-# (name, repo, file, gpu, sha256 or None) -- licences: all Apache-2.0 except the heretic merge (see its card)
-MODELS = [
-    ("heretic-9b", "mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-i1-GGUF",
-     "DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic.i1-IQ4_XS.gguf", "L4"),
-    ("qwen35-9b", "unsloth/Qwen3.5-9B-GGUF", "Qwen3.5-9B-IQ4_XS.gguf", "L4"),
-    ("qwen25-coder-7b", "Qwen/Qwen2.5-Coder-7B-Instruct-GGUF", "qwen2.5-coder-7b-instruct-q4_k_m.gguf", "L4"),
-    ("qwen3-coder-30b-a3b", "unsloth/Qwen3-Coder-30B-A3B-Instruct-GGUF", "Qwen3-Coder-30B-A3B-Instruct-UD-IQ3_XXS.gguf", "L4"),
-    ("qwen35-35b-a3b", "unsloth/Qwen3.5-35B-A3B-GGUF", "Qwen3.5-35B-A3B-UD-IQ3_XXS.gguf", "L4"),
-    ("qwen35-27b", "unsloth/Qwen3.5-27B-GGUF", "Qwen3.5-27B-Q4_K_M.gguf", "L40S"),
-    # heretic (abliterated, uncensored) versions of the bigger models, same quant sizes as above where possible
-    ("qwen35-35b-a3b-heretic", "mradermacher/Qwen3.5-35B-A3B-heretic-i1-GGUF", "Qwen3.5-35B-A3B-heretic.i1-IQ3_XXS.gguf", "L4"),
-    ("qwen35-35b-a3b-heretic-v2", "mradermacher/Qwen3.5-35B-A3B-heretic-v2-i1-GGUF", "Qwen3.5-35B-A3B-heretic-v2.i1-IQ3_XXS.gguf", "L4"),
-    ("codeforge-27b-heretic-iq3", "mradermacher/Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic-i1-GGUF",
-     "Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-IQ3_XXS.gguf", "L40S"),
-    ("codeforge-27b-heretic-q4", "mradermacher/Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic-i1-GGUF",
-     "Qwen3.8-27B-CodeForge-3xMerge-UNCENSORED-heretic.i1-Q4_K_M.gguf", "L40S"),
-]
+# The teacher list is `distill/teachers.py` (one list for the Modal sampler, these benchmarks and the Kaggle kernel); `MODELS` is its name here: tuples (name, repo, file, gpu).
+MODELS = TEACHERS
 ARMS = {
     "greedy": ["--temperature", "0", "--seed", "1234", "--samples", "1"],
     "sample": ["--temperature", "0.7", "--seed", "1234", "--samples", "10"],
@@ -57,6 +46,7 @@ image = (
     .pip_install("huggingface_hub[hf_transfer]==0.36.0")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_dir(ROOT / "03-agent" / "quality", "/qbench", ignore=["__pycache__", "_ref"])
+    .add_local_python_source("distill")
 )
 models_vol = modal.Volume.from_name("lf-models", create_if_missing=True)
 app = modal.App("lf-qbench", image=image)

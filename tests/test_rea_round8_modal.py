@@ -111,13 +111,13 @@ class LoraEncode(ModalCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        sys.modules.pop("modal_lora", None)
-        import modal_lora
+        sys.modules.pop("distill.backends.modal_train", None)
+        import distill.backends.modal_train as modal_lora
         cls.lora = modal_lora
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def test_a_pair_over_the_window_is_dropped_not_cut(self):

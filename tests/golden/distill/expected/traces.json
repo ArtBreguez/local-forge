@@ -1,0 +1,6225 @@
+{
+ "verdict": {
+  "xor-key-7-0000|right": "accepted",
+  "xor-key-7-0000|restating": "accepted",
+  "xor-key-7-0000|no analysis": "accepted",
+  "xor-key-7-0000|contradiction": "accepted",
+  "xor-key-7-0000|corrected": "accepted",
+  "xor-key-7-0000|hedge": "accepted",
+  "xor-key-7-0000|wrong": "wrong",
+  "xor-key-7-0000|text after": "no_answer_line",
+  "xor-key-7-0000|no line": "no_answer_line",
+  "xor-key-7-0000|truncated": "truncated",
+  "xor-key-7-0000|think tag": "accepted",
+  "xor-key-7-0000|think open": "no_answer_line",
+  "xor-key-7-0000|error": "error",
+  "xor-key-7-0000|cjk": "accepted",
+  "xor-key-7-0000|loop": "accepted",
+  "xor-key-7-0000|bold": "accepted",
+  "xor-key-7-0000|größe": "accepted",
+  "password-7-0001|right": "accepted",
+  "password-7-0001|restating": "accepted",
+  "password-7-0001|no analysis": "accepted",
+  "password-7-0001|contradiction": "accepted",
+  "password-7-0001|corrected": "accepted",
+  "password-7-0001|hedge": "accepted",
+  "password-7-0001|wrong": "wrong",
+  "password-7-0001|text after": "no_answer_line",
+  "password-7-0001|no line": "no_answer_line",
+  "password-7-0001|truncated": "truncated",
+  "password-7-0001|think tag": "accepted",
+  "password-7-0001|think open": "no_answer_line",
+  "password-7-0001|error": "error",
+  "password-7-0001|cjk": "accepted",
+  "password-7-0001|loop": "accepted",
+  "password-7-0001|bold": "accepted",
+  "password-7-0001|größe": "accepted",
+  "magic-7-0002|right": "accepted",
+  "magic-7-0002|restating": "accepted",
+  "magic-7-0002|no analysis": "accepted",
+  "magic-7-0002|contradiction": "accepted",
+  "magic-7-0002|corrected": "accepted",
+  "magic-7-0002|hedge": "accepted",
+  "magic-7-0002|wrong": "wrong",
+  "magic-7-0002|text after": "no_answer_line",
+  "magic-7-0002|no line": "no_answer_line",
+  "magic-7-0002|truncated": "truncated",
+  "magic-7-0002|think tag": "accepted",
+  "magic-7-0002|think open": "no_answer_line",
+  "magic-7-0002|error": "error",
+  "magic-7-0002|cjk": "accepted",
+  "magic-7-0002|loop": "accepted",
+  "magic-7-0002|bold": "accepted",
+  "magic-7-0002|größe": "accepted",
+  "lcg-7-0003|right": "accepted",
+  "lcg-7-0003|restating": "accepted",
+  "lcg-7-0003|no analysis": "accepted",
+  "lcg-7-0003|contradiction": "accepted",
+  "lcg-7-0003|corrected": "accepted",
+  "lcg-7-0003|hedge": "accepted",
+  "lcg-7-0003|wrong": "wrong",
+  "lcg-7-0003|text after": "no_answer_line",
+  "lcg-7-0003|no line": "no_answer_line",
+  "lcg-7-0003|truncated": "truncated",
+  "lcg-7-0003|think tag": "accepted",
+  "lcg-7-0003|think open": "no_answer_line",
+  "lcg-7-0003|error": "error",
+  "lcg-7-0003|cjk": "accepted",
+  "lcg-7-0003|loop": "accepted",
+  "lcg-7-0003|bold": "accepted",
+  "lcg-7-0003|größe": "accepted",
+  "hash-7-0004|right": "accepted",
+  "hash-7-0004|restating": "accepted",
+  "hash-7-0004|no analysis": "accepted",
+  "hash-7-0004|contradiction": "accepted",
+  "hash-7-0004|corrected": "accepted",
+  "hash-7-0004|hedge": "accepted",
+  "hash-7-0004|wrong": "wrong",
+  "hash-7-0004|text after": "no_answer_line",
+  "hash-7-0004|no line": "no_answer_line",
+  "hash-7-0004|truncated": "truncated",
+  "hash-7-0004|think tag": "accepted",
+  "hash-7-0004|think open": "no_answer_line",
+  "hash-7-0004|error": "error",
+  "hash-7-0004|cjk": "accepted",
+  "hash-7-0004|loop": "accepted",
+  "hash-7-0004|bold": "accepted",
+  "hash-7-0004|größe": "accepted",
+  "skip-7-0005|right": "accepted",
+  "skip-7-0005|restating": "accepted",
+  "skip-7-0005|no analysis": "accepted",
+  "skip-7-0005|contradiction": "accepted",
+  "skip-7-0005|corrected": "accepted",
+  "skip-7-0005|hedge": "accepted",
+  "skip-7-0005|wrong": "wrong",
+  "skip-7-0005|text after": "no_answer_line",
+  "skip-7-0005|no line": "no_answer_line",
+  "skip-7-0005|truncated": "truncated",
+  "skip-7-0005|think tag": "accepted",
+  "skip-7-0005|think open": "no_answer_line",
+  "skip-7-0005|error": "error",
+  "skip-7-0005|cjk": "accepted",
+  "skip-7-0005|loop": "accepted",
+  "skip-7-0005|bold": "accepted",
+  "skip-7-0005|größe": "accepted",
+  "keycount-7-0006|right": "accepted",
+  "keycount-7-0006|restating": "accepted",
+  "keycount-7-0006|no analysis": "accepted",
+  "keycount-7-0006|contradiction": "accepted",
+  "keycount-7-0006|corrected": "accepted",
+  "keycount-7-0006|hedge": "accepted",
+  "keycount-7-0006|wrong": "wrong",
+  "keycount-7-0006|text after": "no_answer_line",
+  "keycount-7-0006|no line": "no_answer_line",
+  "keycount-7-0006|truncated": "truncated",
+  "keycount-7-0006|think tag": "accepted",
+  "keycount-7-0006|think open": "no_answer_line",
+  "keycount-7-0006|error": "error",
+  "keycount-7-0006|cjk": "accepted",
+  "keycount-7-0006|loop": "accepted",
+  "keycount-7-0006|bold": "accepted",
+  "keycount-7-0006|größe": "accepted",
+  "alphabet-7-0007|right": "accepted",
+  "alphabet-7-0007|restating": "accepted",
+  "alphabet-7-0007|no analysis": "accepted",
+  "alphabet-7-0007|contradiction": "accepted",
+  "alphabet-7-0007|corrected": "accepted",
+  "alphabet-7-0007|hedge": "accepted",
+  "alphabet-7-0007|wrong": "wrong",
+  "alphabet-7-0007|text after": "no_answer_line",
+  "alphabet-7-0007|no line": "no_answer_line",
+  "alphabet-7-0007|truncated": "truncated",
+  "alphabet-7-0007|think tag": "accepted",
+  "alphabet-7-0007|think open": "no_answer_line",
+  "alphabet-7-0007|error": "error",
+  "alphabet-7-0007|cjk": "accepted",
+  "alphabet-7-0007|loop": "accepted",
+  "alphabet-7-0007|bold": "accepted",
+  "alphabet-7-0007|größe": "accepted",
+  "rotate-7-0008|right": "accepted",
+  "rotate-7-0008|restating": "accepted",
+  "rotate-7-0008|no analysis": "accepted",
+  "rotate-7-0008|contradiction": "accepted",
+  "rotate-7-0008|corrected": "accepted",
+  "rotate-7-0008|hedge": "accepted",
+  "rotate-7-0008|wrong": "wrong",
+  "rotate-7-0008|text after": "no_answer_line",
+  "rotate-7-0008|no line": "no_answer_line",
+  "rotate-7-0008|truncated": "truncated",
+  "rotate-7-0008|think tag": "accepted",
+  "rotate-7-0008|think open": "no_answer_line",
+  "rotate-7-0008|error": "error",
+  "rotate-7-0008|cjk": "accepted",
+  "rotate-7-0008|loop": "accepted",
+  "rotate-7-0008|bold": "accepted",
+  "rotate-7-0008|größe": "accepted",
+  "threshold-7-0009|right": "accepted",
+  "threshold-7-0009|restating": "accepted",
+  "threshold-7-0009|no analysis": "accepted",
+  "threshold-7-0009|contradiction": "accepted",
+  "threshold-7-0009|corrected": "accepted",
+  "threshold-7-0009|hedge": "accepted",
+  "threshold-7-0009|wrong": "wrong",
+  "threshold-7-0009|text after": "no_answer_line",
+  "threshold-7-0009|no line": "no_answer_line",
+  "threshold-7-0009|truncated": "truncated",
+  "threshold-7-0009|think tag": "accepted",
+  "threshold-7-0009|think open": "no_answer_line",
+  "threshold-7-0009|error": "error",
+  "threshold-7-0009|cjk": "accepted",
+  "threshold-7-0009|loop": "accepted",
+  "threshold-7-0009|bold": "accepted",
+  "threshold-7-0009|größe": "accepted",
+  "xor-key-7-0010|right": "accepted",
+  "xor-key-7-0010|restating": "accepted",
+  "xor-key-7-0010|no analysis": "accepted",
+  "xor-key-7-0010|contradiction": "accepted",
+  "xor-key-7-0010|corrected": "accepted",
+  "xor-key-7-0010|hedge": "accepted",
+  "xor-key-7-0010|wrong": "wrong",
+  "xor-key-7-0010|text after": "no_answer_line",
+  "xor-key-7-0010|no line": "no_answer_line",
+  "xor-key-7-0010|truncated": "truncated",
+  "xor-key-7-0010|think tag": "accepted",
+  "xor-key-7-0010|think open": "no_answer_line",
+  "xor-key-7-0010|error": "error",
+  "xor-key-7-0010|cjk": "accepted",
+  "xor-key-7-0010|loop": "accepted",
+  "xor-key-7-0010|bold": "accepted",
+  "xor-key-7-0010|größe": "accepted",
+  "password-7-0011|right": "accepted",
+  "password-7-0011|restating": "accepted",
+  "password-7-0011|no analysis": "accepted",
+  "password-7-0011|contradiction": "accepted",
+  "password-7-0011|corrected": "accepted",
+  "password-7-0011|hedge": "accepted",
+  "password-7-0011|wrong": "wrong",
+  "password-7-0011|text after": "no_answer_line",
+  "password-7-0011|no line": "no_answer_line",
+  "password-7-0011|truncated": "truncated",
+  "password-7-0011|think tag": "accepted",
+  "password-7-0011|think open": "no_answer_line",
+  "password-7-0011|error": "error",
+  "password-7-0011|cjk": "accepted",
+  "password-7-0011|loop": "accepted",
+  "password-7-0011|bold": "accepted",
+  "password-7-0011|größe": "accepted",
+  "structs-7-0005|right": "accepted",
+  "structs-7-0005|restating": "accepted",
+  "structs-7-0005|no analysis": "accepted",
+  "structs-7-0005|contradiction": "accepted",
+  "structs-7-0005|corrected": "accepted",
+  "structs-7-0005|hedge": "accepted",
+  "structs-7-0005|wrong": "wrong",
+  "structs-7-0005|text after": "no_answer_line",
+  "structs-7-0005|no line": "no_answer_line",
+  "structs-7-0005|truncated": "truncated",
+  "structs-7-0005|think tag": "accepted",
+  "structs-7-0005|think open": "no_answer_line",
+  "structs-7-0005|error": "error",
+  "structs-7-0005|cjk": "accepted",
+  "structs-7-0005|loop": "accepted",
+  "structs-7-0005|bold": "accepted",
+  "structs-7-0005|größe": "accepted",
+  "structs-7-0000|right": "accepted",
+  "structs-7-0000|restating": "accepted",
+  "structs-7-0000|no analysis": "accepted",
+  "structs-7-0000|contradiction": "accepted",
+  "structs-7-0000|corrected": "accepted",
+  "structs-7-0000|hedge": "accepted",
+  "structs-7-0000|wrong": "wrong",
+  "structs-7-0000|text after": "no_answer_line",
+  "structs-7-0000|no line": "no_answer_line",
+  "structs-7-0000|truncated": "truncated",
+  "structs-7-0000|think tag": "accepted",
+  "structs-7-0000|think open": "no_answer_line",
+  "structs-7-0000|error": "error",
+  "structs-7-0000|cjk": "accepted",
+  "structs-7-0000|loop": "accepted",
+  "structs-7-0000|bold": "accepted",
+  "structs-7-0000|größe": "accepted",
+  "pktsum-7-0000|right": "accepted",
+  "pktsum-7-0000|restating": "accepted",
+  "pktsum-7-0000|no analysis": "accepted",
+  "pktsum-7-0000|contradiction": "accepted",
+  "pktsum-7-0000|corrected": "accepted",
+  "pktsum-7-0000|hedge": "accepted",
+  "pktsum-7-0000|wrong": "wrong",
+  "pktsum-7-0000|text after": "no_answer_line",
+  "pktsum-7-0000|no line": "no_answer_line",
+  "pktsum-7-0000|truncated": "truncated",
+  "pktsum-7-0000|think tag": "accepted",
+  "pktsum-7-0000|think open": "no_answer_line",
+  "pktsum-7-0000|error": "error",
+  "pktsum-7-0000|cjk": "accepted",
+  "pktsum-7-0000|loop": "accepted",
+  "pktsum-7-0000|bold": "accepted",
+  "pktsum-7-0000|größe": "accepted",
+  "crc-7-0001|right": "accepted",
+  "crc-7-0001|restating": "accepted",
+  "crc-7-0001|no analysis": "accepted",
+  "crc-7-0001|contradiction": "accepted",
+  "crc-7-0001|corrected": "accepted",
+  "crc-7-0001|hedge": "accepted",
+  "crc-7-0001|wrong": "wrong",
+  "crc-7-0001|text after": "no_answer_line",
+  "crc-7-0001|no line": "no_answer_line",
+  "crc-7-0001|truncated": "truncated",
+  "crc-7-0001|think tag": "accepted",
+  "crc-7-0001|think open": "no_answer_line",
+  "crc-7-0001|error": "error",
+  "crc-7-0001|cjk": "accepted",
+  "crc-7-0001|loop": "accepted",
+  "crc-7-0001|bold": "accepted",
+  "crc-7-0001|größe": "accepted",
+  "cipher-7-0004|right": "accepted",
+  "cipher-7-0004|restating": "accepted",
+  "cipher-7-0004|no analysis": "accepted",
+  "cipher-7-0004|contradiction": "accepted",
+  "cipher-7-0004|corrected": "accepted",
+  "cipher-7-0004|hedge": "accepted",
+  "cipher-7-0004|wrong": "wrong",
+  "cipher-7-0004|text after": "no_answer_line",
+  "cipher-7-0004|no line": "no_answer_line",
+  "cipher-7-0004|truncated": "truncated",
+  "cipher-7-0004|think tag": "accepted",
+  "cipher-7-0004|think open": "no_answer_line",
+  "cipher-7-0004|error": "error",
+  "cipher-7-0004|cjk": "accepted",
+  "cipher-7-0004|loop": "accepted",
+  "cipher-7-0004|bold": "accepted",
+  "cipher-7-0004|größe": "accepted",
+  "bounds-7-0001|right": "accepted",
+  "bounds-7-0001|restating": "accepted",
+  "bounds-7-0001|no analysis": "accepted",
+  "bounds-7-0001|contradiction": "accepted",
+  "bounds-7-0001|corrected": "accepted",
+  "bounds-7-0001|hedge": "accepted",
+  "bounds-7-0001|wrong": "wrong",
+  "bounds-7-0001|text after": "no_answer_line",
+  "bounds-7-0001|no line": "no_answer_line",
+  "bounds-7-0001|truncated": "truncated",
+  "bounds-7-0001|think tag": "accepted",
+  "bounds-7-0001|think open": "no_answer_line",
+  "bounds-7-0001|error": "error",
+  "bounds-7-0001|cjk": "accepted",
+  "bounds-7-0001|loop": "accepted",
+  "bounds-7-0001|bold": "accepted",
+  "bounds-7-0001|größe": "accepted",
+  "encoding-7-0000|right": "accepted",
+  "encoding-7-0000|restating": "accepted",
+  "encoding-7-0000|no analysis": "accepted",
+  "encoding-7-0000|contradiction": "accepted",
+  "encoding-7-0000|corrected": "accepted",
+  "encoding-7-0000|hedge": "accepted",
+  "encoding-7-0000|wrong": "wrong",
+  "encoding-7-0000|text after": "no_answer_line",
+  "encoding-7-0000|no line": "no_answer_line",
+  "encoding-7-0000|truncated": "truncated",
+  "encoding-7-0000|think tag": "accepted",
+  "encoding-7-0000|think open": "no_answer_line",
+  "encoding-7-0000|error": "error",
+  "encoding-7-0000|cjk": "accepted",
+  "encoding-7-0000|loop": "accepted",
+  "encoding-7-0000|bold": "accepted",
+  "encoding-7-0000|größe": "accepted",
+  "antidebug-7-0002|right": "accepted",
+  "antidebug-7-0002|restating": "accepted",
+  "antidebug-7-0002|no analysis": "accepted",
+  "antidebug-7-0002|contradiction": "accepted",
+  "antidebug-7-0002|corrected": "accepted",
+  "antidebug-7-0002|hedge": "accepted",
+  "antidebug-7-0002|wrong": "wrong",
+  "antidebug-7-0002|text after": "no_answer_line",
+  "antidebug-7-0002|no line": "no_answer_line",
+  "antidebug-7-0002|truncated": "truncated",
+  "antidebug-7-0002|think tag": "accepted",
+  "antidebug-7-0002|think open": "no_answer_line",
+  "antidebug-7-0002|error": "error",
+  "antidebug-7-0002|cjk": "accepted",
+  "antidebug-7-0002|loop": "accepted",
+  "antidebug-7-0002|bold": "accepted",
+  "antidebug-7-0002|größe": "accepted",
+  "multi-7-0002|right": "accepted",
+  "multi-7-0002|restating": "accepted",
+  "multi-7-0002|no analysis": "accepted",
+  "multi-7-0002|contradiction": "accepted",
+  "multi-7-0002|corrected": "accepted",
+  "multi-7-0002|hedge": "accepted",
+  "multi-7-0002|wrong": "wrong",
+  "multi-7-0002|text after": "no_answer_line",
+  "multi-7-0002|no line": "no_answer_line",
+  "multi-7-0002|truncated": "truncated",
+  "multi-7-0002|think tag": "accepted",
+  "multi-7-0002|think open": "no_answer_line",
+  "multi-7-0002|error": "error",
+  "multi-7-0002|cjk": "accepted",
+  "multi-7-0002|loop": "accepted",
+  "multi-7-0002|bold": "accepted",
+  "multi-7-0002|größe": "accepted",
+  "strobf-7-0000|right": "accepted",
+  "strobf-7-0000|restating": "accepted",
+  "strobf-7-0000|no analysis": "accepted",
+  "strobf-7-0000|contradiction": "accepted",
+  "strobf-7-0000|corrected": "accepted",
+  "strobf-7-0000|hedge": "accepted",
+  "strobf-7-0000|wrong": "wrong",
+  "strobf-7-0000|text after": "no_answer_line",
+  "strobf-7-0000|no line": "no_answer_line",
+  "strobf-7-0000|truncated": "truncated",
+  "strobf-7-0000|think tag": "accepted",
+  "strobf-7-0000|think open": "no_answer_line",
+  "strobf-7-0000|error": "error",
+  "strobf-7-0000|cjk": "accepted",
+  "strobf-7-0000|loop": "accepted",
+  "strobf-7-0000|bold": "accepted",
+  "strobf-7-0000|größe": "accepted"
+ },
+ "drop": {
+  "xor-key-7-0000|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|think tag": [
+   null,
+   null,
+   true
+  ],
+  "xor-key-7-0000|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0000|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0000|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "password-7-0001|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "password-7-0001|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "password-7-0001|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0001|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0001|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0001|think tag": [
+   null,
+   null,
+   true
+  ],
+  "password-7-0001|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0001|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0001|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "password-7-0001|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "password-7-0001|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0001|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "magic-7-0002|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "magic-7-0002|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "magic-7-0002|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "magic-7-0002|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "magic-7-0002|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "magic-7-0002|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "magic-7-0002|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "magic-7-0002|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "magic-7-0002|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "magic-7-0002|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "magic-7-0002|think tag": [
+   null,
+   null,
+   true
+  ],
+  "magic-7-0002|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "magic-7-0002|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "magic-7-0002|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "magic-7-0002|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "magic-7-0002|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "magic-7-0002|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|think tag": [
+   null,
+   null,
+   true
+  ],
+  "lcg-7-0003|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "lcg-7-0003|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "lcg-7-0003|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "hash-7-0004|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "hash-7-0004|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "hash-7-0004|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "hash-7-0004|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "hash-7-0004|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "hash-7-0004|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "hash-7-0004|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "hash-7-0004|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "hash-7-0004|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "hash-7-0004|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "hash-7-0004|think tag": [
+   null,
+   null,
+   true
+  ],
+  "hash-7-0004|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "hash-7-0004|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "hash-7-0004|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "hash-7-0004|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "hash-7-0004|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "hash-7-0004|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "skip-7-0005|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "skip-7-0005|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "skip-7-0005|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "skip-7-0005|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "skip-7-0005|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "skip-7-0005|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "skip-7-0005|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "skip-7-0005|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "skip-7-0005|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "skip-7-0005|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "skip-7-0005|think tag": [
+   null,
+   null,
+   true
+  ],
+  "skip-7-0005|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "skip-7-0005|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "skip-7-0005|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "skip-7-0005|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "skip-7-0005|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "skip-7-0005|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|think tag": [
+   null,
+   null,
+   true
+  ],
+  "keycount-7-0006|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "keycount-7-0006|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "keycount-7-0006|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|think tag": [
+   null,
+   null,
+   true
+  ],
+  "alphabet-7-0007|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "alphabet-7-0007|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "alphabet-7-0007|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|think tag": [
+   null,
+   null,
+   true
+  ],
+  "rotate-7-0008|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "rotate-7-0008|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "rotate-7-0008|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|think tag": [
+   null,
+   null,
+   true
+  ],
+  "threshold-7-0009|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "threshold-7-0009|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "threshold-7-0009|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|think tag": [
+   null,
+   null,
+   true
+  ],
+  "xor-key-7-0010|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "xor-key-7-0010|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "xor-key-7-0010|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "password-7-0011|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "password-7-0011|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "password-7-0011|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0011|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0011|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0011|think tag": [
+   null,
+   null,
+   true
+  ],
+  "password-7-0011|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0011|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "password-7-0011|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "password-7-0011|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "password-7-0011|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "password-7-0011|größe": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0005|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0005|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "structs-7-0005|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "structs-7-0005|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "structs-7-0005|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0005|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0005|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "structs-7-0005|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0005|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0005|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0005|think tag": [
+   null,
+   null,
+   true
+  ],
+  "structs-7-0005|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0005|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0005|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "structs-7-0005|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "structs-7-0005|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0005|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0000|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0000|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0000|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "structs-7-0000|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0000|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0000|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0000|think tag": [
+   null,
+   null,
+   true
+  ],
+  "structs-7-0000|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0000|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "structs-7-0000|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "structs-7-0000|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "structs-7-0000|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|think tag": [
+   null,
+   null,
+   true
+  ],
+  "pktsum-7-0000|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "pktsum-7-0000|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "pktsum-7-0000|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "crc-7-0001|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "crc-7-0001|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "crc-7-0001|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "crc-7-0001|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "crc-7-0001|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "crc-7-0001|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "crc-7-0001|think tag": [
+   null,
+   null,
+   true
+  ],
+  "crc-7-0001|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "crc-7-0001|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "crc-7-0001|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "crc-7-0001|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "crc-7-0001|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|think tag": [
+   null,
+   null,
+   true
+  ],
+  "cipher-7-0004|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "cipher-7-0004|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "cipher-7-0004|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|contradiction": [
+   "contradiction",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|think tag": [
+   null,
+   null,
+   true
+  ],
+  "bounds-7-0001|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "bounds-7-0001|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "bounds-7-0001|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|think tag": [
+   null,
+   null,
+   true
+  ],
+  "encoding-7-0000|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "encoding-7-0000|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "encoding-7-0000|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|think tag": [
+   null,
+   null,
+   true
+  ],
+  "antidebug-7-0002|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "antidebug-7-0002|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "antidebug-7-0002|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "multi-7-0002|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "multi-7-0002|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "multi-7-0002|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "multi-7-0002|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "multi-7-0002|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "multi-7-0002|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "multi-7-0002|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "multi-7-0002|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "multi-7-0002|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "multi-7-0002|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "multi-7-0002|think tag": [
+   null,
+   null,
+   true
+  ],
+  "multi-7-0002|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "multi-7-0002|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "multi-7-0002|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "multi-7-0002|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "multi-7-0002|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "multi-7-0002|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|right": [
+   null,
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|restating": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|no analysis": [
+   "unreadable",
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|contradiction": [
+   null,
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|corrected": [
+   null,
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|hedge": [
+   null,
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|wrong": [
+   null,
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|text after": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|no line": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|truncated": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|think tag": [
+   null,
+   null,
+   true
+  ],
+  "strobf-7-0000|think open": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|error": [
+   "unreadable",
+   "no_think",
+   false
+  ],
+  "strobf-7-0000|cjk": [
+   "mixed_language",
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|loop": [
+   "repetition",
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|bold": [
+   null,
+   "no_think",
+   true
+  ],
+  "strobf-7-0000|größe": [
+   "mixed_language",
+   "no_think",
+   true
+  ]
+ },
+ "final": {
+  "xor-key-7-0000|right": "jzde8gxd",
+  "xor-key-7-0000|restating": "jzde8gxd",
+  "xor-key-7-0000|no analysis": "jzde8gxd",
+  "xor-key-7-0000|contradiction": "jzde8gxd",
+  "xor-key-7-0000|corrected": "jzde8gxd",
+  "xor-key-7-0000|hedge": "jzde8gxd",
+  "xor-key-7-0000|wrong": "0x0badc0de",
+  "xor-key-7-0000|text after": null,
+  "xor-key-7-0000|no line": null,
+  "xor-key-7-0000|truncated": null,
+  "xor-key-7-0000|think tag": "jzde8gxd",
+  "xor-key-7-0000|think open": null,
+  "xor-key-7-0000|error": null,
+  "xor-key-7-0000|cjk": "jzde8gxd",
+  "xor-key-7-0000|loop": "jzde8gxd",
+  "xor-key-7-0000|bold": "jzde8gxd",
+  "xor-key-7-0000|größe": "jzde8gxd",
+  "password-7-0001|right": "cf10epf91",
+  "password-7-0001|restating": "cf10epf91",
+  "password-7-0001|no analysis": "cf10epf91",
+  "password-7-0001|contradiction": "cf10epf91",
+  "password-7-0001|corrected": "cf10epf91",
+  "password-7-0001|hedge": "cf10epf91",
+  "password-7-0001|wrong": "0x0badc0de",
+  "password-7-0001|text after": null,
+  "password-7-0001|no line": null,
+  "password-7-0001|truncated": null,
+  "password-7-0001|think tag": "cf10epf91",
+  "password-7-0001|think open": null,
+  "password-7-0001|error": null,
+  "password-7-0001|cjk": "cf10epf91",
+  "password-7-0001|loop": "cf10epf91",
+  "password-7-0001|bold": "cf10epf91",
+  "password-7-0001|größe": "cf10epf91",
+  "magic-7-0002|right": "0x1fb17c23, 4",
+  "magic-7-0002|restating": "0x1fb17c23, 4",
+  "magic-7-0002|no analysis": "0x1fb17c23, 4",
+  "magic-7-0002|contradiction": "0x1fb17c23, 4",
+  "magic-7-0002|corrected": "0x1fb17c23, 4",
+  "magic-7-0002|hedge": "0x1fb17c23, 4",
+  "magic-7-0002|wrong": "0x0badc0de",
+  "magic-7-0002|text after": null,
+  "magic-7-0002|no line": null,
+  "magic-7-0002|truncated": null,
+  "magic-7-0002|think tag": "0x1fb17c23, 4",
+  "magic-7-0002|think open": null,
+  "magic-7-0002|error": null,
+  "magic-7-0002|cjk": "0x1fb17c23, 4",
+  "magic-7-0002|loop": "0x1fb17c23, 4",
+  "magic-7-0002|bold": "0x1fb17c23, 4",
+  "magic-7-0002|größe": "0x1fb17c23, 4",
+  "lcg-7-0003|right": "1284865837, 6",
+  "lcg-7-0003|restating": "1284865837, 6",
+  "lcg-7-0003|no analysis": "1284865837, 6",
+  "lcg-7-0003|contradiction": "1284865837, 6",
+  "lcg-7-0003|corrected": "1284865837, 6",
+  "lcg-7-0003|hedge": "1284865837, 6",
+  "lcg-7-0003|wrong": "0x0badc0de",
+  "lcg-7-0003|text after": null,
+  "lcg-7-0003|no line": null,
+  "lcg-7-0003|truncated": null,
+  "lcg-7-0003|think tag": "1284865837, 6",
+  "lcg-7-0003|think open": null,
+  "lcg-7-0003|error": null,
+  "lcg-7-0003|cjk": "1284865837, 6",
+  "lcg-7-0003|loop": "1284865837, 6",
+  "lcg-7-0003|bold": "1284865837, 6",
+  "lcg-7-0003|größe": "1284865837, 6",
+  "hash-7-0004|right": "murmur, 0xcb1e29c",
+  "hash-7-0004|restating": "murmur, 0xcb1e29c",
+  "hash-7-0004|no analysis": "murmur, 0xcb1e29c",
+  "hash-7-0004|contradiction": "murmur, 0xcb1e29c",
+  "hash-7-0004|corrected": "murmur, 0xcb1e29c",
+  "hash-7-0004|hedge": "murmur, 0xcb1e29c",
+  "hash-7-0004|wrong": "0x0badc0de",
+  "hash-7-0004|text after": null,
+  "hash-7-0004|no line": null,
+  "hash-7-0004|truncated": null,
+  "hash-7-0004|think tag": "murmur, 0xcb1e29c",
+  "hash-7-0004|think open": null,
+  "hash-7-0004|error": null,
+  "hash-7-0004|cjk": "murmur, 0xcb1e29c",
+  "hash-7-0004|loop": "murmur, 0xcb1e29c",
+  "hash-7-0004|bold": "murmur, 0xcb1e29c",
+  "hash-7-0004|größe": "murmur, 0xcb1e29c",
+  "skip-7-0005|right": "0x20",
+  "skip-7-0005|restating": "0x20",
+  "skip-7-0005|no analysis": "0x20",
+  "skip-7-0005|contradiction": "0x20",
+  "skip-7-0005|corrected": "0x20",
+  "skip-7-0005|hedge": "0x20",
+  "skip-7-0005|wrong": "0x0badc0de",
+  "skip-7-0005|text after": null,
+  "skip-7-0005|no line": null,
+  "skip-7-0005|truncated": null,
+  "skip-7-0005|think tag": "0x20",
+  "skip-7-0005|think open": null,
+  "skip-7-0005|error": null,
+  "skip-7-0005|cjk": "0x20",
+  "skip-7-0005|loop": "0x20",
+  "skip-7-0005|bold": "0x20",
+  "skip-7-0005|größe": "0x20",
+  "keycount-7-0006|right": "user",
+  "keycount-7-0006|restating": "user",
+  "keycount-7-0006|no analysis": "user",
+  "keycount-7-0006|contradiction": "user",
+  "keycount-7-0006|corrected": "user",
+  "keycount-7-0006|hedge": "user",
+  "keycount-7-0006|wrong": "0x0badc0de",
+  "keycount-7-0006|text after": null,
+  "keycount-7-0006|no line": null,
+  "keycount-7-0006|truncated": null,
+  "keycount-7-0006|think tag": "user",
+  "keycount-7-0006|think open": null,
+  "keycount-7-0006|error": null,
+  "keycount-7-0006|cjk": "user",
+  "keycount-7-0006|loop": "user",
+  "keycount-7-0006|bold": "user",
+  "keycount-7-0006|größe": "user",
+  "alphabet-7-0007|right": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|restating": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|no analysis": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|contradiction": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|corrected": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|hedge": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|wrong": "0x0badc0de",
+  "alphabet-7-0007|text after": null,
+  "alphabet-7-0007|no line": null,
+  "alphabet-7-0007|truncated": null,
+  "alphabet-7-0007|think tag": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|think open": null,
+  "alphabet-7-0007|error": null,
+  "alphabet-7-0007|cjk": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|loop": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|bold": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "alphabet-7-0007|größe": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+  "rotate-7-0008|right": "0x3e7d1bfb, 25",
+  "rotate-7-0008|restating": "0x3e7d1bfb, 25",
+  "rotate-7-0008|no analysis": "0x3e7d1bfb, 25",
+  "rotate-7-0008|contradiction": "0x3e7d1bfb, 25",
+  "rotate-7-0008|corrected": "0x3e7d1bfb, 25",
+  "rotate-7-0008|hedge": "0x3e7d1bfb, 25",
+  "rotate-7-0008|wrong": "0x0badc0de",
+  "rotate-7-0008|text after": null,
+  "rotate-7-0008|no line": null,
+  "rotate-7-0008|truncated": null,
+  "rotate-7-0008|think tag": "0x3e7d1bfb, 25",
+  "rotate-7-0008|think open": null,
+  "rotate-7-0008|error": null,
+  "rotate-7-0008|cjk": "0x3e7d1bfb, 25",
+  "rotate-7-0008|loop": "0x3e7d1bfb, 25",
+  "rotate-7-0008|bold": "0x3e7d1bfb, 25",
+  "rotate-7-0008|größe": "0x3e7d1bfb, 25",
+  "threshold-7-0009|right": "1959, 4205",
+  "threshold-7-0009|restating": "1959, 4205",
+  "threshold-7-0009|no analysis": "1959, 4205",
+  "threshold-7-0009|contradiction": "1959, 4205",
+  "threshold-7-0009|corrected": "1959, 4205",
+  "threshold-7-0009|hedge": "1959, 4205",
+  "threshold-7-0009|wrong": "0x0badc0de",
+  "threshold-7-0009|text after": null,
+  "threshold-7-0009|no line": null,
+  "threshold-7-0009|truncated": null,
+  "threshold-7-0009|think tag": "1959, 4205",
+  "threshold-7-0009|think open": null,
+  "threshold-7-0009|error": null,
+  "threshold-7-0009|cjk": "1959, 4205",
+  "threshold-7-0009|loop": "1959, 4205",
+  "threshold-7-0009|bold": "1959, 4205",
+  "threshold-7-0009|größe": "1959, 4205",
+  "xor-key-7-0010|right": "v2seh60kvj50",
+  "xor-key-7-0010|restating": "v2seh60kvj50",
+  "xor-key-7-0010|no analysis": "v2seh60kvj50",
+  "xor-key-7-0010|contradiction": "v2seh60kvj50",
+  "xor-key-7-0010|corrected": "v2seh60kvj50",
+  "xor-key-7-0010|hedge": "v2seh60kvj50",
+  "xor-key-7-0010|wrong": "0x0badc0de",
+  "xor-key-7-0010|text after": null,
+  "xor-key-7-0010|no line": null,
+  "xor-key-7-0010|truncated": null,
+  "xor-key-7-0010|think tag": "v2seh60kvj50",
+  "xor-key-7-0010|think open": null,
+  "xor-key-7-0010|error": null,
+  "xor-key-7-0010|cjk": "v2seh60kvj50",
+  "xor-key-7-0010|loop": "v2seh60kvj50",
+  "xor-key-7-0010|bold": "v2seh60kvj50",
+  "xor-key-7-0010|größe": "v2seh60kvj50",
+  "password-7-0011|right": "9uvw53e",
+  "password-7-0011|restating": "9uvw53e",
+  "password-7-0011|no analysis": "9uvw53e",
+  "password-7-0011|contradiction": "9uvw53e",
+  "password-7-0011|corrected": "9uvw53e",
+  "password-7-0011|hedge": "9uvw53e",
+  "password-7-0011|wrong": "0x0badc0de",
+  "password-7-0011|text after": null,
+  "password-7-0011|no line": null,
+  "password-7-0011|truncated": null,
+  "password-7-0011|think tag": "9uvw53e",
+  "password-7-0011|think open": null,
+  "password-7-0011|error": null,
+  "password-7-0011|cjk": "9uvw53e",
+  "password-7-0011|loop": "9uvw53e",
+  "password-7-0011|bold": "9uvw53e",
+  "password-7-0011|größe": "9uvw53e",
+  "structs-7-0005|right": "0x10",
+  "structs-7-0005|restating": "0x10",
+  "structs-7-0005|no analysis": "0x10",
+  "structs-7-0005|contradiction": "0x10",
+  "structs-7-0005|corrected": "0x10",
+  "structs-7-0005|hedge": "0x10",
+  "structs-7-0005|wrong": "0x0badc0de",
+  "structs-7-0005|text after": null,
+  "structs-7-0005|no line": null,
+  "structs-7-0005|truncated": null,
+  "structs-7-0005|think tag": "0x10",
+  "structs-7-0005|think open": null,
+  "structs-7-0005|error": null,
+  "structs-7-0005|cjk": "0x10",
+  "structs-7-0005|loop": "0x10",
+  "structs-7-0005|bold": "0x10",
+  "structs-7-0005|größe": "0x10",
+  "structs-7-0000|right": "52",
+  "structs-7-0000|restating": "52",
+  "structs-7-0000|no analysis": "52",
+  "structs-7-0000|contradiction": "52",
+  "structs-7-0000|corrected": "52",
+  "structs-7-0000|hedge": "52",
+  "structs-7-0000|wrong": "0x0badc0de",
+  "structs-7-0000|text after": null,
+  "structs-7-0000|no line": null,
+  "structs-7-0000|truncated": null,
+  "structs-7-0000|think tag": "52",
+  "structs-7-0000|think open": null,
+  "structs-7-0000|error": null,
+  "structs-7-0000|cjk": "52",
+  "structs-7-0000|loop": "52",
+  "structs-7-0000|bold": "52",
+  "structs-7-0000|größe": "52",
+  "pktsum-7-0000|right": "3",
+  "pktsum-7-0000|restating": "3",
+  "pktsum-7-0000|no analysis": "3",
+  "pktsum-7-0000|contradiction": "3",
+  "pktsum-7-0000|corrected": "3",
+  "pktsum-7-0000|hedge": "3",
+  "pktsum-7-0000|wrong": "0x0badc0de",
+  "pktsum-7-0000|text after": null,
+  "pktsum-7-0000|no line": null,
+  "pktsum-7-0000|truncated": null,
+  "pktsum-7-0000|think tag": "3",
+  "pktsum-7-0000|think open": null,
+  "pktsum-7-0000|error": null,
+  "pktsum-7-0000|cjk": "3",
+  "pktsum-7-0000|loop": "3",
+  "pktsum-7-0000|bold": "3",
+  "pktsum-7-0000|größe": "3",
+  "crc-7-0001|right": "0xffff",
+  "crc-7-0001|restating": "0xffff",
+  "crc-7-0001|no analysis": "0xffff",
+  "crc-7-0001|contradiction": "0xffff",
+  "crc-7-0001|corrected": "0xffff",
+  "crc-7-0001|hedge": "0xffff",
+  "crc-7-0001|wrong": "0x0badc0de",
+  "crc-7-0001|text after": null,
+  "crc-7-0001|no line": null,
+  "crc-7-0001|truncated": null,
+  "crc-7-0001|think tag": "0xffff",
+  "crc-7-0001|think open": null,
+  "crc-7-0001|error": null,
+  "crc-7-0001|cjk": "0xffff",
+  "crc-7-0001|loop": "0xffff",
+  "crc-7-0001|bold": "0xffff",
+  "crc-7-0001|größe": "0xffff",
+  "cipher-7-0004|right": "xtea, decrypt, 32",
+  "cipher-7-0004|restating": "xtea, decrypt, 32",
+  "cipher-7-0004|no analysis": "xtea, decrypt, 32",
+  "cipher-7-0004|contradiction": "xtea, decrypt, 32",
+  "cipher-7-0004|corrected": "xtea, decrypt, 32",
+  "cipher-7-0004|hedge": "xtea, decrypt, 32",
+  "cipher-7-0004|wrong": "0x0badc0de",
+  "cipher-7-0004|text after": null,
+  "cipher-7-0004|no line": null,
+  "cipher-7-0004|truncated": null,
+  "cipher-7-0004|think tag": "xtea, decrypt, 32",
+  "cipher-7-0004|think open": null,
+  "cipher-7-0004|error": null,
+  "cipher-7-0004|cjk": "xtea, decrypt, 32",
+  "cipher-7-0004|loop": "xtea, decrypt, 32",
+  "cipher-7-0004|bold": "xtea, decrypt, 32",
+  "cipher-7-0004|größe": "xtea, decrypt, 32",
+  "bounds-7-0001|right": "-215, -81",
+  "bounds-7-0001|restating": "-215, -81",
+  "bounds-7-0001|no analysis": "-215, -81",
+  "bounds-7-0001|contradiction": "-215, -81",
+  "bounds-7-0001|corrected": "-215, -81",
+  "bounds-7-0001|hedge": "-215, -81",
+  "bounds-7-0001|wrong": "0x0badc0de",
+  "bounds-7-0001|text after": null,
+  "bounds-7-0001|no line": null,
+  "bounds-7-0001|truncated": null,
+  "bounds-7-0001|think tag": "-215, -81",
+  "bounds-7-0001|think open": null,
+  "bounds-7-0001|error": null,
+  "bounds-7-0001|cjk": "-215, -81",
+  "bounds-7-0001|loop": "-215, -81",
+  "bounds-7-0001|bold": "-215, -81",
+  "bounds-7-0001|größe": "-215, -81",
+  "encoding-7-0000|right": "encode, base64",
+  "encoding-7-0000|restating": "encode, base64",
+  "encoding-7-0000|no analysis": "encode, base64",
+  "encoding-7-0000|contradiction": "encode, base64",
+  "encoding-7-0000|corrected": "encode, base64",
+  "encoding-7-0000|hedge": "encode, base64",
+  "encoding-7-0000|wrong": "0x0badc0de",
+  "encoding-7-0000|text after": null,
+  "encoding-7-0000|no line": null,
+  "encoding-7-0000|truncated": null,
+  "encoding-7-0000|think tag": "encode, base64",
+  "encoding-7-0000|think open": null,
+  "encoding-7-0000|error": null,
+  "encoding-7-0000|cjk": "encode, base64",
+  "encoding-7-0000|loop": "encode, base64",
+  "encoding-7-0000|bold": "encode, base64",
+  "encoding-7-0000|größe": "encode, base64",
+  "antidebug-7-0002|right": "env, sys_attach_89",
+  "antidebug-7-0002|restating": "env, sys_attach_89",
+  "antidebug-7-0002|no analysis": "env, sys_attach_89",
+  "antidebug-7-0002|contradiction": "env, sys_attach_89",
+  "antidebug-7-0002|corrected": "env, sys_attach_89",
+  "antidebug-7-0002|hedge": "env, sys_attach_89",
+  "antidebug-7-0002|wrong": "0x0badc0de",
+  "antidebug-7-0002|text after": null,
+  "antidebug-7-0002|no line": null,
+  "antidebug-7-0002|truncated": null,
+  "antidebug-7-0002|think tag": "env, sys_attach_89",
+  "antidebug-7-0002|think open": null,
+  "antidebug-7-0002|error": null,
+  "antidebug-7-0002|cjk": "env, sys_attach_89",
+  "antidebug-7-0002|loop": "env, sys_attach_89",
+  "antidebug-7-0002|bold": "env, sys_attach_89",
+  "antidebug-7-0002|größe": "env, sys_attach_89",
+  "multi-7-0002|right": "token_packet14",
+  "multi-7-0002|restating": "token_packet14",
+  "multi-7-0002|no analysis": "token_packet14",
+  "multi-7-0002|contradiction": "token_packet14",
+  "multi-7-0002|corrected": "token_packet14",
+  "multi-7-0002|hedge": "token_packet14",
+  "multi-7-0002|wrong": "0x0badc0de",
+  "multi-7-0002|text after": null,
+  "multi-7-0002|no line": null,
+  "multi-7-0002|truncated": null,
+  "multi-7-0002|think tag": "token_packet14",
+  "multi-7-0002|think open": null,
+  "multi-7-0002|error": null,
+  "multi-7-0002|cjk": "token_packet14",
+  "multi-7-0002|loop": "token_packet14",
+  "multi-7-0002|bold": "token_packet14",
+  "multi-7-0002|größe": "token_packet14",
+  "strobf-7-0000|right": "client_session16",
+  "strobf-7-0000|restating": "client_session16",
+  "strobf-7-0000|no analysis": "client_session16",
+  "strobf-7-0000|contradiction": "client_session16",
+  "strobf-7-0000|corrected": "client_session16",
+  "strobf-7-0000|hedge": "client_session16",
+  "strobf-7-0000|wrong": "0x0badc0de",
+  "strobf-7-0000|text after": null,
+  "strobf-7-0000|no line": null,
+  "strobf-7-0000|truncated": null,
+  "strobf-7-0000|think tag": "client_session16",
+  "strobf-7-0000|think open": null,
+  "strobf-7-0000|error": null,
+  "strobf-7-0000|cjk": "client_session16",
+  "strobf-7-0000|loop": "client_session16",
+  "strobf-7-0000|bold": "client_session16",
+  "strobf-7-0000|größe": "client_session16"
+ },
+ "target": {
+  "xor-key-7-0000": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+    "headline": "jzde8gxd",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "password-7-0001": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+    "headline": "cf10epf91",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "magic-7-0002": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+    "headline": "0x1fb17c23, 4",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "lcg-7-0003": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+    "headline": "1284865837, 6",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "hash-7-0004": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+    "headline": "murmur, 0xcb1e29c",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "skip-7-0005": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+    "headline": "0x20",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "keycount-7-0006": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+    "headline": "user",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "alphabet-7-0007": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+    "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "rotate-7-0008": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+    "headline": "0x3e7d1bfb, 25",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "threshold-7-0009": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+    "headline": "1959, 4205",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "xor-key-7-0010": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+    "headline": "v2seh60kvj50",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "password-7-0011": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+    "headline": "9uvw53e",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "structs-7-0005": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+    "headline": "0x10",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "structs-7-0000": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+    "headline": "52",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "pktsum-7-0000": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+    "headline": "3",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "crc-7-0001": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+    "headline": "0xffff",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "cipher-7-0004": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+    "headline": "xtea, decrypt, 32",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "bounds-7-0001": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+    "headline": "-215, -81",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "encoding-7-0000": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+    "headline": "encode, base64",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "antidebug-7-0002": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+    "headline": "env, sys_attach_89",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "multi-7-0002": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+    "headline": "token_packet14",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ],
+  "strobf-7-0000": [
+   {
+    "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+    "headline": "client_session16",
+    "sentence": null,
+    "template": null,
+    "target_source": "teacher-reasoning"
+   },
+   null
+  ]
+ },
+ "pick": {
+  "xor-key-7-0000|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0000|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0000|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0000|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for xor-key-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0000|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0000|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for xor-key-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for xor-key-7-0000: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: jzde8gxd",
+     "headline": "jzde8gxd",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for password-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0001|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for password-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for password-7-0001: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: cf10epf91",
+     "headline": "cf10epf91",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for magic-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for magic-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for magic-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "magic-7-0002|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for magic-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for magic-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for magic-7-0002: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x1fb17c23, 4",
+     "headline": "0x1fb17c23, 4",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for lcg-7-0003: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for lcg-7-0003: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for lcg-7-0003: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "lcg-7-0003|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for lcg-7-0003: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for lcg-7-0003: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for lcg-7-0003: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 1284865837, 6",
+     "headline": "1284865837, 6",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for hash-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for hash-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for hash-7-0004: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "hash-7-0004|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for hash-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for hash-7-0004: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for hash-7-0004: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: murmur, 0xcb1e29c",
+     "headline": "murmur, 0xcb1e29c",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for skip-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for skip-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for skip-7-0005: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "skip-7-0005|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for skip-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for skip-7-0005: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for skip-7-0005: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x20",
+     "headline": "0x20",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for keycount-7-0006: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for keycount-7-0006: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for keycount-7-0006: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "keycount-7-0006|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for keycount-7-0006: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for keycount-7-0006: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for keycount-7-0006: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: user",
+     "headline": "user",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for alphabet-7-0007: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for alphabet-7-0007: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for alphabet-7-0007: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "alphabet-7-0007|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for alphabet-7-0007: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for alphabet-7-0007: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for alphabet-7-0007: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "headline": "puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for rotate-7-0008: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for rotate-7-0008: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for rotate-7-0008: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "rotate-7-0008|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for rotate-7-0008: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for rotate-7-0008: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for rotate-7-0008: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x3e7d1bfb, 25",
+     "headline": "0x3e7d1bfb, 25",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for threshold-7-0009: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for threshold-7-0009: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for threshold-7-0009: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "threshold-7-0009|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for threshold-7-0009: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for threshold-7-0009: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for threshold-7-0009: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 1959, 4205",
+     "headline": "1959, 4205",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0010: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0010: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for xor-key-7-0010: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "xor-key-7-0010|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for xor-key-7-0010: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for xor-key-7-0010: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for xor-key-7-0010: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: v2seh60kvj50",
+     "headline": "v2seh60kvj50",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0011: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0011: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for password-7-0011: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "password-7-0011|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for password-7-0011: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for password-7-0011: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for password-7-0011: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 9uvw53e",
+     "headline": "9uvw53e",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for structs-7-0005: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0005|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0005: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for structs-7-0005: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for structs-7-0005: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x10",
+     "headline": "0x10",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for structs-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "structs-7-0000|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for structs-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for structs-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for structs-7-0000: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 52",
+     "headline": "52",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for pktsum-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for pktsum-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for pktsum-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "pktsum-7-0000|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for pktsum-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for pktsum-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for pktsum-7-0000: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 3",
+     "headline": "3",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for crc-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for crc-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for crc-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "crc-7-0001|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for crc-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for crc-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for crc-7-0001: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0xffff",
+     "headline": "0xffff",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for cipher-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for cipher-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for cipher-7-0004: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "cipher-7-0004|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for cipher-7-0004: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for cipher-7-0004: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for cipher-7-0004: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: xtea, decrypt, 32",
+     "headline": "xtea, decrypt, 32",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for bounds-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for bounds-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for bounds-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "bounds-7-0001|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for bounds-7-0001: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for bounds-7-0001: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for bounds-7-0001: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: -215, -81",
+     "headline": "-215, -81",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for encoding-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for encoding-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for encoding-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "encoding-7-0000|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for encoding-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for encoding-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for encoding-7-0000: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: encode, base64",
+     "headline": "encode, base64",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for antidebug-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for antidebug-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for antidebug-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "antidebug-7-0002|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for antidebug-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for antidebug-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for antidebug-7-0002: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: env, sys_attach_89",
+     "headline": "env, sys_attach_89",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for multi-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for multi-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for multi-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "multi-7-0002|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for multi-7-0002: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for multi-7-0002: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for multi-7-0002: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: token_packet14",
+     "headline": "token_packet14",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|1|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|1|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for strobf-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 3,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|2|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|2|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for strobf-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for strobf-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 2,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|3|False": [
+   [
+    {
+     "text": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "duplicate": 1,
+    "mixed_language": 1
+   }
+  ],
+  "strobf-7-0000|3|True": [
+   [
+    {
+     "text": "<think>\nReasoning 0 for strobf-7-0000: unique words 0.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 1 for strobf-7-0000: unique words 17.\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    },
+    {
+     "text": "<think>\nReasoning 2 for strobf-7-0000: unique words 34.\n</think>\n\nLooking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: client_session16",
+     "headline": "client_session16",
+     "sentence": null,
+     "template": null,
+     "target_source": "teacher-reasoning"
+    }
+   ],
+   {
+    "over_cap": 1,
+    "mixed_language": 1
+   }
+  ]
+ },
+ "text": {
+  "xor-key-7-0000": {
+   "thinking_reply": "<think>\nI reason about xor-key-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: jzde8gxd",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd"
+   ],
+   "trace": [
+    "<think>\nI reason about xor-key-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd"
+   ],
+   "think_drop": null
+  },
+  "password-7-0001": {
+   "thinking_reply": "<think>\nI reason about password-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: cf10epf91",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91"
+   ],
+   "trace": [
+    "<think>\nI reason about password-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: cf10epf91"
+   ],
+   "think_drop": null
+  },
+  "magic-7-0002": {
+   "thinking_reply": "<think>\nI reason about magic-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x1fb17c23, 4",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4"
+   ],
+   "trace": [
+    "<think>\nI reason about magic-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x1fb17c23, 4"
+   ],
+   "think_drop": null
+  },
+  "lcg-7-0003": {
+   "thinking_reply": "<think>\nI reason about lcg-7-0003.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1284865837, 6",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6"
+   ],
+   "trace": [
+    "<think>\nI reason about lcg-7-0003.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1284865837, 6"
+   ],
+   "think_drop": null
+  },
+  "hash-7-0004": {
+   "thinking_reply": "<think>\nI reason about hash-7-0004.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: murmur, 0xcb1e29c",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c"
+   ],
+   "trace": [
+    "<think>\nI reason about hash-7-0004.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: murmur, 0xcb1e29c"
+   ],
+   "think_drop": null
+  },
+  "skip-7-0005": {
+   "thinking_reply": "<think>\nI reason about skip-7-0005.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x20",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20"
+   ],
+   "trace": [
+    "<think>\nI reason about skip-7-0005.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x20"
+   ],
+   "think_drop": null
+  },
+  "keycount-7-0006": {
+   "thinking_reply": "<think>\nI reason about keycount-7-0006.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: user",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user"
+   ],
+   "trace": [
+    "<think>\nI reason about keycount-7-0006.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: user"
+   ],
+   "think_drop": null
+  },
+  "alphabet-7-0007": {
+   "thinking_reply": "<think>\nI reason about alphabet-7-0007.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2"
+   ],
+   "trace": [
+    "<think>\nI reason about alphabet-7-0007.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: puaoqn6mxtikhz7bcwlgy34fv5jsdre2"
+   ],
+   "think_drop": null
+  },
+  "rotate-7-0008": {
+   "thinking_reply": "<think>\nI reason about rotate-7-0008.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x3e7d1bfb, 25",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25"
+   ],
+   "trace": [
+    "<think>\nI reason about rotate-7-0008.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x3e7d1bfb, 25"
+   ],
+   "think_drop": null
+  },
+  "threshold-7-0009": {
+   "thinking_reply": "<think>\nI reason about threshold-7-0009.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 1959, 4205",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205"
+   ],
+   "trace": [
+    "<think>\nI reason about threshold-7-0009.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 1959, 4205"
+   ],
+   "think_drop": null
+  },
+  "xor-key-7-0010": {
+   "thinking_reply": "<think>\nI reason about xor-key-7-0010.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: v2seh60kvj50",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50"
+   ],
+   "trace": [
+    "<think>\nI reason about xor-key-7-0010.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: v2seh60kvj50"
+   ],
+   "think_drop": null
+  },
+  "password-7-0011": {
+   "thinking_reply": "<think>\nI reason about password-7-0011.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 9uvw53e",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e"
+   ],
+   "trace": [
+    "<think>\nI reason about password-7-0011.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 9uvw53e"
+   ],
+   "think_drop": null
+  },
+  "structs-7-0005": {
+   "thinking_reply": "<think>\nI reason about structs-7-0005.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0x10",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10"
+   ],
+   "trace": [
+    "<think>\nI reason about structs-7-0005.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10"
+   ],
+   "think_drop": null
+  },
+  "structs-7-0000": {
+   "thinking_reply": "<think>\nI reason about structs-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52"
+   ],
+   "trace": [
+    "<think>\nI reason about structs-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52"
+   ],
+   "think_drop": null
+  },
+  "pktsum-7-0000": {
+   "thinking_reply": "<think>\nI reason about pktsum-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 3",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3"
+   ],
+   "trace": [
+    "<think>\nI reason about pktsum-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 3"
+   ],
+   "think_drop": null
+  },
+  "crc-7-0001": {
+   "thinking_reply": "<think>\nI reason about crc-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff"
+   ],
+   "trace": [
+    "<think>\nI reason about crc-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff"
+   ],
+   "think_drop": null
+  },
+  "cipher-7-0004": {
+   "thinking_reply": "<think>\nI reason about cipher-7-0004.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: xtea, decrypt, 32",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32"
+   ],
+   "trace": [
+    "<think>\nI reason about cipher-7-0004.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: xtea, decrypt, 32"
+   ],
+   "think_drop": null
+  },
+  "bounds-7-0001": {
+   "thinking_reply": "<think>\nI reason about bounds-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: -215, -81",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81"
+   ],
+   "trace": [
+    "<think>\nI reason about bounds-7-0001.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: -215, -81"
+   ],
+   "think_drop": null
+  },
+  "encoding-7-0000": {
+   "thinking_reply": "<think>\nI reason about encoding-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: encode, base64",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64"
+   ],
+   "trace": [
+    "<think>\nI reason about encoding-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: encode, base64"
+   ],
+   "think_drop": null
+  },
+  "antidebug-7-0002": {
+   "thinking_reply": "<think>\nI reason about antidebug-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: env, sys_attach_89",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89"
+   ],
+   "trace": [
+    "<think>\nI reason about antidebug-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: env, sys_attach_89"
+   ],
+   "think_drop": null
+  },
+  "multi-7-0002": {
+   "thinking_reply": "<think>\nI reason about multi-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: token_packet14",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14"
+   ],
+   "trace": [
+    "<think>\nI reason about multi-7-0002.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: token_packet14"
+   ],
+   "think_drop": null
+  },
+  "strobf-7-0000": {
+   "thinking_reply": "<think>\nI reason about strobf-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+   "inline": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+   "dangling": "<think>\nwhy\n</think>\n\nFollowing the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: client_session16",
+   "reply_text": [
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16\n[truncated at max_tokens]",
+    "<think>\nwhy\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16"
+   ],
+   "trace": [
+    "<think>\nI reason about strobf-7-0000.\n</think>\n\nThe function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16",
+    "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: client_session16"
+   ],
+   "think_drop": null
+  }
+ },
+ "dup": {
+  "normalized": "x y z 0x20",
+  "token_set": [
+   "a",
+   "answer",
+   "asks",
+   "at",
+   "base",
+   "constant",
+   "field",
+   "fixed",
+   "for",
+   "from",
+   "function",
+   "is",
+   "jzde8gxd",
+   "offset",
+   "question",
+   "reads",
+   "the",
+   "what"
+  ],
+  "jaccard": [
+   1.0,
+   1.0
+  ],
+  "is_duplicate": [
+   true,
+   false,
+   true
+  ]
+ },
+ "direct": {
+  "unreadable": [
+   false,
+   true,
+   false,
+   true
+  ],
+  "mixed": [
+   true,
+   true,
+   false,
+   true,
+   false
+  ],
+  "repetition": [
+   true,
+   false,
+   true
+  ],
+  "messages": [
+   [
+    {
+     "role": "system",
+     "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+    },
+    {
+     "role": "user",
+     "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+    }
+   ],
+   "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nData referenced by the function (bytes at those addresses):\n00 ff\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+  ],
+  "prompt_sha": "4a1cf6c008e2dc90",
+  "clean": "x",
+  "compose": [
+   "<think>\nwhy\n</think>\n\nvis",
+   "vis"
+  ],
+  "kinds": [
+   "alphabet",
+   "antidebug",
+   "bounds",
+   "cipher",
+   "crc",
+   "encoding",
+   "fsm",
+   "hash",
+   "keycount",
+   "lcg",
+   "magic",
+   "multi",
+   "password",
+   "pktsum",
+   "rotate",
+   "skip",
+   "strobf",
+   "structs",
+   "threshold",
+   "xor-key"
+  ]
+ }
+}

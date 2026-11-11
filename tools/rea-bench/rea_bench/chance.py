@@ -10,7 +10,7 @@ Round 3 (m3): the estimate above is the rate of a guesser that SAMPLES the answe
 and only guesses the number does better: it answers the variant's most common answer every time (XTEA decrypt: 32 rounds, right on 32% of
 the tasks; the sampling estimate said 4.5%). So the chance of a variant is the larger of the two: the best constant answer within the
 variant. It is a baseline for reading yields, not a guarantee: a task with a high chance keeps lucky guesses under rejection sampling,
-which is what the agreement rule of sft.py (AGREE_CHANCE) is for.
+which is what the agreement rule of `distill/domains/rea` (AGREE_CHANCE) is for.
 
     python3 tools/rea-bench chance            print the estimates
     python3 tools/rea-bench chance --write    rewrite the table below (after a generator change)

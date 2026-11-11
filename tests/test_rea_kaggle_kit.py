@@ -33,13 +33,16 @@ from .test_rea_modal import StubbedSampleStage
 from .test_rea_reasoning import reply
 from .test_rea_traces import think_body
 
-KIT = ROOT / "tools" / "kaggle"
+KIT = ROOT / "distill" / "backends" / "kaggle"          # run_teacher.py (the kernel) lives here; tools/kaggle/build_tasks.py is the REA wrapper of build_tasks.py beside it
+WRAPPERS = ROOT / "tools" / "kaggle"
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 sys.path.insert(0, str(KIT))
+sys.path.insert(0, str(WRAPPERS))
 
 import build_tasks  # noqa: E402
 import run_teacher  # noqa: E402
-from rea_bench import cli, families, kaggle_score, reasoning as rsn, sft  # noqa: E402
+from rea_bench import cli, families, kaggle_score  # noqa: E402
+from .rea_bound import rsn, sft  # noqa: E402
 
 
 def make_tasks(counts=(("crc", 4), ("structs", 4)), seed=9) -> list:
@@ -689,7 +692,7 @@ class Score(unittest.TestCase):
 
 class Readme(unittest.TestCase):
     def setUp(self):
-        self.text = (KIT / "README.md").read_text()
+        self.text = (WRAPPERS / "README.md").read_text()
 
     def test_it_has_the_commands_with_the_kaggle_cli(self):
         for part in ("build_tasks.py", "kaggle datasets create -p", "kaggle datasets version -p", "kaggle kernels push -p", "kaggle kernels status", "kaggle kernels output", "--resume-from",

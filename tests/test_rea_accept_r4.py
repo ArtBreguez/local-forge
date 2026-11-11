@@ -17,7 +17,8 @@ from .helpers import ROOT
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import families, grammar, scoring, sft  # noqa: E402
+from rea_bench import families, grammar, scoring  # noqa: E402
+from .rea_bound import sft  # noqa: E402
 
 S = scoring.score_strict
 

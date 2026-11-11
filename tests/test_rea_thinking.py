@@ -33,7 +33,9 @@ from .test_rea_traces import think_body
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import outputs, reasoning as rsn, sft  # noqa: E402
+from rea_bench import outputs  # noqa: E402
+from distill.backends import modal_sample  # noqa: E402
+from .rea_bound import rsn, sft  # noqa: E402
 
 try:
     import jinja2
@@ -164,8 +166,8 @@ def conv(assistant: str = THINK) -> list:
 
 
 def lora_module():
-    sys.modules.pop("modal_lora", None)
-    import modal_lora
+    sys.modules.pop("distill.backends.modal_train", None)
+    import distill.backends.modal_train as modal_lora
     return modal_lora
 
 
@@ -212,7 +214,7 @@ class Rendering:
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def template(self):
@@ -332,7 +334,7 @@ class Parsing(ModalCase):
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def test_a_thinking_text_is_split_the_way_the_template_splits_it(self):
@@ -438,7 +440,7 @@ class TrainEndToEnd:
                      "transformers": types.SimpleNamespace(AutoModelForCausalLM=types.SimpleNamespace(from_pretrained=lambda *a, **k: model), AutoTokenizer=types.SimpleNamespace(from_pretrained=lambda b: tok),
                                                            Trainer=Trainer, TrainingArguments=lambda **k: types.SimpleNamespace(**k), DataCollatorForSeq2Seq=lambda *a, **k: None)}
         self.lora = lora_module()
-        self.addCleanup(lambda: sys.modules.pop("modal_lora", None))
+        self.addCleanup(lambda: sys.modules.pop("distill.backends.modal_train", None))
 
     def train(self, **kw):
         with mock.patch.dict(sys.modules, self.mods), contextlib.redirect_stdout(io.StringIO()) as printed:
@@ -545,7 +547,7 @@ class TrainingEntry(ModalCase):
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def go(self, remote=None, gmap=None, **kw):
@@ -667,9 +669,9 @@ class ThinkingRequests(StubbedSampleStage):
         super().setUp()
         self.reply = lambda tid, i, body: think_body(reply(self.tasks[tid], f"Step for {tid}.\nThe constant is read once."), f"Reasoning about {tid}: the code reads it, then returns it.")
         self.popen = []
-        real = self.data.subprocess
-        self.data.subprocess = types.SimpleNamespace(**{**vars(real), "Popen": lambda *a, **k: self.popen.append(a[0]) or types.SimpleNamespace(kill=lambda: None)})
-        self.addCleanup(setattr, self.data, "subprocess", real)
+        real = modal_sample.subprocess
+        modal_sample.subprocess = types.SimpleNamespace(**{**vars(real), "Popen": lambda *a, **k: self.popen.append(a[0]) or types.SimpleNamespace(kill=lambda: None)})
+        self.addCleanup(setattr, modal_sample, "subprocess", real)
 
     def test_a_thinking_run_asks_with_qwen3s_thinking_settings(self):
         self.run_stage(False, **self.KW)
