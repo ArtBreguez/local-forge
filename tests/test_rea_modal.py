@@ -47,7 +47,7 @@ class ModalCase(unittest.TestCase):
         ok = types.SimpleNamespace(returncode=0, stdout="", stderr="")
         run = mock.MagicMock(return_value=kw.pop("rm_result", ok))
         default = lambda tasks, **k: [{**meta, "pseudocode": "void f(void) {}"} for meta, _src, _tag in tasks]
-        remote = mock.MagicMock(return_value=remote_result or {"sft": [], "stats": {"tasks": 0}})
+        remote = mock.MagicMock(return_value=remote_result or {"sft": [], "stats": {"tasks": 0}}, side_effect=kw.pop("remote_side_effect", None))
         with mock.patch.object(self.data, "ROOT", root), mock.patch.object(self.data, "subprocess", types.SimpleNamespace(run=run, TimeoutExpired=subprocess.TimeoutExpired)), \
                 mock.patch.object(self.data, "decompile_task", types.SimpleNamespace(starmap=starmap or default)), \
                 mock.patch.object(self.data, "sample_answers", types.SimpleNamespace(remote=remote)), \
@@ -83,6 +83,16 @@ class SampleSelection(unittest.TestCase):
         self.assertEqual(len(kept), 1)
 
 
+def failing(fn):
+    """`self.fail` of StubbedSampleStage tells the fake server which request to fail, which hides unittest's own `fail(msg)`: with one argument this is that method again, so an assertion that
+    fails in these tests reports itself instead of a TypeError (round 11)."""
+    def fail(*args):
+        if len(args) == 1:
+            raise AssertionError(args[0])
+        return fn(*args)
+    return fail
+
+
 class StubbedSampleStage(ModalCase):
     """The real body of `sample_answers` against a scripted fake llama-server (urlopen) and a temporary stand-in for the /data volume (no test of its own: the
     classes below use it, tests/test_rea_round8.py too). `self.requests` holds (task id, sample index), `self.bodies` the JSON body of every request."""
@@ -103,7 +113,8 @@ class StubbedSampleStage(ModalCase):
             (src / f"{t.id}.json").write_text(json.dumps(m))
         self.root, self.k = root, 3
         self.requests, self.bodies, self.tokenized, self.lock = [], [], [], __import__("threading").Lock()
-        self.fail = lambda tid, i: False
+        self.fail = failing(lambda tid, i: False)
+        self.reply = lambda tid, i, body: {"choices": [{"message": {"content": right(self.tasks[tid])}}]}      # what the fake server answers (the whole JSON body of the response)
         real = pathlib.Path
         shim = types.SimpleNamespace(Path=lambda p, *a: real(str(self.root / "data" / str(p)[len("/data/"):]) if str(p).startswith("/data/") else p, *a))
         popen = types.SimpleNamespace(Popen=lambda *a, **k: types.SimpleNamespace(kill=lambda: None), DEVNULL=subprocess.DEVNULL, run=subprocess.run,
@@ -136,7 +147,7 @@ class StubbedSampleStage(ModalCase):
                 self.bodies.append(body)
             if self.fail(tid, i):
                 raise urllib.error.URLError("connection refused")
-            return Resp(json.dumps({"choices": [{"message": {"content": right(self.tasks[tid])}}]}).encode())
+            return Resp(json.dumps(self.reply(tid, i, body)).encode())
 
         patches = [mock.patch.object(self.data, "pathlib", shim), mock.patch.object(self.data, "subprocess", popen),
                    mock.patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(hf_hub_download=lambda *a, **k: "/tmp/fake.gguf")}),
@@ -145,11 +156,11 @@ class StubbedSampleStage(ModalCase):
             p.start()
             self.addCleanup(p.stop)
 
-    def run_stage(self, resume):
+    def run_stage(self, resume, **kw):
         self.requests.clear()
         self.bodies.clear()
         with contextlib.redirect_stdout(io.StringIO()) as printed:
-            res = self.data.sample_answers("m", "repo", "f.gguf", self.k, self.tag, resume=resume)
+            res = self.data.sample_answers("m", "repo", "f.gguf", self.k, self.tag, resume=resume, **kw)
         self.printed = printed.getvalue()
         return res
 

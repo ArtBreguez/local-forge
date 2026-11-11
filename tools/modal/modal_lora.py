@@ -2,6 +2,7 @@
 
     modal run tools/modal_lora.py --smoke            # 60 examples, 1 epoch, proves the pipeline end to end
     modal run tools/modal_lora.py                    # full run
+    modal run tools/modal_lora.py --max-len 3072     # a longer training window (a reasoning run's records): a pair over it is dropped, never cut
 Outputs land in the `lf-lora` volume: adapter/, merged/, gguf/{base,lora}-Q4_K_M.gguf, and are copied to results/phase6/lora/.
 Base and LoRA GGUFs are produced by the SAME convert+quantize path (Q4_K_M, no imatrix), so the before/after on the
 held-out set compares like with like; the host's i1-IQ4_XS is a different quant and is not the comparison point.
@@ -38,7 +39,14 @@ vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 hf_secret = modal.Secret.from_name("hf-write")
 app = modal.App("lf-lora")
 
-MAX_LEN = 2048          # tokens of prompt + answer + EOS that one training example may have
+MAX_LEN = 2048          # tokens of prompt + answer + EOS that one training example may have (the default; `--max-len` trains on a longer window: a reasoning run's records are several times longer)
+
+
+def batch_plan(max_len: int) -> tuple:
+    """(per-device batch size, gradient accumulation steps) for a training window. 4 x 4 at the default 2048 tokens, as before; a longer window keeps the tokens per micro-batch
+    at 4 x 2048 (the memory of the A100-40GB run that is known to fit) and the batch of 16 examples per optimizer step: 2 x 8 at 3072 and 4096. NOT measured on a GPU for a window above 2048."""
+    per_device = min(4, max(1, 4 * 2048 // max_len))
+    return per_device, max(1, 16 // per_device)
 
 
 def encode_ids(p_ids: list, f_ids: list, max_len: int = MAX_LEN):
@@ -52,7 +60,7 @@ def encode_ids(p_ids: list, f_ids: list, max_len: int = MAX_LEN):
 
 
 @app.function(image=train_image, gpu="A100-40GB", volumes={"/out": vol}, secrets=[hf_secret], timeout=4 * 3600)
-def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32) -> dict:
+def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, max_len: int = MAX_LEN) -> dict:
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model
@@ -70,15 +78,15 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
         full = prompt + msgs[-1]["content"] + tok.eos_token
         p_ids = tok(prompt, add_special_tokens=False)["input_ids"]
         f_ids = tok(full, add_special_tokens=False)["input_ids"]
-        row = encode_ids(p_ids, f_ids)
+        row = encode_ids(p_ids, f_ids, max_len)
         return {**(row or {"input_ids": [], "attention_mask": [], "labels": []}), "keep": row is not None}
 
     n_in = len(ds)
     ds = ds.map(encode, remove_columns=ds.column_names).filter(lambda ex: ex["keep"]).remove_columns(["keep"])
     dropped = n_in - len(ds)
-    print(f"{n_in} SFT pairs, {dropped} dropped because prompt + answer is longer than {MAX_LEN} tokens (none is cut), {len(ds)} trained on")
+    print(f"{n_in} SFT pairs, {dropped} dropped because prompt + answer is longer than {max_len} tokens (none is cut), {len(ds)} trained on")
     if not len(ds):
-        raise SystemExit(f"every one of the {n_in} SFT pairs is longer than {MAX_LEN} tokens: nothing to train on")
+        raise SystemExit(f"every one of the {n_in} SFT pairs is longer than {max_len} tokens: nothing to train on")
     model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.bfloat16, device_map={"": 0})
     model.gradient_checkpointing_enable()
     model.enable_input_require_grads()
@@ -86,7 +94,8 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
                      target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj", "in_proj_qkvz", "in_proj_ba", "out_proj"])
     model = get_peft_model(model, cfg)
     model.print_trainable_parameters()
-    args = TrainingArguments(output_dir="/tmp/run", per_device_train_batch_size=4, gradient_accumulation_steps=4, num_train_epochs=0.2 if smoke else epochs,
+    per_device, accum = batch_plan(max_len)
+    args = TrainingArguments(output_dir="/tmp/run", per_device_train_batch_size=per_device, gradient_accumulation_steps=accum, num_train_epochs=0.2 if smoke else epochs,
                              learning_rate=lr, lr_scheduler_type="cosine", warmup_steps=0.05, logging_steps=10, save_strategy="no",
                              bf16=True, report_to=[], dataloader_num_workers=2, seed=7)
     trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100))
@@ -97,7 +106,7 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
     merged.save_pretrained(f"/out/{tag}/merged", safe_serialization=True); tok.save_pretrained(f"/out/{tag}/merged")
     vol.commit()
     log = [x for x in trainer.state.log_history if "loss" in x]
-    return {"tag": tag, "n": len(ds), "dropped_too_long": dropped, "max_len": MAX_LEN, "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
+    return {"tag": tag, "n": len(ds), "dropped_too_long": dropped, "max_len": max_len, "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
             "steps": out.global_step, "wall_s": round(time.time() - t0), "trainable": str(cfg.target_modules)}
 
 
@@ -134,11 +143,11 @@ def to_gguf(tag: str, which: str) -> dict:
 
 
 @app.local_entrypoint()
-def main(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, skip_train: bool = False):
+def main(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, skip_train: bool = False, max_len: int = MAX_LEN):
     dest = ROOT / "results" / "phase6" / "lora"; dest.mkdir(parents=True, exist_ok=True)
     tag = "smoke" if smoke else "full"
     if not skip_train:
-        r = train.remote(smoke, epochs, lr, rank)
+        r = train.remote(smoke, epochs, lr, rank, max_len)
         print("train:", r); (dest / f"{tag}-train.json").write_text(json.dumps(r, indent=1))
     g = list(to_gguf.map([tag, tag], ["lora", "base"]))
     print("gguf:", g); (dest / f"{tag}-gguf.json").write_text(json.dumps(g, indent=1))

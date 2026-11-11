@@ -19,51 +19,77 @@ evaluation only):
                 below the threshold keep any right sample. Agreement filters luck, it does not make a 0.55 task hard: a model that always answers
                 "all ones" still agrees with itself.
   one record    the rendered text of a task is the same for every accepted sample, so a task gives ONE record.
+
+REASONING MODE (`reasoning=True`, `--stage sample --reasoning`, rea_bench/reasoning.py): the reply's final answer (the text after its last `Answer:` line) is the filter,
+with the same agreement rule, and a kept task gives TWO records: the truth-rendered one above and one that holds the first accepted reply VERBATIM
+(`target_source: "teacher-reasoning"`; `<think>` blocks stripped, whitespace trimmed). The steps in front of the answer are not checked: some may be wrong.
 """
 from __future__ import annotations
 
 import collections
 
-from .scoring import is_error_reply, score_strict, sft_target, strict_task
+from .reasoning import REPORT_WINDOWS, TARGET_SOURCE as TEACHER_SOURCE, score_reasoning, teacher_target, verdict
+from .scoring import is_error_reply, score_strict, sft_target, strict_task, truth_target
 
 AGREE_CHANCE = 0.05          # round 4 (m8): 0.06-0.063 variants (fsm/opcode_value, bounds/char_class, multi/limit_helper) kept one lucky sample of six in 31% of the tasks
 AGREE_MIN = 2
 LENGTH_OVERHEAD = 32     # tokens the chat template adds around the three messages (three role markers, the empty thinking block, the end-of-turn token): a margin, counted upward
 NEAR_LIMIT = 0.95        # a record from this share of the window up is reported as near the limit: the sampler's tokenizer is not the training tokenizer, byte for byte
-RECORD_KEYS = ("messages", "task", "kind", "model", "target_source")      # what the uploaded SFT file holds per record: no teacher text (round 9, m1)
+RECORD_KEYS = ("messages", "task", "kind", "model", "target_source")      # what the uploaded SFT file holds per record (round 9, m1: no `teacher_headline`)
+TARGET_SOURCES = ("truth-template", TEACHER_SOURCE)      # where a record's assistant text comes from: rendered from the truth, or the teacher's reply (`--reasoning`, round 11)
 
 
 def check_records(records: list) -> None:
-    """Fail when an SFT record has a key outside RECORD_KEYS: whatever else a record carried would be uploaded with the dataset, and the owner's rule is that no teacher
-    output is stored. (The assistant message is the truth-rendered text: `assemble` builds it from `targets.render` only.)"""
+    """Fail when an SFT record has a key outside RECORD_KEYS or a `target_source` outside TARGET_SOURCES: whatever else a record carried would be uploaded with the dataset. (A record's
+    assistant message is the truth-rendered text, or, in a reasoning run, the teacher's reply as `assemble` got it from `reasoning.teacher_target`; nothing else is stored.)"""
     for r in records:
         if sorted(r) != sorted(RECORD_KEYS):
-            raise ValueError(f"SFT record of {r.get('task', '?')} has keys {sorted(r)}, not {sorted(RECORD_KEYS)}: nothing of the teacher's reply may be stored")
+            raise ValueError(f"SFT record of {r.get('task', '?')} has keys {sorted(r)}, not {sorted(RECORD_KEYS)}: nothing but these may be stored")
+        if r["target_source"] not in TARGET_SOURCES:
+            raise ValueError(f"SFT record of {r.get('task', '?')} has target_source {r['target_source']!r}, not one of {list(TARGET_SOURCES)}")
 
 
-def drop_over_length(records: list, stats: dict, count, max_len: int, overhead: int = LENGTH_OVERHEAD) -> tuple:
+def drop_over_length(records: list, stats: dict, count, max_len: int, overhead: int = LENGTH_OVERHEAD, report_windows: tuple = ()) -> tuple:
     """(records that fit, stats with an `over_length` block) (round 9, m2). The training run drops a pair whose prompt + answer + EOS is longer than `max_len` tokens
     (modal_lora.encode_ids: dropped, never cut); this measures the same thing at the sample stage, so the loss is a number before the GPU run and the file that is uploaded
     holds no record that training would throw away. `count(text)` is a token count of the sampler's tokenizer; a record's length is the sum over its messages plus `overhead`.
     The `over_length` block: max_len, dropped, near_limit (kept, within NEAR_LIMIT of the window), longest_tokens, by_kind {kind: dropped}; `kept_tasks`, `kept_records` and
-    the same fields of each family are reduced by what was dropped (one record per task)."""
+    the same fields of each family are reduced by what was dropped (a task is lost when ALL of its records are: a reasoning run has two per task, and the long one goes first).
+    `report_windows` (a reasoning run: REPORT_WINDOWS): the block also holds `fits`, per `target_source` the number of records and how many are within each window, and `by_source`
+    (dropped per source), so the cost of a longer training window is known before it is chosen."""
     kept, over, longest, near = [], collections.Counter(), 0, 0
+    fits = collections.defaultdict(collections.Counter)
+    over_source = collections.Counter()
     for r in records:
         n = sum(count(m["content"]) for m in r["messages"]) + overhead
         longest = max(longest, n)
+        if report_windows:
+            fits[r["target_source"]]["records"] += 1
+            for w in report_windows:
+                fits[r["target_source"]][str(w)] += n <= w
         if n > max_len:
             over[r["kind"]] += 1
+            if report_windows:
+                over_source[r["target_source"]] += 1
         else:
             kept.append(r)
             near += n >= NEAR_LIMIT * max_len
     out = {**stats, "by_kind": {k: dict(row) for k, row in stats.get("by_kind", {}).items()}}
     dropped = sum(over.values())
-    out["kept_tasks"] -= dropped
+    left, lost, seen = {r["task"] for r in kept}, collections.Counter(), set()
+    for r in records:
+        if r["task"] not in left and r["task"] not in seen:         # every record of this task was dropped
+            seen.add(r["task"])
+            lost[r["kind"]] += 1
+    out["kept_tasks"] -= sum(lost.values())
     out["kept_records"] -= dropped
     for kind, c in over.items():
-        out["by_kind"][kind]["kept_tasks"] -= c
+        out["by_kind"][kind]["kept_tasks"] -= lost[kind]
         out["by_kind"][kind]["kept_records"] -= c
     out["over_length"] = {"max_len": max_len, "dropped": dropped, "near_limit": near, "longest_tokens": longest, "by_kind": dict(sorted(over.items()))}
+    if report_windows:
+        out["over_length"]["fits"] = {src: dict(c) for src, c in sorted(fits.items())}
+        out["over_length"]["by_source"] = dict(sorted(over_source.items()))
     return kept, out
 
 
@@ -80,21 +106,36 @@ def over_length_line(stats: dict):
             + (f" ({by})" if by else "") + f"; {o['near_limit']} kept records are within {int(100 - NEAR_LIMIT * 100)}% of the window; the longest has {o['longest_tokens']} tokens")
 
 
+def fits_line(stats: dict):
+    """The line a reasoning run prints about the training window: how many teacher-reasoning records fit 2048, 3072 and 4096 tokens (None without that measurement)."""
+    o = stats.get("over_length") or {}
+    row = (o.get("fits") or {}).get(TEACHER_SOURCE)
+    if not row or not row.get("records"):
+        return None
+    total = row["records"]
+    parts = ", ".join(f"{w} tokens: {row.get(str(w), 0)} of {total} ({100 * row.get(str(w), 0) // total}%)" for w in REPORT_WINDOWS if str(w) in row)
+    return f"teacher-reasoning records that fit the training window (prompt + answer + EOS): {parts}; this run dropped at --max-len {o['max_len']}"
+
+
 def needs_agreement(t: dict) -> bool:
     c = strict_task(t).get("chance")                # a legacy task gets its `chance` from the conversion (skip: 0.14)
     return c is not None and c >= AGREE_CHANCE
 
 
-def select(outs: list, t: dict) -> tuple:
+def select(outs: list, t: dict, reasoning: bool = False) -> tuple:
     """([records], reason) for one task. `outs` = [(reply, flag)] for its K samples; the flag is not used (every reply is scored again). A record
     is {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth. reason is "kept",
-    "no_correct" (no sample has an accepted headline) or "agreement" (too few accepted samples for the task's chance level)."""
-    accepted = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
+    "no_correct" (no sample has an accepted headline) or "agreement" (too few accepted samples for the task's chance level).
+    `reasoning`: a reply is accepted by `score_reasoning` (its text after the last `Answer:` line), and a kept task gives the truth-rendered record AND the first accepted reply verbatim."""
+    if reasoning:
+        accepted = [r for r in (teacher_target(o, t) for o, _flag in outs) if r is not None]
+    else:
+        accepted = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
     if not accepted:
         return [], "no_correct"
     if needs_agreement(t) and len(accepted) < AGREE_MIN:
         return [], "agreement"
-    return [accepted[0]], "kept"
+    return ([truth_target(t), accepted[0]] if reasoning else [accepted[0]]), "kept"
 
 
 class Stats:
@@ -139,19 +180,46 @@ def error_warning(stats: dict):
             f"and re-run with --resume.")
 
 
-def assemble(tasks: list, results: dict, model: str, messages_for) -> tuple:
+def reasoning_report(stats: dict) -> list:
+    """The lines a reasoning run prints about its replies (empty for any other run): how they were judged, and what that run's own throughput was."""
+    r = stats.get("reasoning")
+    if not r:
+        return []
+    out = [f"reasoning replies: {r['replies']:,}: accepted {r['accepted']:,}, answer rejected {r['wrong']:,}, no final `Answer:` line (or text after it) {r['no_answer_line']:,}, "
+           f"cut off at max_tokens {r['truncated']:,}, failed requests {r['error']:,}; {r['teacher_records']:,} teacher-reasoning records"]
+    if r["truncated"] and r["replies"] and r["truncated"] / r["replies"] > TRUNCATED_WARN:
+        out.append(f"WARNING: {100 * r['truncated'] // r['replies']}% of the replies were cut off at max_tokens: raise --max-tokens (and look at the cost line again)")
+    p = stats.get("perf")
+    if p and p.get("requests"):
+        out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over the four slots "
+                   f"({p['s_per_request']} s per request): reasoning.PHASE_A_REPLY_S is 1.04 s per phase-A reply")
+    return out
+
+
+TRUNCATED_WARN = 0.10     # a reasoning run with more than this share of its replies cut off at max_tokens says so
+
+
+def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bool = False) -> tuple:
     """(SFT records, stats dict) from the K replies of every task. `results` = {task id: {"outs": [[reply, flag], ...]}} (the sample stage's
-    checkpoint format; the flag is ignored, see above); `messages_for(task)` = the system and user message. A task without a result is skipped."""
-    st, kept = Stats(), []
+    checkpoint format; the flag is ignored, see above); `messages_for(task)` = the system and user message. A task without a result is skipped.
+    `reasoning`: see `select`; the stats get a `reasoning` block (how the replies were judged), and no other key of a default run changes."""
+    st, kept, judged = Stats(), [], collections.Counter()
+    score = score_reasoning if reasoning else score_strict
     for t in tasks:
         rec = results.get(t["id"])
         if rec is None:
             continue
-        outs = [(o, score_strict(o, t)) for o, _flag in rec["outs"]]
-        records, reason = select(outs, t)
+        outs = [(o, score(o, t)) for o, _flag in rec["outs"]]
+        if reasoning:
+            judged.update(verdict(o, t) for o, _flag in outs)
+        records, reason = select(outs, t, reasoning)
         st.add(t, outs, records, reason)
         for r in records:
             kept.append({"messages": [*messages_for(t), {"role": "assistant", "content": r["text"]}], "task": t["id"], "kind": t["kind"],
                          "model": model, "target_source": r["target_source"]})
     check_records(kept)
-    return kept, st.as_dict()
+    stats = st.as_dict()
+    if reasoning:
+        stats["reasoning"] = {"replies": sum(judged.values()), **{v: judged[v] for v in ("accepted", "wrong", "no_answer_line", "truncated", "error")},
+                              "teacher_records": sum(r["target_source"] == TEACHER_SOURCE for r in kept)}
+    return kept, stats

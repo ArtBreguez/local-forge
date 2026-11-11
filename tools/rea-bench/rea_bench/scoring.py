@@ -29,7 +29,9 @@ words, such as "Answer:", is skipped); if it
 holds several sentences the first one is the headline. What follows must be prose (a sentence of 4+ words): a second answer-shaped line
 ("K\\nW", a code block with two values, "Candidates:\\n...") makes the reply a list and rejects it.
 
-What is stored as an SFT target is NEVER the teacher's text (round 4): the teacher's headline is a filter (`accepted_headline`: does it parse as the
+(A `--reasoning` run of the sample stage reads the text after the last `Answer:` line of a reply with score_strict and stores the reply itself: reasoning.py.)
+
+What is stored as an SFT target is NEVER the teacher's text in a default run (round 4): the teacher's headline is a filter (`accepted_headline`: does it parse as the
 task's answer?), and `sft_target` returns the target rendered from the task's own truth (targets.py: the canonical headline and one factual
 sentence of a per-variant template set). Nothing of the teacher's reply is returned, not even its headline (round 9, m1: the record used to carry it as
 `teacher_headline`; the uploaded dataset holds no teacher text).
@@ -318,18 +320,23 @@ def check_target(t: dict) -> None:
         raise ValueError(f"the truth template of task {t.get('id', '?')} ({r['key']}) renders a text that score_strict rejects: {r['text']!r}")
 
 
-def sft_target(reply: str, t: dict):
-    """The target to store for a reply, or None when the reply is not an answer (see accepted_headline). The text is RENDERED FROM THE TRUTH
-    (targets.render): the canonical headline and one factual sentence; nothing of the reply is in it, and nothing of it is returned (round 9, m1).
-    {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth."""
+def truth_target(t: dict) -> dict:
+    """The target rendered from the task's own truth (targets.render): the canonical headline and one factual sentence. Raises when the rendered text is one that `score_strict`
+    rejects. {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth."""
     from . import targets
-    head = accepted_headline(reply, t)
-    if head is None:
-        return None
     r = targets.render(t)
     if not score_strict(r["text"], t):
         raise ValueError(f"the truth template of task {t.get('id', '?')} ({r['key']}) renders a text that score_strict rejects: {r['text']!r}")
     return {"text": r["text"], "headline": r["headline"], "sentence": r["sentence"], "template": r["template"], "target_source": targets.TARGET_SOURCE}
+
+
+def sft_target(reply: str, t: dict):
+    """The target to store for a reply, or None when the reply is not an answer (see accepted_headline). The text is RENDERED FROM THE TRUTH
+    (targets.render): the canonical headline and one factual sentence; nothing of the reply is in it, and nothing of it is returned (round 9, m1).
+    {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth."""
+    if accepted_headline(reply, t) is None:
+        return None
+    return truth_target(t)
 
 
 def canonical(t: dict) -> str:

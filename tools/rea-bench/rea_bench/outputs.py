@@ -22,6 +22,15 @@ def run_tag(seed: int, family: str) -> str:
     return f"seed{seed}-{re.sub(r'[^a-z0-9+]+', '+', family.lower()).strip('+')}"
 
 
+REASONING_SUFFIX = "-reasoning"
+
+
+def sample_tag(tag: str, reasoning: bool = False) -> str:
+    """The tag of a sample run's OWN files (checkpoint and sft output): the decompile tag, plus `-reasoning` for a teacher-reasoning run, so that it never writes into, resumes or moves aside
+    a phase-A checkpoint of the same seed and family. The decompiled tasks are always read by the decompile tag."""
+    return tag + REASONING_SUFFIX if reasoning else tag
+
+
 def decompiled_stem(tag: str) -> str:
     return f"decompiled-{tag}"
 
