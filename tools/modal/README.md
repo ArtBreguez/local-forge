@@ -139,3 +139,14 @@ Tests: `python3 -m unittest` (round 10: 941 tests in 26 minutes, 1 skipped: the 
 - Limits: 10 generated patterns, one function per binary, x86-64 Linux/gcc only. Not a general reverse-engineering model.
 
 The training data itself (`results/phase6/rea-data/*.jsonl`) is not in the repo; it lives in the private dataset above.
+
+## Next run: keep and use the teacher's text (owner decision, 2026-11-11)
+
+Storing the teacher's text is allowed: the teachers are open-weight models, so the rule "no OpenAI/Anthropic output in the dataset" does not forbid it. Phase A threw it away (only the truth-rendered headline and sentence are stored), which keeps the facts right but teaches the answer without the path to it. In distillation work (DeepSeek-R1 distills, STaR, ReST, RFT) most of the gain comes from that path. The next run keeps it and trains on it:
+
+- **Ask for the reasoning.** The sample-stage prompt asks for the steps (what the code reads, which constant, why) before the headline, and `max_tokens` leaves room for them. Today's replies are a headline and one sentence.
+- **Keep it, verified.** A reply enters only when its headline passes `score_strict` (as now) AND every checkable claim in its reasoning passes the claims machinery of `tests/rea_claims.py` (each number, name, bound and direction checked against the compiled task). A reply with one false claim is dropped, never edited.
+- **Store both.** One record per accepted reply: `target_source: "teacher-verified"` with the teacher's text, next to the `"truth-template"` record. `sft.check_records` gets the new field list; the card says which records are which, so training can use either or both.
+- **Measure before choosing.** Train once on truth-template only and once with the verified teacher text, and compare on the new held-out.
+
+The raw replies of phase A are not lost: the checkpoints on the Modal volume (`modal volume get lf-rea-data sft-<model>-seed7-all.partial.jsonl`) hold all six replies per task with their verdict. They are short (headline and one sentence, no reasoning), so they serve the format diagnosis, not this plan.
