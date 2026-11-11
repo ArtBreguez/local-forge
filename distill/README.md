@@ -17,7 +17,7 @@ distill/
   backends/
     modal_sample.py  the sample stage (llama-server, checkpoint/resume, length rule, cost line); no Modal import
     modal_train.py   LoRA fine-tune of a student, merge, GGUF of base and trained model (needs Modal)
-    kaggle/          build_tasks.py (inputs of a free teacher run), run_teacher.py (the kernel, stdlib only)
+    kaggle/          build_tasks.py (inputs of a free teacher run), run_teacher.py (the kernel, stdlib only), README.md (budget per family, the server it starts, the llama-server it reuses)
   domains/
     rea/             REA: the adapter between Domain and tools/rea-bench
     example_arith/   a TEST FIXTURE: arithmetic word problems; proves the core does not depend on REA
@@ -31,7 +31,7 @@ distill/
 | 2 sample | the teacher answers each task `k` times | `backends/modal_sample.py`, or a Kaggle notebook (`backends/kaggle`) | open-weight teachers only (`teachers.py`); a thinking run never samples greedily; a failed request is never scored or stored |
 | 3 verify | the final answer is checked against the truth | `Domain.verify` | by code. In `plain` mode the whole reply is the answer; in `reasoning` / `thinking` the text after the last `Answer:` line (`traces.final_answer`), and a reply cut off at `max_tokens` is rejected |
 | 4 filter | a task is kept when a sample is verified, and when two are for a task a guess solves often | `records.select*`, `Domain.needs_agreement` | agreement filters luck, it does not make a task hard |
-| 5 traces | up to `max_traces` distinct clean verified replies per task | `traces.quality_drop`, `traces.pick_traces` | filters: mixed language, a repetition loop, an analysis that only restates the answer, a plain contradiction, and (thinking) a missing reasoning block; then duplicates (identical normalized text, or token-set Jaccard >= 0.9) |
+| 5 traces | up to `max_traces` distinct clean verified replies per task | `traces.quality_drop`, `traces.pick_traces` | filters: mixed language, a repetition loop (a line or an 8-word window more than 3 times, **not counting what is in the task's own prompt**: a model that reasons quotes its question), an analysis that only restates the answer, a plain contradiction, and (thinking) a missing reasoning block; then duplicates (identical normalized text, or token-set Jaccard >= 0.9) |
 | 6 records | `{messages, task, kind, model, target_source}` and nothing else | `records.assemble`, `records.check_records` | `target_source` is `truth-template` (rendered from the truth, the teacher's text is not stored) or `teacher-reasoning` (the reply verbatim). **The steps of a teacher record are not checked: some may be wrong while the answer is right; a dataset card must say so** |
 | 7 length | a record longer than the training window is dropped and counted, never cut | `records.drop_over_length` (sampler's tokenizer) and `modal_train.encode_ids` (training tokenizer) | one window, `--max-len` |
 | 8 train | LoRA on the student; `<think>` records are trained as the student's chat template renders them | `backends/modal_train.py` | `--mix` also trains the truth records, with an empty think block |
@@ -84,7 +84,7 @@ The output is `/out/<tag>/` on the `lf-lora` volume and `results/phase6/lora/<ta
 
 ## Run configs
 
-`config.RunConfig` is one run as JSON: `domain`, `teacher` (a name in `teachers.py`), `student`, `k`, `mode`, `sampling` (None: the mode's), `max_tokens` (0: the mode's), `max_traces`, `max_len`, `mix`, `quota`. A key that is not a field is refused. `distill/configs/rea-*.json` are today's REA runs (`tests/test_distill_core.py` pins what each resolves to; `rea-thinking.json` carries the pilot quota). `modal_rea_data.py --run-config F` and `modal_lora.py --run-config F` take their flags from a file, and refuse a flag that is also given on the command line.
+`config.RunConfig` is one run as JSON: `domain`, `teacher` (a name in `teachers.py`), `student`, `k`, `mode`, `sampling` (None: the mode's), `max_tokens` (0: the mode's), `max_traces`, `max_len`, `mix`, `quota`, `max_tokens_by_family` (`{family: tokens}`, default none: the reply budget of the tasks of a family whose reasoning does not fit `max_tokens`; the server's slot is sized for the longest budget of a task in the run, `config.server_plan`: 4 slots of 8192 tokens become 2 of 12288 for an 8192-token family, in the same total context). A key that is not a field is refused. `distill/configs/rea-*.json` are today's REA runs (`tests/test_distill_core.py` pins what each resolves to; `rea-thinking.json` carries the pilot quota and 8192 tokens for `cipher`, `magic` and `password`, the three families the thinking pilot cut off at 4096). `modal_rea_data.py --run-config F` and `modal_lora.py --run-config F` take their flags from a file, and refuse a flag that is also given on the command line.
 
 ## The rules
 
