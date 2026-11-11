@@ -7,7 +7,10 @@ m1   the Modal-side re-check refuses a legacy lcg task whose multiplier the Moda
 from __future__ import annotations
 
 import collections
+import itertools
+import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -22,8 +25,28 @@ from rea_bench import families  # noqa: E402
 
 # ---- M2 (4)-(6): the Modal stage ------------------------------------------------------------------------------------------------------
 
+def private_mkdtemp(case) -> None:
+    """`_decompile_task` makes its work directory with tempfile.mkdtemp and never removes it (the container is thrown away): in a test it would leave a `t.c` in /tmp per call."""
+    tmp = tempfile.TemporaryDirectory()
+    case.addCleanup(tmp.cleanup)
+    counter = itertools.count()
+
+    def mkdtemp(*a, **k):
+        path = os.path.join(tmp.name, f"d{next(counter)}")
+        os.makedirs(path)
+        return path
+
+    patch = mock.patch("tempfile.mkdtemp", mkdtemp)
+    patch.start()
+    case.addCleanup(patch.stop)
+
+
 class ModalStageGuarantees(StubbedSampleStage):
     """The sample stage and the build of the decompile stage, with Modal and the model stubbed."""
+
+    def setUp(self):
+        super().setUp()
+        private_mkdtemp(self)
 
     def test_the_k_samples_have_a_temperature_above_zero_and_one_seed_each(self):
         """Round 8, M2, D34: at temperature 0 the K samples are one greedy answer and the K-agreement rule counts it K times (D33, one seed for all, was caught)."""
@@ -67,6 +90,9 @@ class ModalStageGuarantees(StubbedSampleStage):
 
 @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
 class LcgModalRecheck(ModalCase):
+    def setUp(self):
+        private_mkdtemp(self)
+
     def test_the_modal_side_recheck_refuses_a_folded_task_and_lets_a_readable_one_through_to_the_decompile(self):
         by = {t.id: t for t in families.generate("legacy", 3000, 2027)}
         t = by["lcg-2027-0013"]
