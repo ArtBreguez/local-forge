@@ -192,11 +192,16 @@ def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX
     kept, stats = records.assemble(tasks, results, model, messages_for, True, thinking, max_traces, domain=domain)
     stats["prompts"] = prompts
     stats["projected_fit"] = projected_fit(kept, lengths, config.THINKING_REPORT_WINDOWS if thinking else config.REPORT_WINDOWS)
+    by_family = (run_info or {}).get("max_tokens_by_family") or {}
     if run_info:
         stats["sampling"] = config.sampling_record(run_info.get("thinking", thinking), run_info.get("sampling") or {}, run_info.get("max_tokens"), seed_base=run_info.get("seed_base"),
-                                                   slot_context=run_info.get("ctx_per_slot"), parallel=run_info.get("slots"))
+                                                   slot_context=run_info.get("ctx_per_slot"), parallel=run_info.get("slots"), **({"max_tokens_by_family": by_family} if by_family else {}))
         stats["run"] = run_info
     stats["families"] = family_table(stats, tokens)
+    if by_family:               # a family with a budget of its own: its cut-off share is read against that budget, so the row says which
+        for kind, row in stats["families"].items():
+            if kind != "ALL":
+                row["max_tokens"] = config.task_max_tokens(kind, run_info.get("max_tokens"), by_family)
     stats["thinking"] = thinking
     stats["kaggle"] = {**info, "unknown_ids": len(unknown), "tasks_in_file": len(known), "tasks_without_replies": len(known - set(replies)), "replies_file": pathlib.Path(replies_path).name,
                        "tasks_file": pathlib.Path(tasks_path).name}
@@ -214,12 +219,14 @@ def default_out(tasks_path, model: str, thinking: bool, prefix: str = "") -> pat
 
 def families_report(stats: dict) -> list:
     """The per-family lines printed after a run."""
-    lines = [f"  {'family':10s} {'tasks':>5s} {'answers':>7s} {'accepted':>8s} {'kept':>5s} {'traces':>6s} {'cut off':>8s} {'tokens mean/median':>19s}  drops"]
+    budgets = any("max_tokens" in r for r in stats["families"].values())          # a run with a budget per family says which budget each family had
+    lines = [f"  {'family':10s} {'tasks':>5s} {'answers':>7s} {'accepted':>8s} {'kept':>5s} {'traces':>6s} {'cut off':>8s} {'tokens mean/median':>19s}" + (f" {'max_tokens':>10s}" if budgets else "") + "  drops"]
     for kind, r in sorted(stats["families"].items(), key=lambda kv: (kv[0] != "ALL", kv[0])):
         tk = r["tokens"]
         drops = ", ".join(f"{k} {v}" for k, v in r["drops"].items() if v)
         toks = "-" if tk["mean"] is None else "%s/%s" % (tk["mean"], tk["median"])
-        lines.append(f"  {kind:10s} {r['tasks']:5d} {r['answers']:7d} {r['accepted']:8d} {r['kept_tasks']:5d} {r['traces']:6d} {100 * r['truncated_share']:7.1f}% {toks:>19s}  {drops or '-'}")
+        lines.append(f"  {kind:10s} {r['tasks']:5d} {r['answers']:7d} {r['accepted']:8d} {r['kept_tasks']:5d} {r['traces']:6d} {100 * r['truncated_share']:7.1f}% {toks:>19s}"
+                     + (f" {r.get('max_tokens', '-'):>10}" if budgets else "") + f"  {drops or '-'}")
     return lines
 
 
