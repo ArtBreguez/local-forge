@@ -237,9 +237,9 @@ def _crc_val(t):
 
 
 _CRC_VAL = ("{x:#x}", "It is {x:#x}.", "Answer: {x:#x}", "value {x:#x}")
-_CRC_INIT_S = ("The initial value of this {w}-bit CRC is {x:#x}.",
-               "proc starts the {w}-bit CRC computation from the value {x:#x}.",
-               "Before the first byte is processed, the {w}-bit CRC has the value {x:#x}.")
+_CRC_INIT_S = ("The {w}-bit CRC register is loaded with {x:#x} before the first byte is processed.",
+               "proc starts the {w}-bit CRC computation from the register value {x:#x}.",
+               "Before the first byte is processed, the {w}-bit CRC register holds {x:#x}.")
 _CRC_XOR_S = ("After the last byte, the {w}-bit CRC is XORed with {x:#x} before it is returned.",
               "The final XOR value of this {w}-bit CRC is {x:#x}.",
               "The result of the {w}-bit CRC computation is XORed with {x:#x} as its last step.")
@@ -481,7 +481,7 @@ spec("antidebug/tracerpid", _AD_HEADS,
 
 @spec("antidebug/env", ("{tech}, {NAME}", "{tech} check, {NAME}", "{NAME}, {tech}", "getenv, {NAME}"),
       ("proc looks at the environment variable {NAME}.",
-       "The function tests the environment variable {NAME} as a debugging variable.",
+       "The value that proc returns depends on the environment variable {NAME}.",
        "The check reads the environment variable {NAME}, and that is what makes it an environment-based test."))
 def _(t):
     return {"tech": t["accept"][0][0], "NAME": t["accept"][1][0].upper()}
@@ -493,11 +493,11 @@ def _timing(unit, scale):
     return f
 
 
-spec("antidebug/timing_ns", ("{tech}, {thr}", "{tech}, {thr} ns", "{tech}: {thr} ns", "{tech} check, {thr} ns"),
+spec("antidebug/timing_ns", ("{tech}, {thr}", "{tech}: {thr}", "{tech} check, {thr}", "{tech} check: {thr}"),
      ("proc measures the time between two clock readings and reports a debugger when it is above {thr} nanoseconds.",
       "A debugger is reported when more than {thr} nanoseconds pass between the two clock readings.",
       "The largest time between the two clock readings that proc still lets pass is {thr} nanoseconds."))(_timing("nanoseconds", 10 ** 9))
-spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}, {thr} us", "{tech}: {thr} us", "{tech} check, {thr} us"),
+spec("antidebug/timing_us", ("{tech}, {thr}", "{tech}: {thr}", "{tech} check, {thr}", "{tech} check: {thr}"),
      ("proc measures the time between two clock readings and reports a debugger when it is above {thr} microseconds.",
       "A debugger is reported when more than {thr} microseconds pass between the two clock readings.",
       "The largest time between the two clock readings that proc still lets pass is {thr} microseconds."))(_timing("microseconds", 10 ** 6))
@@ -618,7 +618,7 @@ def _(t):
 @spec("skip", ("0x{b:02x}", "It is 0x{b:02x}.", "The value is 0x{b:02x}.", "Answer: 0x{b:02x}"),
       ("The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.",
        "Bytes with the value 0x{b:02x} are left out of the sum, and the length of the input is added at the end.",
-       "Exactly one byte value does not count in the sum, and it is 0x{b:02x}."))
+       "The test leaves exactly one byte value out of the sum, and it is 0x{b:02x}."))
 def _(t):
     return {"b": int(t["accept"][0], 16)}
 

@@ -1507,6 +1507,9 @@ def hash_name_is_the_algorithm(c: Ctx):
 @claim
 def skip_one_value(c: Ctx):
     b = c.s["b"]
+    # round 8, m4: "the test leaves the byte out" is about the comparison in the source, not about the arithmetic (a byte 0x00 adds 0 whether it is skipped or not)
+    need(len(re.findall(r"p\[i\] != 0x([0-9a-fA-F]+)\)", c.body)) == 1 and re.search(r"p\[i\] != 0x([0-9a-fA-F]+)\)", c.body).group(1).lower().lstrip("0") == f"{b:x}".lstrip("0"),
+         f"the test of proc is not a comparison with the byte {b:#04x}")
     rng = random.Random(c.t.id + "/skip")
     multi = [bytes(rng.choice([b, rng.randrange(256)]) for _ in range(rng.randint(0, 30))) for _ in range(40)]
     out = ints(c.run('int main(void) {\n    for (int v = 0; v < 256; v++) { uint8_t x = (uint8_t)v; printf("%u ", (unsigned)proc(&x, 1)); }\n    printf("\\n");\n'

@@ -130,9 +130,16 @@ def salsa_block(key, counter, nonce, rounds):
 
 # ---- task builders ---------------------------------------------------------------------------------------------------
 
-def _truth(alg, extra_groups, direction=None):
-    accept = [NAMES[alg]] + ([ENC if direction == "enc" else DEC] if direction else []) + extra_groups
-    reject = reject_for(alg)
+def stream_names(alg: str, rounds: int) -> list:
+    """The names of a ChaCha/Salsa task: the family and the variant with the task's OWN round count (`chacha`, `chacha12`, `chacha-12`). `ChaCha8` over a
+    12-round function names another cipher: the round count in a name is part of the answer (round 8, m17: the group listed chacha8, chacha12 and chacha20
+    for every task, so `ChaCha8, 20` was accepted for ChaCha20)."""
+    return [alg, f"{alg}{rounds}", f"{alg}-{rounds}"]
+
+
+def _truth(alg, extra_groups, direction=None, names=None):
+    accept = [names or NAMES[alg]] + ([ENC if direction == "enc" else DEC] if direction else []) + extra_groups
+    reject = reject_for(alg) + [n for n in NAMES[alg] if names and n not in names]
     if direction:
         reject += DEC if direction == "enc" else [w for w in ENC if w != "encryption"]   # "Tiny Encryption Algorithm" is not a direction
     out = {"score": "tokens", "accept": accept, "reject": reject}
@@ -182,7 +189,7 @@ def v_rc4(rng):
     return 0;
 }}"""
     q = ("This function transforms a buffer in place. Which cipher is it, and how many bytes long is its key (decimal)? "
-         "A comparison may show the length one off (`> N - 1` for `>= N`).")
+         "A comparison may show the length one off (`> N - 1` for `>= N`, and `== N - 1` or `<= N - 1` where the code tests a counter that was already moved on).")
     return Task(kind=FAMILY, variant="rc4", body=body, question=q, truth=_truth("rc4", [dec(klen)]),
                 params={"key": key, "keylen": klen}, wrong=f"RC4, key length {klen + 1}",
                 check=(main, rc4(key, data).hex() + "\n"), facts=[near(klen)])
@@ -243,7 +250,7 @@ def _tea_task(rng, alg, direction):
 }}"""
     out = ref(v, key, rounds, decrypt=(direction == "dec"))
     q = (f"This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it "
-         "encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off)?")
+         "encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off: `i <= N - 1` for `i < N`)?")
     other = "xtea" if alg == "tea" else "tea"
     flip = "decrypt" if direction == "enc" else "encrypt"
     wrong = {("tea", "enc"): f"TEA, {flip}, {rounds}", ("tea", "dec"): f"TEA, decrypt, {rounds + 16}",
@@ -338,7 +345,7 @@ def _stream_task(rng, alg):
     q = ("This function expands a 256-bit key, a counter and a nonce into a 64-byte block. Which cipher family is it, and how many rounds "
          "does it run in total (a double round counts as 2, so a loop of N double rounds is 2N; the bound may show one off; decimal)?")
     wrong = f"salsa20, {rounds}" if alg == "chacha" else f"Salsa20, {rounds + 4}"
-    return Task(kind=FAMILY, variant=alg, body=body, question=q, truth=_truth(alg, [dec(rounds)]),
+    return Task(kind=FAMILY, variant=alg, body=body, question=q, truth=_truth(alg, [dec(rounds)], names=stream_names(alg, rounds)),
                 params={"key": key, "rounds": rounds, "counter": counter, "nonce": nonce, "style": style},
                 wrong=wrong, check=(main, expect),
                 facts=[near(rounds) + near(rounds // 2) + [{"at": r"(?:for \(int i = 0; i < |for \(int i = )(\d+); i(?: \+= 2|\+\+| > 0; i -= 2)\) \{\n\s*QR", "kind": "half"}]])

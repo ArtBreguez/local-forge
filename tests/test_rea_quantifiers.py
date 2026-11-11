@@ -67,7 +67,7 @@ QUANTIFIED = {
     "A header is valid only if its first four bytes, read as a little-endian 32-bit word, are 0x{m:08x}, and a version above {v} is rejected.":
         ("magic_header", "bits"),
     "The checksum adds up every byte of the input except those equal to 0x{b:02x}, and then adds the length.": ("skip_one_value", "all256"),
-    "Exactly one byte value does not count in the sum, and it is 0x{b:02x}.": ("skip_one_value", "all256"),
+    "The test leaves exactly one byte value out of the sum, and it is 0x{b:02x}.": ("skip_one_value", "all256"),
     "The function returns {inside} for every v from {lo} to {hi}, {below} for a smaller v and {above} for a larger v.": ("threshold_values", "sweep"),
     # round 7, m3: universal in disguise (each is backed by the claim and the domain of its registered sibling, or of its own)
     "A structure that proc allocates is {n} bytes long, whether it allocates a single structure or several.": ("alloc_structure_size", "allocations"),

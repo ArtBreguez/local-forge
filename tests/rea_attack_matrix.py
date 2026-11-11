@@ -159,7 +159,7 @@ def family_attacks(t) -> list:
     out, kind, mode, acc = [], t["kind"], t["score"], t["accept"]
     v = t.get("variant", "")
     if kind == "cipher":
-        alg = {"rc4": "RC4", "tea_enc": "TEA", "tea_dec": "TEA", "xtea_enc": "XTEA", "xtea_dec": "XTEA", "chacha": "ChaCha20", "salsa": "Salsa20"}[v]
+        alg = {"rc4": "RC4", "tea_enc": "TEA", "tea_dec": "TEA", "xtea_enc": "XTEA", "xtea_dec": "XTEA", "chacha": "ChaCha", "salsa": "Salsa"}[v]
         num = [g for g in acc if g and g[0].isdigit()]
         rounds = num[0][0]
         d = "decrypt" if v.endswith("dec") else "encrypt"
@@ -205,12 +205,15 @@ def family_attacks(t) -> list:
                     ("tea permuted dir twice", f"{d}, {alg}, {d}, {rounds}", False), ("tea permuted alg twice", f"{alg}, {d}, {alg}, {rounds}", False),
                     ("tea permuted direction absent", f"{alg}, {alg}, {rounds}", False), ("tea permuted both names then dir", f"{alg} {other} {d} {rounds}", False)]
         if v in ("chacha", "salsa"):
-            other_alg = "Salsa20" if alg == "ChaCha20" else "ChaCha20"
-            x_alg = "XSalsa20" if alg == "Salsa20" else "XChaCha20"
+            other_alg = "Salsa20" if alg == "ChaCha" else "ChaCha20"
+            x_alg = "XSalsa20" if alg == "Salsa" else "XChaCha20"
             out += [("stream wrong alg", f"{other_alg}, {rounds}", False), ("stream both algs", f"{alg} or {other_alg}, {rounds}", False),
                     ("stream X-variant or", f"{alg} or {x_alg}, {rounds}", False), ("stream X-variant list", f"{alg}, {x_alg}, {rounds}", False),
                     ("stream alg w/ rounds off-by-one", f"{alg}, {int(rounds) + 2}", False), ("stream name+digits no rounds", f"{alg}", False),
-                    ("stream 'ChaCha-12 style name digits only'", f"{alg.rstrip('0123456789')}, {rounds}", True)]
+                    ("stream 'ChaCha-12 style name digits only'", f"{alg.rstrip('0123456789')}, {rounds}", True),
+                    # round 8, m17: the round count inside a name is the task's own, not any of 8, 12, 20
+                    ("stream name with the task's own rounds", f"{alg}{rounds}, {rounds}", True), ("stream hyphenated name with its own rounds", f"{alg}-{rounds}, {rounds}", True),
+                    ("stream name with other rounds", f"{alg}{int(rounds) + 2}, {rounds}", False), ("stream name with 8 rounds (not the task's)", f"{alg}8, {rounds}" if rounds != "8" else f"{alg}12, {rounds}", False)]
         if v == "rc4":
             out += [("rc4 klen+-1", f"RC4, {int(rounds) + 1}", False), ("rc4 'arcfour'", f"ARCFOUR, {rounds} bytes", True),
                     ("rc4 bits not bytes", f"RC4, {int(rounds) * 8} bits", False), ("rc4 'RC4/ARC4' (same)", f"RC4/ARC4, {rounds}", True),

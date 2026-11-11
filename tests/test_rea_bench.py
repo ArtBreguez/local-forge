@@ -56,8 +56,10 @@ GCC_OBJDUMP = bool(shutil.which("gcc") and shutil.which("objdump"))
 
 class LegacyPin(unittest.TestCase):
     """The ten original templates must keep producing byte-identical files for a seed (the held-out split is seed 1001)."""
-    PINS = {1001: "97beddfa668013b6a82176c4bf4108b3726b2d9a1c1ba3714d4aaef24a9b2418",
-            7: "9505981ce3199e87db6490807a798603b08c84a391ee579b5c9f25c0b91a592a"}
+    # round 8, m7: the question of the `magic` template now says which byte order the key is in; nothing else of the legacy output changed
+    # (tests/test_rea_round8.py LegacyMagic replays the old question text and gets the round-7 digests, 97beddfa... and 9505981c...)
+    PINS = {1001: "d4c9e631900c20261ebbaf71d5a70157329ec332d5f00a4332c75d18098d2330",
+            7: "35a09fe472fc2b43c6f9e26c83d1c68f9339e7c18522c4345b46c99a65c9c09e"}
 
     def test_in_process(self):
         for seed, want in self.PINS.items():

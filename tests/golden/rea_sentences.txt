@@ -100,16 +100,16 @@ crc/bitwise_init head[0] <x:#x>
 crc/bitwise_init head[1] It is <x:#x>.
 crc/bitwise_init head[2] Answer: <x:#x>
 crc/bitwise_init head[3] value <x:#x>
-crc/bitwise_init sentence[0] The initial value of this <w>-bit CRC is <x:#x>.
-crc/bitwise_init sentence[1] proc starts the <w>-bit CRC computation from the value <x:#x>.
-crc/bitwise_init sentence[2] Before the first byte is processed, the <w>-bit CRC has the value <x:#x>.
+crc/bitwise_init sentence[0] The <w>-bit CRC register is loaded with <x:#x> before the first byte is processed.
+crc/bitwise_init sentence[1] proc starts the <w>-bit CRC computation from the register value <x:#x>.
+crc/bitwise_init sentence[2] Before the first byte is processed, the <w>-bit CRC register holds <x:#x>.
 crc/table_init head[0] <x:#x>
 crc/table_init head[1] It is <x:#x>.
 crc/table_init head[2] Answer: <x:#x>
 crc/table_init head[3] value <x:#x>
-crc/table_init sentence[0] The initial value of this <w>-bit CRC is <x:#x>.
-crc/table_init sentence[1] proc starts the <w>-bit CRC computation from the value <x:#x>.
-crc/table_init sentence[2] Before the first byte is processed, the <w>-bit CRC has the value <x:#x>.
+crc/table_init sentence[0] The <w>-bit CRC register is loaded with <x:#x> before the first byte is processed.
+crc/table_init sentence[1] proc starts the <w>-bit CRC computation from the register value <x:#x>.
+crc/table_init sentence[2] Before the first byte is processed, the <w>-bit CRC register holds <x:#x>.
 crc/bitwise_xorout head[0] <x:#x>
 crc/bitwise_xorout head[1] It is <x:#x>.
 crc/bitwise_xorout head[2] Answer: <x:#x>
@@ -521,19 +521,19 @@ antidebug/env head[1] <tech> check, <NAME>
 antidebug/env head[2] <NAME>, <tech>
 antidebug/env head[3] getenv, <NAME>
 antidebug/env sentence[0] proc looks at the environment variable <NAME>.
-antidebug/env sentence[1] The function tests the environment variable <NAME> as a debugging variable.
+antidebug/env sentence[1] The value that proc returns depends on the environment variable <NAME>.
 antidebug/env sentence[2] The check reads the environment variable <NAME>, and that is what makes it an environment-based test.
 antidebug/timing_ns head[0] <tech>, <thr>
-antidebug/timing_ns head[1] <tech>, <thr> ns
-antidebug/timing_ns head[2] <tech>: <thr> ns
-antidebug/timing_ns head[3] <tech> check, <thr> ns
+antidebug/timing_ns head[1] <tech>: <thr>
+antidebug/timing_ns head[2] <tech> check, <thr>
+antidebug/timing_ns head[3] <tech> check: <thr>
 antidebug/timing_ns sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> nanoseconds.
 antidebug/timing_ns sentence[1] A debugger is reported when more than <thr> nanoseconds pass between the two clock readings.
 antidebug/timing_ns sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> nanoseconds.
 antidebug/timing_us head[0] <tech>, <thr>
-antidebug/timing_us head[1] <tech>, <thr> us
-antidebug/timing_us head[2] <tech>: <thr> us
-antidebug/timing_us head[3] <tech> check, <thr> us
+antidebug/timing_us head[1] <tech>: <thr>
+antidebug/timing_us head[2] <tech> check, <thr>
+antidebug/timing_us head[3] <tech> check: <thr>
 antidebug/timing_us sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> microseconds.
 antidebug/timing_us sentence[1] A debugger is reported when more than <thr> microseconds pass between the two clock readings.
 antidebug/timing_us sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> microseconds.
@@ -627,7 +627,7 @@ skip head[2] The value is 0x<b:02x>.
 skip head[3] Answer: 0x<b:02x>
 skip sentence[0] The checksum adds up every byte of the input except those equal to 0x<b:02x>, and then adds the length.
 skip sentence[1] Bytes with the value 0x<b:02x> are left out of the sum, and the length of the input is added at the end.
-skip sentence[2] Exactly one byte value does not count in the sum, and it is 0x<b:02x>.
+skip sentence[2] The test leaves exactly one byte value out of the sum, and it is 0x<b:02x>.
 rotate head[0] 0x<k:08x>, <r>
 rotate head[1] 0x<k:08x> and <r>
 rotate head[2] 0x<k:08x>; <r>

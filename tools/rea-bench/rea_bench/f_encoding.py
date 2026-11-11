@@ -22,7 +22,7 @@ STD = {"base64": B64, "base32": B32, "base58": B58}
 RADIX = {"base64": 64, "base32": 32, "base58": 58}
 BASE_NAMES = {"base64": ["base64", "base-64"], "base32": ["base32", "base-32"], "base58": ["base58", "base-58"]}
 OTHER_BASES = ["base16", "base36", "base45", "base62", "base85", "base91", "base32hex", "base64url", "base58check", "ascii85", "z85", "uuencode",
-               "radix64", "bech32", "hex"]
+               "bech32", "hex"]          # (round 8, m8: `radix64`, OpenPGP's name for base64, was here: a right base64 answer that mentions it was rejected by the evaluation scorers)
 BASE_SHAPE = r"base-?\d+[a-z]*"      # any other baseNN in a headline is a second candidate, listed or not
 ENCODE = ["encode", "encodes", "encoder", "encoding", "encodes"]
 DECODE = ["decode", "decodes", "decoder", "decoding"]

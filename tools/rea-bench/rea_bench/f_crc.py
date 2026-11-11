@@ -180,8 +180,8 @@ def _make(rng, form, ask):
         truth = {"score": "tokens", "accept": [hx(lit, d), [word]], "reject": [other]}
         wrong = f"0x{lit:0{d}x} {other}"
     elif ask == "init":
-        q = (f"This function computes a {width}-bit CRC. What is the initial value of the CRC register (hex, written at the CRC's width: "
-             f"an all-ones value is 0x{(1 << width) - 1:x} even where the code loads a wider -1)?")
+        q = (f"This function computes a {width}-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code "
+             f"writes it, at the CRC's width: an all-ones value is 0x{(1 << width) - 1:x} even where the code loads a wider -1)?")
         truth = {"score": "tokens", "accept": [hx(init, d)]}
         wrong = f"0x{init ^ 0x1:0{d}x}"
     else:

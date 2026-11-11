@@ -47,7 +47,7 @@ def t_magic(rng):
     uint32_t ver; memcpy(&ver, hdr + 4, 4);
     return ver > {maxv} ? -3 : (int)ver;
 }}'''
-    return body, "What 32-bit magic value must the header start with (hex), and what is the highest accepted version?", {"score": "all", "accept": [f"{magic:08x}", str(maxv)]}, "magic"
+    return body, "What 32-bit magic value must the header start with (hex, the first four bytes read as a little-endian word), and what is the highest accepted version?", {"score": "all", "accept": [f"{magic:08x}", str(maxv)]}, "magic"
 
 
 def t_lcg(rng):

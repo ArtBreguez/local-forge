@@ -154,9 +154,9 @@ _CRC_POLY = [
     P("The {w:i}-bit CRC that proc returns is {dir:%s}, and its polynomial constant is {lit:h}." % _DIR, "crc_poly_form"),
     P("The polynomial of this {w:i}-bit CRC is given by the constant {lit:h}, and the CRC is {dir:%s}." % _DIR, "crc_poly_form")]
 _CRC_INIT = [
-    P("The initial value of this {w:i}-bit CRC is {x:h}.", "crc_init_value"),
-    P("proc starts the {w:i}-bit CRC computation from the value {x:h}.", "crc_init_value"),
-    P("Before the first byte is processed, the {w:i}-bit CRC has the value {x:h}.", "crc_init_value")]
+    P("The {w:i}-bit CRC register is loaded with {x:h} before the first byte is processed.", "crc_init_value"),
+    P("proc starts the {w:i}-bit CRC computation from the register value {x:h}.", "crc_init_value"),
+    P("Before the first byte is processed, the {w:i}-bit CRC register holds {x:h}.", "crc_init_value")]
 _CRC_XOR = [
     P("After the last byte, the {w:i}-bit CRC is XORed with {x:h} before it is returned.", "crc_xorout_value"),
     P("The final XOR value of this {w:i}-bit CRC is {x:h}.", "crc_xorout_value"),
@@ -289,7 +289,7 @@ TABLE.update({
         P("A {field:w} that shows a tracer makes proc return {rv:i}.", "tracerpid_status")],
     "antidebug/env": [
         P("proc looks at the environment variable {NAME:w}.", "env_variable_read"),
-        P("The function tests the environment variable {NAME:w} as a debugging variable.", "env_variable_read"),
+        P("The value that proc returns depends on the environment variable {NAME:w}.", "env_variable_read"),
         P("The check reads the environment variable {NAME:w}, and that is what makes it an environment-based test.", "env_variable_read")],
 })
 _UNIT = "nanoseconds|microseconds|milliseconds|seconds"
@@ -362,7 +362,7 @@ TABLE.update({
     "skip": [
         P("The checksum adds up every byte of the input except those equal to {b:h}, and then adds the length.", "skip_one_value"),
         P("Bytes with the value {b:h} are left out of the sum, and the length of the input is added at the end.", "skip_one_value"),
-        P("Exactly one byte value does not count in the sum, and it is {b:h}.", "skip_one_value")],
+        P("The test leaves exactly one byte value out of the sum, and it is {b:h}.", "skip_one_value")],
     "rotate": [
         P("The function XORs its argument with {k:h} and then rotates the result {dir:%s} by {r:i} bits." % _LR, "rotate_reference"),
         P("The constant {k:h} is XORed in first, and the {dir:%s} rotation that follows is by {r:i} bits." % _LR, "rotate_reference"),
@@ -406,7 +406,6 @@ HEAD_WORDS = {
     "iterations": ("cipher/tea_", "cipher/xtea_"),
     "key": ("xor-key", "keycount"),
     "lowest": ("bounds/range_chain", "bounds/window", "bounds/index_limit", "bounds/clamp", "threshold"),
-    "ns": ("antidebug/timing_ns",),
     "offset": ("structs/", "pktsum/"),
     "opcode": ("fsm/opcode_",),
     "opcodes": ("fsm/opcode_",),
@@ -419,7 +418,6 @@ HEAD_WORDS = {
     "states": ("fsm/table_states", "fsm/switch_states"),
     "string": ("strobf/", "multi/decode_secret", "password", "xor-key"),
     "structure": ("structs/alloc_size",),
-    "us": ("antidebug/timing_us",),
     "value": ("crc/", "skip", "multi/key_helper"),
     "values": ("bounds/char_class",),
     "writes": ("strobf/",),                  # proc WRITES the string into its argument; decode_secret and password compare, xor-key writes the buffer
@@ -504,7 +502,6 @@ _STREAM_H = ["{alg:%s}, {rounds:i}" % _ALGS_, "{alg:%s}, {rounds:i} rounds" % _A
 _ENC_H = ["{dir:encode|decode}, {base:base64|base32|base58}", "{base:base64|base32|base58}, {dir:encode|decode}", "{base:base64|base32|base58} {dir:encode|decode}",
           "{Dir:Encode|Decode}s {base:base64|base32|base58}"]
 _ALPHA_H = ("{s:t}", "The alphabet is: {s:t}", "Alphabet: {s:t}", '"{s:t}"')
-_TECH_UNIT = "ns|us"
 _Q_UNIT = Q(r"above how many (nanoseconds|microseconds|milliseconds|seconds)", "w")
 
 
@@ -514,9 +511,10 @@ def _ad(tech: str, claim: str, **implied) -> list:
 
 
 def _timing_h(tech: str = "timing") -> list:
-    return ([H("{tech:%s}, {thr:i}" % tech, "timing_threshold", unit=_Q_UNIT)]
-            + _hr(("{tech:%s}, {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s}: {thr:i} {unit:%s}" % (tech, _TECH_UNIT), "{tech:%s} check, {thr:i} {unit:%s}" % (tech, _TECH_UNIT)),
-                  "timing_threshold"))
+    """The headline carries the number only: the question says "Answer with a plain integer in <unit>: no separators, no other unit", so a stored headline
+    with a unit after the number would contradict the instruction of the prompt it answers (round 8, m2). The unit is implied by the question."""
+    return _hr(("{tech:%s}, {thr:i}" % tech, "{tech:%s}: {thr:i}" % tech, "{tech:%s} check, {thr:i}" % tech, "{tech:%s} check: {thr:i}" % tech),
+               "timing_threshold", unit=_Q_UNIT)
 
 
 HEADS: dict = {

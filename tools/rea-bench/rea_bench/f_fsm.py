@@ -36,8 +36,26 @@ def distances(delta):
     return dist
 
 
-def make_machine(rng):
-    """(alphabet, delta, shortest accepting length d). Accept state = last; built around a planted path so d is 3..5."""
+def minimal(delta) -> bool:
+    """True when no two states can be told apart by reading letters, with the accept state (the last one) as the only observation (Moore's partition
+    refinement), AND no two states have the same row of transitions. A reader who merges states that behave alike then still counts every state: the count
+    of the states question has one answer (round 8, m5: 20% of `table_states` and 14% of `switch_states` tasks had two states with the same row, e.g. both
+    {3, 4}, which an automaton-minimising reader merges)."""
+    s = len(delta)
+    if len({tuple(r) for r in delta}) != s:
+        return False
+    cls = [int(i == s - 1) for i in range(s)]
+    while True:
+        ids: dict = {}
+        new = [ids.setdefault((cls[i], tuple(cls[t] for t in delta[i])), len(ids)) for i in range(s)]
+        if len(ids) == len(set(cls)):
+            return len(ids) == s
+        cls = new
+
+
+def make_machine(rng, distinct: bool = False):
+    """(alphabet, delta, shortest accepting length d). Accept state = last; built around a planted path so d is 3..5. `distinct`: also every state
+    differs from every other (see `minimal`): the machines of the states question."""
     for _ in range(2000):
         s = rng.randint(5, 8)
         a = rng.randint(2, 4)
@@ -51,7 +69,7 @@ def make_machine(rng):
             delta[path[i]][rng.randrange(a)] = path[i + 1]
         delta[acc] = [acc] * a
         dist = distances(delta)
-        if len(dist) == s and dist[acc] == d:
+        if len(dist) == s and dist[acc] == d and (not distinct or minimal(delta)):
             return alphabet, delta, d
     raise RuntimeError("no machine found")
 
@@ -141,7 +159,7 @@ def states_harness(alphabet, s):
 
 
 def _machine_task(rng, variant, code_fn, ask):
-    alphabet, delta, d = make_machine(rng)
+    alphabet, delta, d = make_machine(rng, distinct=(ask == "states"))
     s, acc = len(delta), len(delta) - 1
     body = code_fn(alphabet, delta)
     if ask == "input":

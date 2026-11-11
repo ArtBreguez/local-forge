@@ -39,9 +39,17 @@ def env_name(rng) -> str:
     return name + (f"_{rng.randint(1, 99)}" if rng.random() < 0.3 and not name.endswith("_") else "")
 
 
-def truth(tech, detail_alts):
-    other = [n for t, ns in TECH.items() if t != tech for n in ns]
-    return {"score": "tokens", "accept": [TECH[tech], detail_alts], "reject": other}
+TIMING_API = {"ns": "clock_gettime", "us": "gettimeofday"}     # the clock call each timing variant makes (round 8, m3)
+
+
+def truth(tech, detail_alts, unit=None):
+    """`unit` (timing only): the variant's own clock call. The name group of a timing task holds the generic words and THAT call: `rdtsc`, or the call of the
+    other variant, names a technique the code does not use, so it is a wrong answer (it is in `reject`), not a spelling of "timing" (round 8, m3)."""
+    names = TECH[tech]
+    if tech == "timing":
+        names = [n for n in names if n in ("timing", "time-based") or n == TIMING_API[unit]]
+    other = [n for t, ns in TECH.items() if t != tech for n in ns] + [n for n in TECH[tech] if n not in names]
+    return {"score": "tokens", "accept": [names, detail_alts], "reject": other}
 
 
 def question(detail):
@@ -190,7 +198,7 @@ static int fake_gettimeofday(struct timeval *t, void *tz) {
                 question=question(f"above how many {name} between the two clock readings does it report a debugger? "
                                   f"Answer with a plain integer in {name}: no separators, no other unit. (The code may test `>= N + 1`; "
                                   f"N is the largest elapsed time it still lets pass.)"),
-                truth=truth("timing", dec(thr)), params={"thr": thr, "unit": unit, "work": work, "form": form}, wrong=f"timing, {thr * 2}",
+                truth=truth("timing", dec(thr), unit), params={"thr": thr, "unit": unit, "work": work, "form": form}, wrong=f"timing, {thr * 2}",
                 check=(main, "0\n0\n1\n", pre), facts=[[thr, thr + 1, {"at": r"d > (\d+)LL", "kind": "near"}]])
 
 

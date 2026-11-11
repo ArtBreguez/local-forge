@@ -463,6 +463,7 @@ class HeadWording(unittest.TestCase):
         self.assertTrue(RS.head_word_problems({"keycount": ("{s}", "The key is: {s}", "Key: {s}", "It counts: {s}")}))
         self.assertTrue(RS.head_word_problems({"strobf/xor_const": ("{s}", "The string is: {s}", "It reads: {s}", "Plaintext: {s}")}), "an unregistered verb")
         self.assertTrue(RS.head_word_problems({"antidebug/timing_us": ("{tech}, {thr}", "{tech}, {thr} ns")}), "a unit of the other variant")
+        self.assertTrue(RS.head_word_problems({"antidebug/timing_us": ("{tech}, {thr}", "{tech}, {thr} us")}), "round 8, m2: no timing headline carries a unit")
         self.assertFalse(RS.head_word_problems({"strobf/xor_const": targets.EXACT, "multi/decode_secret": targets.ACCEPTED}))
 
     def test_no_decode_secret_or_xor_key_record_says_it_writes(self):
