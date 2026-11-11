@@ -2,6 +2,8 @@
 `legacy` is special (frozen, one shared rng, no `cc` field) and has its own generate()."""
 from __future__ import annotations
 
+import re
+
 from . import f_antidebug, f_bounds, f_cipher, f_crc, f_encoding, f_fsm, f_multifunc, f_pktsum, f_strobf, f_structs, legacy
 from .core import HELDOUT_SEED, build, draw
 
@@ -28,13 +30,27 @@ def draws(family: str, n: int, seed: int, attempts: int, cc: str = "mix") -> lis
     return [draw(m.FAMILY, m.VARIANTS, i, seed, cc, a) for i in range(n) for a in range(attempts)]
 
 
-def untrainable(t, seed: int) -> str | None:
+LCG_FOLDED_ROUNDS = 8     # a legacy lcg loop of this many rounds or fewer with an increment of 0 is multiplied out by gcc into one `imul` (-O1/-O2/-Os)
+_LCG_STEP = re.compile(r"seed \* \d+u \+ (\d+)u\)")
+
+
+def untrainable(t, seed: int, gate=None) -> str | None:
     """Why a task of a TRAINING seed is not trained on although the generator makes it, or None (round 5, M2). The frozen legacy generator
     cannot change, so the filter lives here: `skip` with b = 0x00 asks which byte value the checksum skips, and the test `p[i] != 0x00` is
     dead code that every optimiser removes (gcc -O1/-O2/-Os: `proc` identical with and without it, 60/60): there is nothing to see, the
     only answer is a guess. The held-out seed is not filtered: its bytes stay what they were."""
     if seed != HELDOUT_SEED and t.kind == "skip" and t.truth.get("accept", [None])[0] == "0x00":
         return "legacy skip with b = 0x00: the compare is dead code, the answer cannot be read"
+    if seed != HELDOUT_SEED and t.kind == "lcg":
+        # round 8, m1: with an increment of 0 the rounds are one product, and the compiler computes it: `imul eax, edi, 0x979e791` is 1664525^4, neither the multiplier
+        # nor the round count is in the code (15 of 900 tasks at three seeds, all with 3-5 rounds). The rule is a margin; the gate compiles the task and asks for the multiplier.
+        step = _LCG_STEP.search(t.body)
+        if step and int(step.group(1)) == 0 and int(t.truth["accept"][1]) <= LCG_FOLDED_ROUNDS:
+            return "legacy lcg with an increment of 0 and few rounds: the compiler multiplies the rounds out, the multiplier is not in the code"
+        if gate is not None:
+            ok, _why = gate.legacy_visible(t)
+            if not ok:
+                return "legacy lcg whose multiplier is not in the compiled code"
     return None
 
 
@@ -44,7 +60,7 @@ def generate_many(names: list, n: int, seed: int, cc: str = "mix", gate=None, dr
     out = []
     for nm, c in zip(names, split_counts(n, len(names))):
         for t in generate(nm, c, seed, cc, gate):
-            why = untrainable(t, seed)
+            why = untrainable(t, seed, gate)
             if why and dropped is not None:
                 dropped.append((t, why))
             elif not why:

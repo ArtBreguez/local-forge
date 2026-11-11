@@ -109,9 +109,10 @@ def _decompile_task(task: dict, src: str, tag: str) -> dict:
     rc, out = _sh_rc(f"{cc} {opt} -fno-lto -o t.sym t.c && {cc} {opt} -fno-lto -s -o t t.c", d)
     if rc != 0:             # a compile error or a missing compiler is told as such, not as a decompile problem (round 4, m10)
         return {**task, "error": f"compile failed ({cc} {opt}, exit {rc}): " + " | ".join(out.strip().splitlines()[-3:])[:300]}
-    if task.get("facts"):   # the generator checked this with ITS compilers; these are the ones that built the binary
+    facts = task.get("facts") or (survive.legacy_facts(task.get("kind", ""), task.get("accept", [])) if not task.get("variant") else [])
+    if facts:               # the generator checked this with ITS compilers; these are the ones that built the binary (a frozen legacy lcg task has its multiplier as the only fact)
         try:
-            ok, why = survive.check(task["facts"], src, cc, opt)
+            ok, why = survive.check(facts, src, cc, opt)
         except Exception as e:      # never raise out of a remote function: it aborts the whole starmap
             ok, why = False, f"gate failed: {e!r}"[:200]
         if not ok:
@@ -243,6 +244,9 @@ def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
         print(gate.summary())
     for why, count in report.get("untrainable", {}).items():
         print(f"dropped {count} generated tasks: {why}")
+    if report.get("answer_overlap"):
+        print(f"dropped {sum(report['answer_overlap'].values())} generated tasks whose program is not held out but whose ANSWER is one that a held-out task of the same variant has "
+              f"(dedupe.ANSWER_DISJOINT): " + ", ".join(f"{k} {c}" for k, c in sorted(report["answer_overlap"].items())))
     for line in dedupe.dropped_summary(kept, dropped, dedupe.exclusion_seed(seed, exclude_seed)):
         print(line)
     tasks = [(t.meta(), t.source(), tag) for t in kept]

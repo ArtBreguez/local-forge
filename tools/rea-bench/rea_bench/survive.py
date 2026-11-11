@@ -246,6 +246,15 @@ def check(facts: list, src: str, cc: str, opt: str) -> tuple:
     return True, ""
 
 
+def legacy_facts(kind: str, accept: list) -> list:
+    """Fact groups of a frozen legacy template, which carry none in their JSON (their output is pinned): the multiplier of an `lcg` task must be an immediate of the
+    code, or the answer cannot be read from it (a loop of 3-5 rounds with an increment of 0 is multiplied out by the compiler into one `imul` by a^rounds).
+    Used by the training path only (families.untrainable, the Modal-side re-check), not by `check`."""
+    if kind == "lcg":
+        return [[int(accept[0])]]
+    return []
+
+
 def check_task(t, cc: str | None = None, opt: str | None = None) -> tuple:
     """The gate for one task at its own compiler and -O level (or the ones given). Tasks without facts or an object gate pass."""
     cc, opt = cc or t.cc or "gcc", opt or t.opt
@@ -291,6 +300,17 @@ class Gate:
         row[0] += 1
         row[1] += not ok
         return ok
+
+    def legacy_visible(self, t) -> tuple:
+        """(ok, why) for a frozen legacy task (legacy_facts): its asked constant is in the code compiled with gcc at its -O level. A machine without gcc or objdump
+        cannot tell and passes the task (counted in `unchecked`; the Modal-side re-check applies)."""
+        facts = legacy_facts(t.kind, t.truth["accept"])
+        if not facts:
+            return True, ""
+        if not self.available("gcc"):
+            self.unchecked["gcc"] = self.unchecked.get("gcc", 0) + 1
+            return True, ""
+        return check(facts, t.source(), "gcc", t.opt)         # not counted in tried/rejected: those are redraws, a legacy task is dropped (families.untrainable)
 
     def summary(self) -> str:
         un = "".join(f"; {n} draws with {cc} not checked ({cc} or objdump missing)" for cc, n in sorted(self.unchecked.items()))

@@ -220,7 +220,9 @@ def pick_flags(family: str, seed: int, i: int, cc: str = "mix", attempt: int = 0
     return opt, (chosen if cc == "mix" else cc)
 
 
-MAX_TRIES = 60
+MAX_TRIES = 2000      # draws of one slot before `build` gives up. The worst gate (bounds/char_class) rejects 75% of the draws of a cc/opt cell, so a slot that needs
+#                       more than 60 draws happens (0.75**60 = 3e-8 per task, round 8, m14) and must resample, not crash the run: at 2000 the chance is 0.75**2000,
+#                       and the error is left for what it is then, a gate that no draw can pass (a broken generator or a missing fact), not bad luck.
 
 
 def build(family: str, variants: dict, n: int, seed: int, cc: str = "mix", gate=None) -> list:

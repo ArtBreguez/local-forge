@@ -78,8 +78,11 @@ class HeldOutIsDisjoint(unittest.TestCase):
         every = dedupe.heldout_keys()
         kept, dropped = dedupe.training_tasks(NEW, 3000 * len(NEW), 7)
         self.assertEqual([t.id for t in kept if dedupe.task_key(t) in every], [])
-        self.assertLess(len(dropped), 60, "a handful, not a share of the data")
-        self.assertTrue(all(dedupe.task_key(t) in every for t in dropped))
+        by_program = [t for t in dropped if dedupe.task_key(t) in every]
+        self.assertLess(len(by_program), 60, "a handful, not a share of the data")
+        answers = dedupe.heldout_answers()          # round 8, m11: the others are tasks of a free-string variant whose ANSWER is a held-out one
+        self.assertTrue(all(dedupe.answer_scoped(t) and dedupe.answer_key(t) in answers for t in dropped if t not in by_program))
+        self.assertLess(len(dropped), 0.03 * 3000 * len(NEW), "a few percent at most")
 
     def test_no_held_out_task_has_a_training_twin(self):
         for fam in NEW:

@@ -142,9 +142,11 @@ class LegacySkipZero(unittest.TestCase):
         self.assertGreater(len(zeros), 20, "about one skip task in seven draws b = 0x00")
         dropped: list = []
         kept = families.generate_many(["legacy"], 3000, 7, dropped=dropped)
-        self.assertEqual([t.id for t, _why in dropped], zeros)
-        self.assertEqual([t.id for t in kept], [t.id for t in all_ if not self.zero(t)])
-        self.assertEqual([t.meta() for t in kept], [t.meta() for t in all_ if not self.zero(t)], "the other tasks are byte for byte what they were")
+        self.assertEqual([t.id for t, _why in dropped if t.kind == "skip"], zeros)
+        other = [t.id for t, why in dropped if t.kind != "skip"]
+        self.assertTrue(other and all(i.startswith("lcg-") for i in other), "round 8, m1: the only other legacy drop is lcg without a multiplier in the code")
+        self.assertEqual([t.id for t in kept], [t.id for t in all_ if not self.zero(t) and t.id not in other])
+        self.assertEqual([t.meta() for t in kept], [t.meta() for t in all_ if not self.zero(t) and t.id not in other], "the other tasks are byte for byte what they were")
 
     def test_the_held_out_seed_is_not_filtered(self):
         a, b = families.generate("legacy", 3000, core.HELDOUT_SEED), families.generate_many(["legacy"], 3000, core.HELDOUT_SEED)
@@ -154,7 +156,7 @@ class LegacySkipZero(unittest.TestCase):
     def test_training_tasks_reports_the_count_and_the_other_families_are_untouched(self):
         report: dict = {}
         kept, held = dedupe.training_tasks(["legacy", "structs"], 600, 7, report=report)
-        n = sum(self.zero(t) for t in families.generate("legacy", 300, 7))
+        n = sum(families.untrainable(t, 7) is not None for t in families.generate("legacy", 300, 7))        # skip with b = 0x00 (round 5) and lcg without a multiplier (round 8)
         self.assertEqual(sum(report["untrainable"].values()), n)
         self.assertEqual(sum(t.kind == "structs" for t in kept) + sum(t.kind == "structs" for t in held), 300)
         self.assertTrue(all(not self.zero(t) for t in kept))

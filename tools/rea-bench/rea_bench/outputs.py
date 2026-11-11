@@ -137,6 +137,19 @@ def write_atomic(path: pathlib.Path, lines) -> int:
     return n
 
 
+def move_aside(path: pathlib.Path) -> pathlib.Path:
+    """Rename `path` to `<name>.old-<mtime>`, or `<name>.old-<mtime>-2`, `-3`, ... when that name is taken: two non-resume runs that each found a checkpoint in the
+    same second used to share one `.old` name, and POSIX `rename` replaced the first with the second (round 8, m15)."""
+    path = pathlib.Path(path)
+    base = path.name + f".old-{int(path.stat().st_mtime)}"
+    dest, n = path.with_name(base), 1
+    while dest.exists():
+        n += 1
+        dest = path.with_name(f"{base}-{n}")
+    path.rename(dest)
+    return dest
+
+
 def load_partial(path: pathlib.Path, resume: bool) -> dict:
     """{task id: record} of a checkpoint the sample stage wrote (one json line per finished task). Without `resume` an old checkpoint
     is moved aside, never reused: its replies come from an earlier run that may have used other tasks or another scorer."""
@@ -144,7 +157,7 @@ def load_partial(path: pathlib.Path, resume: bool) -> dict:
     if not path.exists():
         return {}
     if not resume:
-        path.rename(path.with_name(path.name + f".old-{int(path.stat().st_mtime)}"))
+        move_aside(path)
         return {}
     out = {}
     for line in path.read_text().splitlines():

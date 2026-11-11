@@ -550,7 +550,9 @@ class Disjointness(unittest.TestCase):
         kept, dropped = dedupe.training_tasks(["legacy"], 1500, 7)
         self.assertGreater(len(dropped), 0, "frozen legacy templates repeat held-out programs; they must be dropped")
         self.assertFalse([t for t in kept if dedupe.task_key(t) in held])
-        self.assertTrue(all(dedupe.task_key(t) in held for t in dropped))
+        answers = dedupe.heldout_answers()                 # round 8, m11: a legacy lcg task is also dropped for its answer (multiplier and rounds)
+        self.assertTrue(all(dedupe.task_key(t) in held or (dedupe.answer_scoped(t) and dedupe.answer_key(t) in answers) for t in dropped))
+        self.assertTrue(any(dedupe.task_key(t) in held for t in dropped))
         kept, dropped = dedupe.training_tasks(["crc", "legacy"], 90, 1001)       # the held-out seed itself is not filtered
         self.assertEqual((len(kept), len(dropped)), (90, 0))
         kept, dropped = dedupe.training_tasks(["crc"], 30, 7, exclude_seed=1001)

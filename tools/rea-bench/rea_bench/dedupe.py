@@ -14,7 +14,11 @@ out even if a generator edit later changes seed 1001. The data pipeline drops ev
 (`modal_rea_data.py --exclude-seed 1001`, default for any other seed); `check` reports duplicates within the generated seed. The
 exclusion also covers the later draws a fact gate may have kept in a held-out slot. Where a family has too few programs for that to be
 enough (standard alphabets, standard CRC algorithms, ChaCha/Salsa round counts, return codes) the held-out seed draws from reserved
-parameter values (core.pool), so its programs are not ones a training seed can make at all. A seed-1001 run with more than HELDOUT_N
+parameter values (core.pool), so its programs are not ones a training seed can make at all. The programs are disjoint, the ANSWERS of the variants in ANSWER_DISJOINT
+are too (round 8, m11): a free string or a name (a strobf plaintext, the secret of decode_secret, an environment variable, the legacy lcg multiplier and round count) that a
+training task has as its answer and a held-out task of the same variant has as well would let the held-out arm score a memorised string; such a training task is
+dropped. Numeric answers from a small space (offsets, sizes, counts, CRC constants, round counts) are not: every training set covers them, which is what the `chance`
+level measures. A seed-1001 run with more than HELDOUT_N
 tasks per family has tasks the list does not cover: `check_heldout_range` refuses it.
 
     python3 tools/rea-bench heldout --write      regenerate the list (after a generator change; commit the result)
@@ -125,6 +129,30 @@ def exclusion_seed(seed: int, exclude_seed: int = -1):
     return exclude_seed or None
 
 
+ANSWER_DISJOINT = ("strobf/", "multi/decode_secret", "antidebug/env", "lcg")      # `kind/variant` prefixes (the legacy kind alone): answers a training task must not share with a held-out task
+
+
+def answer_scoped(t) -> bool:
+    return any(f"{t.kind}/{t.variant}".startswith(p) or (not t.variant and t.kind == p) for p in ANSWER_DISJOINT)
+
+
+def answer_key(t) -> tuple:
+    """(`kind/variant`, the canonical spelling of every group of the answer): what a task's answer is, whatever the program around it."""
+    return (f"{t.kind}/{t.variant}", tuple(g[0] if isinstance(g, list) else g for g in t.truth["accept"]))
+
+
+@functools.lru_cache(maxsize=None)
+def _held_out_answers(seed: int) -> frozenset:
+    from . import families
+    return frozenset(answer_key(t) for fam in families.modules() for t in families.draws(fam, HELDOUT_N, seed, HELDOUT_ATTEMPTS) if answer_scoped(t))
+
+
+def heldout_answers(seed: int = HELDOUT_SEED) -> set:
+    """The answers of the ANSWER_DISJOINT variants that any draw of the first HELDOUT_N tasks per family of `seed` can have (regenerated now: the pinned list holds
+    hashes of programs, not answers)."""
+    return set(_held_out_answers(seed))
+
+
 def check_heldout_range(names: list, n: int, seed: int) -> None:
     """SystemExit when a run of the held-out seed asks for more than HELDOUT_N tasks of one family: the pinned list and the exclusion
     cover the first HELDOUT_N slots only, so the rest would be tasks of the held-out seed that no training run knows to avoid (and
@@ -176,7 +204,18 @@ def training_tasks(names: list, n: int, seed: int, cc: str = "mix", exclude_seed
             counts[why] = counts.get(why, 0) + 1
         report["untrainable"] = counts
     ex = exclusion_seed(seed, exclude_seed)
-    return drop_heldout(tasks, heldout_keys(ex)) if ex else (tasks, [])
+    if not ex:
+        return tasks, []
+    keys = heldout_keys(ex)
+    kept, dropped = drop_heldout(tasks, keys, heldout_answers(ex))
+    if report is not None:         # the dropped tasks whose PROGRAM is not held out: only their answer is (round 8, m11)
+        counts: dict = {}
+        for t in dropped:
+            if task_key(t) not in keys:
+                name = f"{t.kind}/{t.variant}" if t.variant else t.kind
+                counts[name] = counts.get(name, 0) + 1
+        report["answer_overlap"] = counts
+    return kept, dropped
 
 
 def dropped_summary(kept: list, dropped: list, ex_seed: int) -> list:
@@ -194,14 +233,16 @@ def dropped_summary(kept: list, dropped: list, ex_seed: int) -> list:
     for t in dropped:
         drop[name(t)] = drop.get(name(t), 0) + 1
     per = ", ".join(f"{k} {c} of {gen[k]}" for k, c in sorted(drop.items()))
-    out = [f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are in the held-out list (seed {ex_seed}); per template (dropped of generated): {per}"]
+    out = [f"dropped {len(dropped)} of {len(kept) + len(dropped)} generated tasks that are held out (seed {ex_seed}: the program is in the held-out list, or the answer of a free-string variant is the answer of a held-out task); per template (dropped of generated): {per}"]
     out += [f"warning: no task of {k} is left to train on: every program that its generator drew is in the held-out list" for k in sorted(drop) if drop[k] == gen[k]]
     return out
 
 
-def drop_heldout(tasks, keys: set) -> tuple:
-    """(kept, dropped) - tasks whose key is held out go to `dropped`."""
+def drop_heldout(tasks, keys: set, answers: set | None = None) -> tuple:
+    """(kept, dropped) - tasks whose program key is held out go to `dropped`; with `answers` (heldout_answers) so do the tasks of an ANSWER_DISJOINT variant whose
+    answer a held-out task of that variant has."""
     kept, dropped = [], []
     for t in tasks:
-        (dropped if task_key(t) in keys else kept).append(t)
+        out = task_key(t) in keys or (bool(answers) and answer_scoped(t) and answer_key(t) in answers)
+        (dropped if out else kept).append(t)
     return kept, dropped

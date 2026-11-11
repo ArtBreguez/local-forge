@@ -3,7 +3,8 @@
 
 With no address arguments, reads Ghidra pseudocode on stdin and resolves every DAT_xxxxxxxx it mentions. Ghidra loads a PIE
 ELF at 0x100000, so 0x102068 in the pseudocode is file virtual address 0x2068. Prints hex and the ASCII up to the first NUL,
-which is what a reverse engineer would look at next in Ghidra's listing view.
+which is what a reverse engineer would look at next in Ghidra's listing view. Hex: ALL N = 64 bytes it read (round 8, M3: it printed the first 32, and a clang -O3/-Os
+state machine keeps a 40-byte table per state, so bytes 32..39 of every table, the entries of one input letter, were never shown and the shortest input could not be read).
 
     refdata ./target 0x102068
     decomp ./target 0x101255 | refdata ./target
@@ -33,7 +34,7 @@ def dump(path: str, addr: int) -> str:
         return f"{addr:#x}: (not in a file-backed section)"
     text = raw.split(b"\0", 1)[0]
     printable = text.decode("latin-1") if text and all(32 <= c < 127 for c in text) else None
-    hexs = " ".join(f"{b:02x}" for b in raw[:32])
+    hexs = " ".join(f"{b:02x}" for b in raw)
     return f"{addr:#x}: {hexs}" + (f'  | ascii up to NUL: "{printable}"' if printable else "")
 
 
