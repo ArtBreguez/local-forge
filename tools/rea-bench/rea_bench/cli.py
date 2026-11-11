@@ -9,6 +9,7 @@
                                                                the seed; exit 1 on any problem
     heldout [--write]                                          verify (or regenerate) the pinned list of held-out tasks (seed 1001)
     chance [--write]                                           estimated chance level per variant (JSON field `chance`)
+    bytescan --family strobf --per-variant 24 --seed 9091       flip each byte of the .rodata of proc and check the model is shown the ones the behaviour needs
     survival --family all --n 120                              share of tasks whose asked constant is in the compiled code, per variant
                                                                (strobf: the plaintext is hidden and the stored bytes are shown)
     stats --seed 7 --n 3000                                    per family: distinct programs and overlap with the held-out list
@@ -80,7 +81,7 @@ def cmd_gen(a) -> None:
 
 
 def cmd_check(a) -> None:
-    from . import verify
+    from . import survive, verify
     names = pick_families(a)
     ubsan = verify.ubsan_available() and not a.no_ubsan
     a.cc = "mix"
@@ -102,7 +103,7 @@ def cmd_check(a) -> None:
             problems += dups
         for t in tasks:
             problems += verify.check_task(t, ubsan, survive_check=gate is not None)
-        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if t.facts or t.object_gate)} with a fact or an object gate checked at their own cc/opt" if gate else ""), flush=True)
+        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if survive.gated(t))} with a fact, an object gate or a table checked at their own cc/opt" if gate else ""), flush=True)
         for pr in problems[:20]:
             print("    " + pr)
         bad += len(problems)
@@ -111,6 +112,23 @@ def cmd_check(a) -> None:
     if bad:
         raise SystemExit(f"{bad} problems")
     print("all tasks compile clean and their harnesses prove the truth")
+
+
+def cmd_bytescan(a) -> None:
+    from . import bytescan
+    a.n = len(families.modules())
+    names = pick_families(a, allow_small=True)
+    combos = [tuple(c.split(":")) for c in a.combos.split(",")] if a.combos else None
+    bad = made = 0
+    for nm in names:
+        table = bytescan.scan(nm, a.seed, a.per_variant, own=not combos, gated=not a.ungated, combos=combos, variants=set(a.variants.split(",")) if a.variants else None)
+        print("\n".join(bytescan.format_table(nm, table)), flush=True)
+        bad += sum(r["written_tasks"] + r["base_bad"] + r["errors"] for r in table.values())
+        made += sum(r["made_only_tasks"] for r in table.values())
+    if bad:
+        raise SystemExit(f"{bad} tasks with an uncovered byte of a written array, a harness that disagrees or an error")
+    print("no task needs a byte of a written array (table, key, alphabet, string) that the model is not shown"
+          + (f"; {made} tasks need bytes of data the compiler made (listed as NOTE above)" if made else ""))
 
 
 def cmd_heldout(a) -> None:
@@ -201,6 +219,14 @@ def main(argv=None) -> None:
     c.add_argument("--no-ubsan", action="store_true")
     c.add_argument("--no-survive", action="store_true", help="do not check that the asked constant is in the compiled code at the task's cc/opt")
     c.set_defaults(fn=cmd_check)
+    b = sub.add_parser("bytescan", help="flip every byte of the .rodata of the pipeline's proc and ask whether the model is shown each one the behaviour needs")
+    b.add_argument("--family", default="all")
+    b.add_argument("--seed", type=int, default=9091)
+    b.add_argument("--per-variant", type=int, default=24)
+    b.add_argument("--variants", default="", help="comma list of variants (default: all)")
+    b.add_argument("--combos", default="", help="cc:-O pairs to cycle through instead of each task's own, e.g. gcc:-O2,clang:-O3")
+    b.add_argument("--ungated", action="store_true", help="tasks as the generator draws them first, not as the gate keeps them")
+    b.set_defaults(fn=cmd_bytescan)
     h = sub.add_parser("heldout", help="verify or regenerate the pinned held-out list")
     h.add_argument("--write", action="store_true")
     h.set_defaults(fn=cmd_heldout)

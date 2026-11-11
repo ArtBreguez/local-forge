@@ -32,6 +32,13 @@ This is a necessary condition, not proof that the decompiler shows it. What it r
 TEA's round count (the loop counter becomes a compare against DELTA*rounds), a CRC polynomial in a vectorised or table-ised loop, a
 character class that became one bit-test against a 42-bit mask.
 
+Round 9, B1: a table the answer is read from must be SHOWN, not only present. The model sees the bytes `refdata` prints at the data references of `proc`
+(64 forward from each address, visible.py), so a `static const` array of which a byte lies before every reference, or past the first window, cannot be read:
+gcc compiled `enc[n - 1 - i]` to a pointer that runs down from the last element, and 15 of 16 encoded bytes of a strobf/reverse_xor task were never printed. `check_visible`
+links the task as the sample stage builds it and asks, for every `static const` array of the body that the binary keeps in .rodata, that every byte is inside a window;
+every family with such an array is gated by it (strobf, cipher, encoding, fsm tables, bounds/index_limit, multi/decode_secret, the frozen legacy strings), a draw that fails is
+drawn again (a frozen legacy task is dropped: families.untrainable).
+
 A "derived form" (hi - lo for a range tested as `v - lo <= width`, N/2 for a loop over double rounds) is a listed alternative of
 its group, and the question of that variant says the compiler may show it that way.
 
@@ -47,6 +54,7 @@ import subprocess
 import sys
 import tempfile
 
+from . import visible
 from .core import OPTS, forms
 
 OBJDUMP = shutil.which("objdump")
@@ -227,6 +235,33 @@ def check_object(gate: dict, src: str, cc: str, opt: str) -> tuple:
     return ok, (f"{cc} {opt}: {why}" if not ok else "")
 
 
+def check_visible(src: str, cc: str, opt: str, helpers=()) -> tuple:
+    """(ok, why): every byte of every `static const` array of `src` that the binary (linked as the sample stage builds it, a PIE) holds in .rodata is in a window `refdata`
+    prints for a data reference of `proc` or of one of `helpers` (visible.py). A source without such an array passes without a compile. Raises RuntimeError when the
+    toolchain is missing or the file does not link."""
+    arrays = visible.static_arrays(src)
+    if not arrays:
+        return True, ""
+    if not OBJDUMP or not toolchain(cc):
+        raise RuntimeError(f"the visibility gate needs {cc} and objdump on PATH (gen --no-survive skips it)")
+    with tempfile.TemporaryDirectory() as d:
+        exe = pathlib.Path(d, "t")
+        r = visible.link(src, cc, opt, exe)
+        if r.returncode:
+            raise RuntimeError(f"{cc} {opt} failed to link: {r.stderr.strip()[:200]}")
+        ok, why = visible.check_exe(exe, arrays, ("proc", *helpers))
+    return ok, (f"{cc} {opt}: {why}" if not ok else "")
+
+
+def has_arrays(t) -> bool:
+    return bool(visible.static_arrays(t.body))
+
+
+def gated(t) -> bool:
+    """True when survive checks something of the task: a fact, an object gate, or a table that must be shown."""
+    return bool(t.facts or t.object_gate or has_arrays(t))
+
+
 def check(facts: list, src: str, cc: str, opt: str) -> tuple:
     """(True, "") when every fact group is present, else (False, what is missing). Raises RuntimeError when the toolchain is missing
     or the file does not compile."""
@@ -256,15 +291,18 @@ def legacy_facts(kind: str, accept: list) -> list:
 
 
 def check_task(t, cc: str | None = None, opt: str | None = None) -> tuple:
-    """The gate for one task at its own compiler and -O level (or the ones given). Tasks without facts or an object gate pass."""
+    """The gate for one task at its own compiler and -O level (or the ones given): its facts, its object gate (strobf), and that the tables of its code are shown
+    (check_visible). Tasks with none of the three pass."""
     cc, opt = cc or t.cc or "gcc", opt or t.opt
     if t.facts:
         ok, why = check(t.facts, t.source(), cc, opt)
         if not ok:
             return False, why
     if t.object_gate:
-        return check_object(t.object_gate, t.source(), cc, opt)
-    return True, ""
+        ok, why = check_object(t.object_gate, t.source(), cc, opt)
+        if not ok:
+            return False, why
+    return check_visible(t.source(), cc, opt, t.helpers)
 
 
 class Gate:
@@ -275,7 +313,7 @@ class Gate:
     not check (`unchecked`), which the summary reports."""
 
     def __init__(self, warn=None):
-        self.tried = self.rejected = 0
+        self.tried = self.rejected = self.unshown = 0
         self.by_variant: dict = {}
         self.unchecked: dict = {}
         self.warn = warn or (lambda msg: print(f"warning: {msg}", file=sys.stderr))
@@ -284,7 +322,7 @@ class Gate:
         return bool(OBJDUMP and toolchain(cc))
 
     def __call__(self, t) -> bool:
-        if not t.facts and not t.object_gate:
+        if not gated(t):
             return True
         cc = t.cc or "gcc"
         if not self.available(cc):
@@ -293,9 +331,10 @@ class Gate:
                           f"(--cc gcc gates every task if only gcc is installed)")
             self.unchecked[cc] = self.unchecked.get(cc, 0) + 1
             return True
-        ok, _why = check_task(t)
+        ok, why = check_task(t)
         self.tried += 1
         self.rejected += not ok
+        self.unshown += not ok and "refdata prints" in why
         row = self.by_variant.setdefault(f"{t.kind}/{t.variant}", [0, 0])
         row[0] += 1
         row[1] += not ok
@@ -312,9 +351,20 @@ class Gate:
             return True, ""
         return check(facts, t.source(), "gcc", t.opt)         # not counted in tried/rejected: those are redraws, a legacy task is dropped (families.untrainable)
 
+    def legacy_shown(self, t) -> tuple:
+        """(ok, why) for a frozen legacy task: the `static const` strings of its code are shown to the model when it is compiled with gcc at its -O level (check_visible). Dropped, not
+        redrawn, like legacy_visible; a machine without gcc or objdump passes it (counted in `unchecked`)."""
+        if not has_arrays(t):
+            return True, ""
+        if not self.available("gcc"):
+            self.unchecked["gcc"] = self.unchecked.get("gcc", 0) + 1
+            return True, ""
+        return check_visible(t.source(), "gcc", t.opt)
+
     def summary(self) -> str:
         un = "".join(f"; {n} draws with {cc} not checked ({cc} or objdump missing)" for cc, n in sorted(self.unchecked.items()))
-        return f"fact gate: {self.rejected} of {self.tried} draws rejected and resampled{un}"
+        shown = f" (of them {self.unshown} because a byte of a table is not in any window refdata prints)" if self.unshown else ""
+        return f"fact gate: {self.rejected} of {self.tried} draws rejected and resampled{shown}{un}"
 
 
 def survival_rates(tasks, ccs=("gcc", "clang")) -> dict:

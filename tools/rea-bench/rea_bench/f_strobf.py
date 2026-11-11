@@ -2,7 +2,7 @@
 
 Plaintext is a plausible string (word pairs with a random number, paths, hostnames) so a model cannot memorise a short list.
 Forms: a stack string assigned byte by byte in random order, xor-at-use with one byte, a rolling key (K + i*S), alternating keys,
-a constant subtracted, an xor over the reversed array, and rot-N over letters. The generator derives the encoded bytes from the
+a constant subtracted, an xor whose output is written back to front (the stored array is the plaintext reversed), and rot-N over letters. The generator derives the encoded bytes from the
 plaintext, so the plaintext is the truth by construction; the harness runs the C and prints what it writes.
 
 Round 5 (M1): an encoded variant is only a task when the compiled object at its own cc/opt still holds the string ENCODED. The compiler
@@ -96,7 +96,7 @@ def v_reverse_xor(rng):
     body = f"""void proc(char *out) {{
     static const uint8_t enc[] = {{{c_bytes(enc)}}};
     size_t n = sizeof enc;
-    for (size_t i = 0; i < n; i++) out[i] = (char)(enc[n - 1 - i] ^ 0x{k:02x});
+    for (size_t i = 0; i < n; i++) out[n - 1 - i] = (char)(enc[i] ^ 0x{k:02x});
     out[n] = 0;
 }}"""
     return _finish("reverse_xor", body, p, {"key": k}, _gate(p, enc, k))

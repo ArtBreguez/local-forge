@@ -102,6 +102,8 @@ def error_reason(rec: dict) -> str:
         return "compile failed (Modal compilers)"
     if e.startswith("fact not in the compiled code"):
         return "fact gate (Modal compilers)"
+    if e.startswith("data not shown"):
+        return "table not shown (Modal compilers)"
     if e.startswith("gate failed"):
         return "gate could not run"
     if e == "no pseudocode":

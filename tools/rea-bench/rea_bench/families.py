@@ -51,6 +51,11 @@ def untrainable(t, seed: int, gate=None) -> str | None:
             ok, _why = gate.legacy_visible(t)
             if not ok:
                 return "legacy lcg whose multiplier is not in the compiled code"
+    if seed != HELDOUT_SEED and not t.cc and gate is not None:
+        # round 9: the frozen strings (xor key, password, alphabet) must be inside what refdata prints for the code compiled with gcc at the task's -O level
+        ok, _why = gate.legacy_shown(t)
+        if not ok:
+            return "legacy task whose static data is not shown to the model (a byte outside every window refdata prints)"
     return None
 
 

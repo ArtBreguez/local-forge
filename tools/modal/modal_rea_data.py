@@ -3,7 +3,8 @@
 Stage 1 (CPU, parallel): generate tasks with tools/rea-bench (python3 tools/rea-bench list shows the families), compile each
 one stripped with the task's own compiler and -O level (`cc` and `opt` in its JSON; gcc and -O1/-O2/-Os when absent), decompile `proc`
 (and any `helpers` it calls) with REA + Ghidra, store pseudocode + question + truth. A task whose asked constant is not in the code
-compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled (a strobf task carries an `object_gate` instead: the plaintext must not be in the object, the stored bytes must).
+compiled here (`facts` in its JSON, checked with this image's gcc/clang and objdump) is returned as an error record, not decompiled (a strobf task carries an `object_gate` instead: the plaintext must not be in the object, the stored bytes must). So is a task whose code
+holds a `static const` table of which a byte is outside every window `refdata` prints (survive.check_visible: the model is never shown it, round 9).
     modal run tools/modal/modal_rea_data.py --stage decompile --n 300 [--family legacy|all|crc,cipher,...] [--cc mix|gcc|clang]
         [--exclude-seed 1001 (default for any other seed; 0 = none)] [--force]
 Stage 2 (GPU): an uncensored model answers each task K times at T=0.7. The model is a FILTER, not the author of the data (round 4): a task
@@ -124,6 +125,12 @@ def _decompile_task(task: dict, src: str, tag: str) -> dict:
             ok, why = False, f"gate failed: {e!r}"[:200]
         if not ok:
             return {**task, "error": f"fact not in the compiled code ({why})"}
+    try:                            # every family: a table of the code (static const array) must be inside what refdata prints (round 9, B1); the build is the one below, as a PIE with symbols
+        ok, why = survive.check_visible(src, cc, opt, task.get("helpers", []))
+    except Exception as e:
+        ok, why = False, f"gate failed: {e!r}"[:200]
+    if not ok:
+        return {**task, "error": f"data not shown to the model ({why})"}
     t0 = time.time()
     code, err = _decompile_fn(d, "proc")
     if err:
