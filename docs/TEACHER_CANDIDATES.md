@@ -1,6 +1,6 @@
 # Teacher candidates: open-weight uncensored models
 
-The REA dataset needs a teacher that answers reverse-engineering tasks (keygen, crack, anti-debug) without refusing. The teacher only filters: a task enters the set when the teacher's answer matches the truth computed by the code, and the stored text is rendered from that truth. No model text is stored. So any open-weight model can be a teacher, whatever its origin.
+The REA dataset needs a teacher that answers reverse-engineering tasks (keygen, crack, anti-debug) without refusing. A task enters the set only when the teacher's final answer matches the truth computed by the code. In phase A the stored text was rendered from that truth and no model text was stored; in the reasoning run (`modal_rea_data.py --stage sample --reasoning`, `tools/modal/README.md`) the teacher's reply is stored as well, next to the rendered one, with its final answer verified and its steps not checked. Either way any open-weight model can be a teacher, whatever its origin.
 
 This file catalogues the strongest candidates found on 2026-11-11. None of the new ones is measured on our tasks yet; the scores below are third-party. Run `modal_qbench` (40 code problems) and a small `modal_rea_data --stage sample` before trusting any of them.
 
@@ -29,7 +29,7 @@ Third-party scores: the [UGI Leaderboard](https://huggingface.co/spaces/DontPlan
 
 | Model | Code bench (pass@1 / pass@10) | REA set yield | GPU |
 |---|---|---|---|
-| CodeForge 27B heretic (Qwen3.5 27B base, 4-bit) | 92% / 100% | phase A run pending | L40S |
+| CodeForge 27B heretic (Qwen3.8 27B base, 4-bit) | 92% / 100% | phase A: 3,187 tasks answered, yield per family in `tools/modal/README.md` ("Next run"); the reasoning run is the next one | L40S |
 | Qwen3.5-35B-A3B heretic | 57% / 75% | 735 of 3,187 tasks (23%), seed 7 | L40S |
 
 ## Candidates, by the GPU they need
@@ -40,8 +40,8 @@ Sizes are total parameters. "Fits" assumes vLLM, 4-bit or FP8, with room for the
 
 | Model | Base | Size | Licence | Why |
 |---|---|---|---|---|
-| [huihui-ai/Huihui-Qwen3.8-27B-abliterated](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated) | Qwen3.8 27B | 27.8B | Apache-2.0 | Next generation of the CodeForge base. First to test. |
-| [orcarouter/Qwen3.8-27B-Uncensored](https://huggingface.co/orcarouter/Qwen3.8-27B-Uncensored) | Qwen3.8 27B | 27.8B | Apache-2.0 | Same base, other method; FP8 and NVFP4 repacks ready. |
+| [huihui-ai/Huihui-Qwen3.8-27B-abliterated](https://huggingface.co/huihui-ai/Huihui-Qwen3.8-27B-abliterated) | Qwen3.8 27B | 27.8B | Apache-2.0 | The same base as CodeForge (Qwen3.8 27B), abliterated instead of heretic-tuned: not a newer generation. Worth one run to see whether the yield comes from the base or from CodeForge's tuning. |
+| [orcarouter/Qwen3.8-27B-Uncensored](https://huggingface.co/orcarouter/Qwen3.8-27B-Uncensored) | Qwen3.8 27B | 27.8B | Apache-2.0 | The same base as CodeForge again, a third refusal-removal method; FP8 and NVFP4 repacks ready. A deployment option for that base, not a new teacher. |
 | [koute/GLM-4.7-Flash-Derestricted](https://huggingface.co/koute/GLM-4.7-Flash-Derestricted) | GLM-4.7 Flash | 31.2B | MIT | Different family; a second opinion on the hard families. |
 | [coder3101/gemma-4-31B-it-heretic](https://huggingface.co/coder3101/gemma-4-31B-it-heretic) | Gemma 4 31B | 31.3B | Apache-2.0 | UGI #1 of the digest (uncensored 65.7, reasoning 36.5, 10/10 answers). |
 | [llmfan46/gemma-4-26B-A4B-it-ultra-uncensored-heretic](https://huggingface.co/llmfan46/gemma-4-26B-A4B-it-ultra-uncensored-heretic) | Gemma 4 26B A4B | 26B, 4B active | Apache-2.0 | Fast (reasoning 35.7); cheap many-sample runs. |
