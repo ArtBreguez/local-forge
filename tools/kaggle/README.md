@@ -1,12 +1,12 @@
 # Kaggle teacher runs (free GPU hours for the thinking dataset)
 
-A Kaggle notebook (T4 x2) can sample the teacher for free; the replies come back as a file and are scored on this machine into the same SFT records the Modal stage would write. Three pieces, nothing else:
+A Kaggle notebook (T4 x2) can sample the teacher for free; the replies come back as a file and are scored on this machine into the same SFT records the Modal stage would write. The kit is part of the distillation package (`distill/backends/kaggle/`, [`distill/README.md`](../../distill/README.md)) and works for any subject; this directory keeps the REA command `build_tasks.py` (a wrapper with REA bound) and this README. Three pieces, nothing else:
 
 | file | what it does |
 |---|---|
-| `build_tasks.py` | picks the tasks by family with a quota, writes `data/tasks.jsonl` (the exact messages of `reasoning.messages(task)`: `SYSTEM_REASONING` + the user message; nothing of the truth), `data/config.json`, `data/dataset-metadata.json`, and `kernel/run.py` + `kernel/kernel-metadata.json` |
-| `run_teacher.py` | the kernel: builds llama.cpp with CUDA (or reuses a built one), downloads the GGUF, runs `llama-server --jinja --reasoning-format deepseek`, asks every task `k` times with `enable_thinking` and the thinking sampling, checkpoints `replies.jsonl`, resumes, stops at the deadline, writes `run.json` |
-| `python3 tools/rea-bench kaggle-score` | `rea_bench/kaggle_score.py`: `replies.jsonl` + the decompiled tasks -> `sft-<model>-<tag>-reasoning-think.jsonl` and `.stats.json` (README of `tools/modal`, "Scoring a Kaggle run without Modal") |
+| `build_tasks.py` (`distill/backends/kaggle/build_tasks.py`; `--domain`, `--teacher`) | picks the tasks by family with a quota, writes `data/tasks.jsonl` (the exact messages of `domain.messages(task, mode)`; for REA `SYSTEM_REASONING` + the user message; nothing of the truth), `data/config.json`, `data/dataset-metadata.json`, and `kernel/run.py` + `kernel/kernel-metadata.json` |
+| `run_teacher.py` (`distill/backends/kaggle/`) | the kernel: builds llama.cpp with CUDA (or reuses a built one), downloads the GGUF, runs `llama-server --jinja --reasoning-format deepseek`, asks every task `k` times with `enable_thinking` and the thinking sampling, checkpoints `replies.jsonl`, resumes, stops at the deadline, writes `run.json` |
+| `python3 tools/rea-bench kaggle-score` | `distill/score_replies.py` (`python3 -m distill.score_replies --domain rea`, the same code; `rea_bench/kaggle_score.py` is the REA wrapper): `replies.jsonl` + the decompiled tasks -> `sft-<model>-<tag>-reasoning-think.jsonl` and `.stats.json` (README of `tools/modal`, "Scoring a Kaggle run without Modal") |
 
 `tests/test_rea_kaggle_kit.py` runs the whole chain against a stub server (no network, no Kaggle): build, ask, store, resume, deadline, score.
 
