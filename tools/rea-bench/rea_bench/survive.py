@@ -100,7 +100,8 @@ _forms = forms          # the name the reviewers' scripts use
 GATE_MIN = 0x20         # below this a number is in most programs: presence is weak evidence (a probe carries the weight)
 TABLE_BYTES = 256       # read-only data (not strings) from this size on is a table
 _ROSEC = re.compile(r"^\s*\d+\s+(\.rodata\S*)\s+([0-9a-f]+)\s", re.M)
-MARKERS = {"dec": [1237, 1693, 2087, 2411, 3041, 3673, 4349, 5003],
+MARKERS = {"dec": [1237, 1693, 2087, 2411, 3041, 3673, 4349, 5003,
+                   6007, 7019, 8053, 9091, 10007, 11057, 12097, 13109],     # round 10, M1: the first eight are unchanged (a draw that passed keeps its marker), the rest are for a large -O0 frame
            16: [0xb3a5, 0x9c4d, 0xd1e7, 0x8f3b, 0xc4f1, 0xa2d9],
            32: [0x9a3c5e71, 0xb7d4a2c9, 0xc3e1957d, 0xd5a18f33, 0x8e47b1d5]}
 
@@ -128,12 +129,13 @@ def _alternatives(kind: str, m: int) -> list:
     return {"exact": [m], "near": [m - 1, m, m + 1], "half": [m - 1, m, m + 1, m // 2 - 1, m // 2, m // 2 + 1, 2 * m - 1, 2 * m, 2 * m + 1]}[kind]
 
 
-def _marker(spec: dict, avoid: set) -> int:
-    """A value for the asked literal whose forms (and its neighbours') are not in the first compile."""
+def _marker(spec: dict, avoid: set) -> int | None:
+    """A value for the asked literal whose forms (and its neighbours') are not in the first compile, or None when every marker of the table is already a number of
+    the code (round 10, M1: a clang -O0 salsa task with 40 rounds, whose `half` probe has nine alternatives per marker, found a frame in which all eight were)."""
     for m in MARKERS[spec.get("bits", 32) if spec.get("hex") else "dec"]:
         if not any(forms(a) & avoid for a in _alternatives(spec.get("kind", "exact"), m)):
             return m
-    raise RuntimeError("every probe marker is already in the code")
+    return None
 
 
 def cheap_constant(v: int) -> bool:
@@ -177,6 +179,8 @@ def _probe(spec: dict, alts: list, src: str, cc: str, opt: str, d: str, nums: se
         if rodata >= TABLE_BYTES:
             return False, f"{rodata} bytes of read-only data: a table the compiler made, not in the source"
     marker = _marker(spec, nums)
+    if marker is None:         # round 10, M1: a probe that cannot be made is a probe that fails, so the draw is resampled; it never raises out of the gate
+        return False, "no free probe marker: every one is already a number of the code"
     digits = m.group(1)
     text = f"0x{marker:0{max(len(digits) - 2, 1)}x}" if spec.get("hex") else str(marker)
     mobj = _compile(src[:m.start(1)] + text + src[m.end(1):], cc, opt, d, "marker.o")
