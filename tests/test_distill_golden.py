@@ -10,10 +10,16 @@ same procedures run on the new layout and the output must be the same text, in t
   Plan       sampling, token budget, slot, quota and cost line for a few inputs
   Training   `run_tag`, `batch_plan` and the record parser of the training script on a grid
   Kit        the files the Kaggle kit writes for the same tasks
+
+ONE DELIBERATE CHANGE since phase A: `SYSTEM_REASONING` now tells the model that the last line gives every part of a multi-part question (the thinking pilot's antidebug replies had the number and not the
+technique: 6 of 6 rejected). It is the only thing that moved the expected files: with the phase-A prompt put back, every test below passes byte for byte (plain mode, whose prompt is `SYSTEM_RECIPE`, did not
+move at all: `stage-plain.json`, `plan.json` and `lora.json` are the phase-A files). After a deliberate change of that prompt, `DISTILL_GOLDEN_UPDATE=1 python3 -m unittest tests.test_distill_golden` rewrites
+the expected files; read `git diff --stat tests/golden` before committing them.
 """
 from __future__ import annotations
 
 import json
+import os
 import sys
 import unittest
 
@@ -35,6 +41,8 @@ def expected(name: str) -> str:
 class Same(unittest.TestCase):
     def same(self, name: str, got):
         text = fx.dumps(got)
+        if os.environ.get("DISTILL_GOLDEN_UPDATE"):
+            (fx.GOLDEN / "expected" / name).write_text(text)
         want = expected(name)
         self.assertEqual(json.loads(text), json.loads(want), f"{name}: the output is not the one of the code before the refactor")
         self.assertEqual(text, want, f"{name}: the same values in another order or form")

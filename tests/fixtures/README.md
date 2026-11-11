@@ -11,6 +11,7 @@ Recorded on this project's machines (Ryzen 5 3600 / RX 6500 XT Windows host, Lin
 | `llama-bench-oom-stderr.txt` | stderr of a real failed call (ngl=99), converted from UTF-16 to UTF-8, PowerShell error preamble removed |
 | `llama-bench-help-b12207.txt`, `llama-server-help-b12207.txt` | `--help` of the b12207 binaries |
 | `windows-cim-processor.json`, `windows-cim-videocontroller.json` | PowerShell `Get-CimInstance ... \| ConvertTo-Json -Compress` on the Windows host |
+| `thinking-pilot/replies.jsonl`, `tasks.jsonl` | 24 replies and the 16 decompiled tasks (seed 7) they answer, copied unedited from the output of the Kaggle thinking pilot (2026-11-11: CodeForge 27B heretic Q4, 57 tasks x 2, 4096 tokens; `~/work/kaggle-rea/out2/replies.jsonl`): the 12 accepted replies the repetition filter dropped for quoting the question, 6 replies that are real loops, the 6 antidebug replies whose `Answer:` line had no technique (`case` says which); `tests/test_rea_thinking_pilot.py` |
 | `linux-vm-meminfo.txt`, `linux-vm-cpuinfo.txt` | `/proc/meminfo`, `/proc/cpuinfo` of the Linux VM |
 | `gguf-dump-dsv4-9b.txt`, `modelinfo-dsv4-9b.json` | the real GGUF header parsed on the host by `forge/gguf.py` (metadata dump / `forge plan --dump-model`; the JSON was regenerated on the host with the fixed code and has the vocabulary size, `n_vocab` 248320) |
 
