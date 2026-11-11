@@ -31,7 +31,8 @@ holds several sentences the first one is the headline. What follows must be pros
 
 What is stored as an SFT target is NEVER the teacher's text (round 4): the teacher's headline is a filter (`accepted_headline`: does it parse as the
 task's answer?), and `sft_target` returns the target rendered from the task's own truth (targets.py: the canonical headline and one factual
-sentence of a per-variant template set). The raw headline of the teacher is returned as `teacher_headline`, for analysis only.
+sentence of a per-variant template set). Nothing of the teacher's reply is returned, not even its headline (round 9, m1: the record used to carry it as
+`teacher_headline`; the uploaded dataset holds no teacher text).
 """
 from __future__ import annotations
 
@@ -319,8 +320,8 @@ def check_target(t: dict) -> None:
 
 def sft_target(reply: str, t: dict):
     """The target to store for a reply, or None when the reply is not an answer (see accepted_headline). The text is RENDERED FROM THE TRUTH
-    (targets.render): the canonical headline and one factual sentence; nothing of the reply is in it. {"text", "headline", "sentence", "template",
-    "teacher_headline", "target_source"}; `teacher_headline` is the raw headline of the reply, kept for analysis only."""
+    (targets.render): the canonical headline and one factual sentence; nothing of the reply is in it, and nothing of it is returned (round 9, m1).
+    {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth."""
     from . import targets
     head = accepted_headline(reply, t)
     if head is None:
@@ -328,8 +329,7 @@ def sft_target(reply: str, t: dict):
     r = targets.render(t)
     if not score_strict(r["text"], t):
         raise ValueError(f"the truth template of task {t.get('id', '?')} ({r['key']}) renders a text that score_strict rejects: {r['text']!r}")
-    return {"text": r["text"], "headline": r["headline"], "sentence": r["sentence"], "template": r["template"], "teacher_headline": head,
-            "target_source": targets.TARGET_SOURCE}
+    return {"text": r["text"], "headline": r["headline"], "sentence": r["sentence"], "template": r["template"], "target_source": targets.TARGET_SOURCE}
 
 
 def canonical(t: dict) -> str:

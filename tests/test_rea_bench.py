@@ -669,7 +669,7 @@ class FactGate(unittest.TestCase):
                     alts, spec = survive.split_group(g)
                     self.assertTrue(alts and all((isinstance(a, int) and not isinstance(a, bool)) or (isinstance(a, str) and a) for a in alts), (t.id, g))
                     self.assertTrue(all(not isinstance(a, dict) for a in g[:-1]), "a probe is the last element of its group")
-                    if spec:         # the probe's anchor finds an asked literal in the source and it is one of the group's own values
+                    if spec and "at" in spec:         # the probe's anchor finds an asked literal in the source and it is one of the group's own values
                         m = re.search(spec["at"], t.source())
                         self.assertIsNotNone(m, (t.id, spec["at"]))
                         self.assertIn(survive._parse_int(m.group(1)), alts, (t.id, m.group(1), alts))
@@ -677,8 +677,10 @@ class FactGate(unittest.TestCase):
                 if t.variant in ("field_read", "init_magic", "linked_next", "nested_offset"):
                     self.assertIn(p["offset"], t.facts[0])
                     self.assertGreater(p["offset"], 0, "offset 0 has no displacement in the code")
-                if t.variant in ("array_stride", "alloc_size"):
+                if t.variant == "alloc_size":
                     self.assertEqual(t.facts, [[p["size"]]])
+                if t.variant == "array_stride":
+                    self.assertEqual(t.facts, [[p["size"], {"no_stack": True}]], "round 9, m3: the stride must be a literal outside the stack frame")
                 if fam == "crc":
                     self.assertTrue(t.facts and ({"poly": p["lit"], "init": p["init"], "xorout": p["xorout"]}[t.variant.split("_")[1]] in t.facts[0]))
                 if t.variant == "env":

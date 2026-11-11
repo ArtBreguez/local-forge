@@ -113,6 +113,8 @@ def _fill(rng, st, names, var="s"):
 
 
 def v_array_stride(rng):
+    """The stride must be a literal of the compiled code outside the stack frame (`add rdi, 0x30`, `imul rax, rax, 0x38`, a displacement): round 9, m3, a gcc -O0 loop
+    that scales the index with `lea` and `shl` and has a frame slot at [rbp-0x18] showed no stride of 24 and passed the presence test."""
     st = make(rng)
     f = rng.choice(scalars(st))
     body = f"""uint64_t proc(const struct {st.name} *a, size_t n) {{
@@ -131,7 +133,7 @@ def v_array_stride(rng):
     q = "proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
     return Task(kind=FAMILY, variant="array_stride", headers=HEADERS, body=st.definition() + body, question=q,
                 truth={"score": "tokens", "accept": [dec(st.size)]}, params={"size": st.size, "offset": st.offsets[f]},
-                wrong=str(st.size + 8), check=(main, f"{st.size} {st.offsets[f]}\n{sum(vals)}\n"), facts=[[st.size]])
+                wrong=str(st.size + 8), check=(main, f"{st.size} {st.offsets[f]}\n{sum(vals)}\n"), facts=[[st.size, {"no_stack": True}]])
 
 
 def v_field_read(rng):

@@ -31,14 +31,14 @@ class ModalCase(unittest.TestCase):
         cls.patch = mock.patch.dict(sys.modules, {"modal": fake})
         cls.patch.start()
         sys.path.insert(0, str(ROOT / "tools" / "modal"))
-        for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora"):
             sys.modules.pop(name, None)
         import modal_rea, modal_rea_data
         cls.rea, cls.data = modal_rea, modal_rea_data
 
     @classmethod
     def tearDownClass(cls):
-        for name in ("modal_rea", "modal_rea_data", "modal_qbench"):
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora"):
             sys.modules.pop(name, None)
         sys.path.remove(str(ROOT / "tools" / "modal"))
         cls.patch.stop()
@@ -67,7 +67,7 @@ class SampleSelection(unittest.TestCase):
         kept, stats = sft.assemble([t], results, "m", msgs)
         want = targets.render(t)["text"]
         self.assertEqual([r["messages"][-1]["content"] for r in kept], [want], "one record per task, whatever the teacher wrote after the headline")
-        self.assertEqual((kept[0]["teacher_headline"], kept[0]["target_source"]), (k, "truth-template"))
+        self.assertEqual((kept[0]["target_source"], "teacher_headline" in kept[0]), ("truth-template", False), "round 9, m1: no teacher text in the record")
         self.assertEqual((stats["correct"], stats["kept_records"]), (3, 1), "a second line that is no sentence makes a list: that reply is not an answer")
         self.assertEqual(stats["by_kind"]["structs"]["kept_tasks"], 1)
 
@@ -102,7 +102,7 @@ class StubbedSampleStage(ModalCase):
             self.tasks[t.id] = m
             (src / f"{t.id}.json").write_text(json.dumps(m))
         self.root, self.k = root, 3
-        self.requests, self.bodies, self.lock = [], [], __import__("threading").Lock()
+        self.requests, self.bodies, self.tokenized, self.lock = [], [], [], __import__("threading").Lock()
         self.fail = lambda tid, i: False
         real = pathlib.Path
         shim = types.SimpleNamespace(Path=lambda p, *a: real(str(self.root / "data" / str(p)[len("/data/"):]) if str(p).startswith("/data/") else p, *a))
@@ -125,6 +125,9 @@ class StubbedSampleStage(ModalCase):
         def urlopen(req, timeout=None):
             if isinstance(req, str):
                 return Resp(b"ok")
+            if req.full_url.endswith("/tokenize"):          # round 9, m2: one token per whitespace-separated word
+                self.tokenized.append(json.loads(req.data)["content"])
+                return Resp(json.dumps({"tokens": [0] * len(json.loads(req.data)["content"].split())}).encode())
             body = json.loads(req.data)
             tid = next(i for i in self.tasks if i in body["messages"][-1]["content"])
             i = body["seed"] - 1234

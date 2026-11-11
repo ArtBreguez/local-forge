@@ -476,7 +476,7 @@ class SelectionStoresTheTemplate(unittest.TestCase):
             recs, why = sft.select([(f"XTEA, decrypt, {n}\n{s}", True)], t)
             self.assertEqual(why, "kept", s)
             self.assertEqual([r["text"] for r in recs], [want], s)
-            self.assertEqual((recs[0]["target_source"], recs[0]["teacher_headline"]), ("truth-template", f"XTEA, decrypt, {n}"))
+            self.assertEqual((recs[0]["target_source"], "teacher_headline" in recs[0]), ("truth-template", False))
             self.assertNotIn("sentence_dropped", recs[0])
             self.assertNotIn(s, recs[0]["text"])
         self.assertEqual(sft.select([("TEA, decrypt, 99\nIt decrypts.", True)], t), ([], "no_correct"))
@@ -487,7 +487,7 @@ class SelectionStoresTheTemplate(unittest.TestCase):
         replies = [(f"XTEA, decrypt, {n}", True), (f"decrypt, XTEA, {n} rounds\nIt runs the loop.", True), (f"The answer is XTEA decrypt {n}.", True), ("TEA, encrypt, 3", True)]
         recs, why = sft.select(replies, t)
         self.assertEqual((why, len(recs)), ("kept", 1), "three accepted samples agree; one record per task")
-        self.assertEqual(recs[0]["teacher_headline"], f"XTEA, decrypt, {n}", "the first accepted reply's headline, raw")
+        self.assertNotIn("teacher_headline", recs[0], "round 9, m1: not even the first accepted reply's headline is kept")
 
     def test_assemble_stores_the_rendered_text_only(self):
         t = next(t for t in families.generate("structs", 60, 7) if t.variant == "linked_next")
@@ -498,7 +498,7 @@ class SelectionStoresTheTemplate(unittest.TestCase):
         self.assertEqual(len(kept), 1)
         rec = kept[0]
         self.assertEqual(rec["messages"][-1]["content"], targets.render(meta)["text"])
-        self.assertEqual((rec["target_source"], rec["teacher_headline"]), ("truth-template", off))
+        self.assertEqual((rec["target_source"], "teacher_headline" in rec), ("truth-template", False))
         self.assertTrue(scoring.score_strict(rec["messages"][-1]["content"], meta))
         self.assertNotIn("sentence_dropped", rec)
         self.assertNotIn("sentence_dropped", st)

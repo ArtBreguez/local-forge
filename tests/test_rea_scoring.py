@@ -119,7 +119,7 @@ class HeadlineRule(unittest.TestCase):
         k = t["accept"][0][0]
         self.assertEqual(scoring.accepted_headline(f"{k}. The next pointer is read at offset {k} of the node.", t), f"{k}.")
         r = scoring.sft_target(f"{k}. The next pointer is read at offset {k} of the node.", t)
-        self.assertEqual((r["teacher_headline"], r["text"]), (f"{k}.", targets.render(t)["text"]), "the stored text is the template, not the reply")
+        self.assertEqual((r["text"], "teacher_headline" in r), (targets.render(t)["text"], False), "the stored text is the template, not the reply, and the reply's headline is not returned")
         self.assertIsNone(scoring.sft_target(f"{k}. Or maybe {wrong_of(k)}.", t), "a short second sentence is a second candidate: the reply is a list")
 
     def test_the_any_line_control_is_format_insensitive_and_never_stricter(self):
@@ -175,7 +175,7 @@ class StoredTarget(unittest.TestCase):
     def test_the_reviewers_contradiction_is_not_stored(self):
         self.assertTrue(scoring.score(f"{self.k}\nWait, actually the next pointer is at 0x70.", self.t), "the headline alone is right")
         r = scoring.sft_target(f"{self.k}\nWait, actually the next pointer is at 0x70.", self.t)
-        self.assertEqual((r["text"], r["teacher_headline"], r["target_source"]), (self.want, self.k, "truth-template"))
+        self.assertEqual((r["text"], r["target_source"], "teacher_headline" in r), (self.want, "truth-template", False))
         self.assertNotIn("0x70", r["text"])
         self.assertNotIn("sentence_dropped", r)
 
@@ -190,7 +190,7 @@ class StoredTarget(unittest.TestCase):
                 r = scoring.sft_target(reply, self.t)
                 self.assertIsNotNone(r, reply)
                 self.assertEqual(r["text"], self.want, reply)
-                self.assertEqual(r["teacher_headline"], self.k)
+                self.assertNotIn("teacher_headline", r)
                 self.assertNotIn(body, r["text"])
         self.assertEqual(scoring.sft_target(self.k, self.t)["text"], self.want, "a bare headline is enough")
 
@@ -331,7 +331,7 @@ class Selection(unittest.TestCase):
         kept, st = sft.assemble([t], results, "m", msgs)
         self.assertEqual([r["messages"][-1]["content"] for r in kept], [targets.render(t)["text"]])
         self.assertEqual((st["errors"], st["correct"], st["kept_records"]), (1, 1, 1))
-        self.assertEqual((kept[0]["teacher_headline"], kept[0]["target_source"]), (ok, "truth-template"))
+        self.assertEqual((kept[0]["target_source"], "teacher_headline" in kept[0]), ("truth-template", False))
 
     def test_every_variant_above_the_threshold_is_known(self):
         from rea_bench import chance
@@ -370,7 +370,7 @@ class Selection(unittest.TestCase):
         self.assertEqual(len(kept), 1)
         gone = {"sentence_dropped", "truncated"}
         self.assertEqual((gone & set(kept[0]), gone & set(st), gone & set(st["by_kind"]["structs"])), (set(), set(), set()))
-        self.assertEqual(set(kept[0]), {"messages", "task", "kind", "model", "teacher_headline", "target_source"})
+        self.assertEqual(set(kept[0]), {"messages", "task", "kind", "model", "target_source"}, "round 9, m1: teacher_headline is gone")
 
 
 if __name__ == "__main__":

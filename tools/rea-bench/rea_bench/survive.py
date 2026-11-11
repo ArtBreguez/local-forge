@@ -12,6 +12,8 @@ fail a task (nothing of the group is in the code) but proves nothing when it hol
 the weight there is a causal probe: a group may end with a dict
     {"at": regex with one group around the asked literal in the C source, "kind": "exact" | "near" | "half", "hex": bool, "bits": int,
      "no_table": bool}
+or with {"no_stack": true} alone (round 9, m3: the asked value is no literal of the source to probe, `sizeof` of a struct, and a frame offset must not count as its
+presence: `[rbp-0x18]` made the record size 24 "present" in a gcc -O0 loop that scales the index with `lea` and `shl`)
 and then the gate (1) finds that literal in the source - it must be one of the group's own values, so a source in which the asked
 constant was changed is not the task's fact; (2) compiles the source again with the literal replaced by a marker value that is nowhere in
 the first compile, and requires the marker (or, for "near", a neighbour; for "half", its half or double: a loop of N double rounds) to show
@@ -72,8 +74,12 @@ def compile_object(src: str, cc: str, opt: str, out: pathlib.Path) -> subprocess
     return subprocess.run([cc, opt, "-fno-lto", "-w", "-c", "-o", str(out), "-x", "c", "-"], input=src, capture_output=True, text=True, timeout=60)
 
 
-def numbers(disasm: str) -> set:
-    """Magnitudes of every number in the instructions of the disassembly (functions other than main)."""
+_STACK = re.compile(r"\b[re]?[sb]p\b")
+
+
+def numbers(disasm: str, stack: bool = True) -> set:
+    """Magnitudes of every number in the instructions of the disassembly (functions other than main). `stack=False` leaves out the instructions that name the stack or frame
+    pointer (`[rbp-0x30]`, `sub rsp, 0x30`): a frame offset is not a constant of the program (round 9, m3)."""
     out, keep = set(), False
     for line in disasm.splitlines():
         m = _FUNC.match(line.strip())
@@ -83,6 +89,8 @@ def numbers(disasm: str) -> set:
         if not keep or "\t" not in line:
             continue
         insn = re.sub(r"#.*|<[^>]*>", "", line.split("\t", 1)[1])
+        if not stack and _STACK.search(insn):
+            continue
         out |= {int(h, 16) for h in _HEX.findall(insn)}
         out |= {int(d) for d in _DEC.findall(_HEX.sub(" ", insn))}
     return out
@@ -269,12 +277,13 @@ def check(facts: list, src: str, cc: str, opt: str) -> tuple:
         raise RuntimeError(f"the fact gate needs {cc} and objdump on PATH (gen --no-survive skips it)")
     with tempfile.TemporaryDirectory() as d:
         obj = _compile(src, cc, opt, d, "o.o")
-        nums, blob = numbers(_objdump(["-d", "--no-show-raw-insn", "-M", "intel"], obj)), obj.read_bytes()
+        dis = _objdump(["-d", "--no-show-raw-insn", "-M", "intel"], obj)
+        nums, nums_off_stack, blob = numbers(dis), numbers(dis, stack=False), obj.read_bytes()
         for g in facts:
             alts, spec = split_group(g)
-            if not group_present(g, nums, blob):
-                return False, f"{cc} {opt}: none of {alts[:6]} in the code"
-            if spec:
+            if not group_present(g, nums_off_stack if spec and spec.get("no_stack") else nums, blob):
+                return False, f"{cc} {opt}: none of {alts[:6]} in the code" + (" outside the stack frame" if spec and spec.get("no_stack") else "")
+            if spec and "at" in spec:
                 ok, why = _probe(spec, alts, src, cc, opt, d, nums, obj)
                 if not ok:
                     return False, f"{cc} {opt}: {why} ({alts[:3]})"

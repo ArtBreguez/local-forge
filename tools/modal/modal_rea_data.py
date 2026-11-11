@@ -11,14 +11,15 @@ Stage 2 (GPU): an uncensored model answers each task K times at T=0.7. The model
 enters the data only when the HEADLINE of a reply parses completely as the task's answer (the whitelist grammar, rea_bench.scoring.score_strict,
 for EVERY family including legacy), which proves the task is answerable from the pseudocode. What is STORED is never the model's text: the assistant
 message is rendered from the task's own truth (rea_bench.targets: the canonical headline and one factual sentence from a per-variant set of 3-6
-phrasings, chosen by a seeded RNG from the task id); the record keeps `teacher_headline` (the model's raw headline, for analysis only) and
-`target_source: "truth-template"`. Free prose repeatedly carried a wrong fact past every filter, so none of it is stored. A failed request
+phrasings, chosen by a seeded RNG from the task id); the record keeps `target_source: "truth-template"` and nothing of the model (round 9, m1: not even its headline;
+the checkpoint on the volume holds the raw replies for `--resume` and is never downloaded or uploaded). Free prose repeatedly carried a wrong fact past every filter, so none of it is stored. A failed request
 (`[error ...]`) is never scored or stored and is counted per family; more than 5% of failed requests prints a warning.
 A task whose chance level is 0.05 or more (the best constant guess within its variant: CRC, pktsum, fsm, TEA/XTEA,
 ChaCha/Salsa, several structs, legacy skip) is kept only when at least 2 of the K samples are right; every reply is scored again at the end,
 so a `--resume` never keeps the verdict of an older scorer. The stage checkpoints every task on the volume (`--resume` continues a run that timed
 out) and reports yield per family in `.stats.json`. The held-out seed 1001 is
-never sampled (the stage refuses it). Output: SFT pairs in results/phase6/rea-data/.
+never sampled (the stage refuses it). Output: SFT pairs in results/phase6/rea-data/. A pair whose system + user + assistant text is longer than the training window (`modal_lora.MAX_LEN`, 2048 tokens
+with the chat template; the training run drops it, never cuts it) is dropped here and counted per family (round 9, m2: `over_length` in `.stats.json`, a line printed after the run).
     modal run tools/modal/modal_rea_data.py --stage sample --model <name> [--seed 7 --family legacy] [--k 6] [--resume] [--force]
 A seed-1001 decompile run (the held-out split) may ask for at most 120 tasks per family: the list that keeps them out of training covers 120.
 The default family is `legacy`. Its frozen whole-reply substring scorer (comparable with the 34/60 -> 50/60 numbers, accepts a content-free
@@ -50,10 +51,11 @@ if (RB / "rea_bench").is_dir():
     sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
+from modal_lora import MAX_LEN  # noqa: E402  (the training window: one number for the length rule of the sample stage and of the training run)
 from rea_bench import dedupe, families, outputs, sft, survive  # noqa: E402  (stdlib-only)
 from rea_bench.scoring import check_mode, check_target, score_strict  # noqa: E402  (stdlib-only, unit-tested without Modal; NOT modal_rea.py's evaluation scorer)
 
-image = image.add_local_python_source("modal_rea")     # modal_rea's image already mounts rea_bench at /root/rea_bench
+image = image.add_local_python_source("modal_rea", "modal_lora")     # modal_rea's image already mounts rea_bench at /root/rea_bench; modal_lora: the training window (MAX_LEN)
 app = modal.App("lf-rea-data", image=image)
 data_vol = modal.Volume.from_name("lf-rea-data", create_if_missing=True)
 
@@ -162,6 +164,25 @@ def _messages(t: dict) -> list:
             {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}]
 
 
+def _server_token_count(text: str) -> int:
+    """Tokens of `text` in the tokenizer of the llama-server that answered the samples (POST /tokenize, no special tokens)."""
+    import urllib.request as ur
+    req = ur.Request("http://127.0.0.1:8080/tokenize", data=json.dumps({"content": text, "add_special": False}).encode(), headers={"Content-Type": "application/json"})
+    with ur.urlopen(req, timeout=120) as r:
+        return len(json.load(r)["tokens"])
+
+
+def _apply_length_rule(kept: list, stats: dict) -> tuple:
+    """Round 9, m2: the training run (modal_lora.encode_ids) drops a pair whose prompt + answer + EOS is longer than MAX_LEN tokens. Measured here with the tokenizer of the
+    sampling server (a Qwen3.x GGUF: the vocabulary of the training base, not the training tokenizer byte for byte; sft.LENGTH_OVERHEAD covers the chat template and the report
+    counts the records near the limit), the over-length records are dropped before the file is written and counted per family. A measurement that fails keeps every record, says so
+    in the stats, and leaves the authoritative drop to the training run."""
+    try:
+        return sft.drop_over_length(kept, stats, _server_token_count, MAX_LEN)
+    except Exception as e:
+        return kept, {**stats, "over_length": {"max_len": MAX_LEN, "error": f"{type(e).__name__}: {e}"[:200]}}
+
+
 @app.function(gpu=["L40S", "A100-40GB"], volumes={"/models": models_vol, "/data": data_vol}, timeout=5 * 3600)
 def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False) -> dict:
     """K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
@@ -230,11 +251,12 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                 ck.flush()
                 if i % 20 == 0:
                     data_vol.commit()
+        kept, stats = sft.assemble(tasks, results, name, _messages)
+        kept, stats = _apply_length_rule(kept, stats)       # round 9, m2: what the training run would drop is dropped (and counted) here, while the server is still up
     finally:
         srv.kill()
         server_log.close()
         data_vol.commit()
-    kept, stats = sft.assemble(tasks, results, name, _messages)
     return {"stats": stats, "sft": kept}
 
 
@@ -323,6 +345,9 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         warning = sft.error_warning(s)
         if warning:
             print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
+        length_line = sft.over_length_line(s)
+        if length_line:
+            print(length_line)
         for kind, row in s.get("by_kind", {}).items():
             print(f"  {kind:10s} {row['solved_tasks']:4d}/{row['tasks']:<4d} solved, {row['kept_tasks']:4d} kept ({row['agreement']} dropped for lack of "
                   f"agreement, {row.get('errors', 0)} failed requests)")
