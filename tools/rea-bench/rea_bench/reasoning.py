@@ -14,14 +14,18 @@ records those are (`target_source: "teacher-reasoning"`), next to the truth-rend
   traces      round 12: up to `--max-traces` (3) DISTINCT accepted replies per kept task (RFT, Yuan et al. 2023: several correct reasoning paths per question), each
               stored verbatim (`<think>` blocks stripped, whitespace trimmed, nothing else: `teacher_target`), after the quality filters (R1 SFT-data style, `quality_drop`:
               mixed language, repetition loop, unreadable, self-contradiction) and the duplicate rule (`pick_traces`: identical normalized text, or token-set Jaccard >= 0.9).
-  thinking    `--thinking` (a pilot): the server's reasoning is kept, `<think>reasoning</think>` + the visible reply (`thinking_reply`, `compose_trace`); only the visible text's last
-              `Answer:` line is scored. Its files and stats say `thinking` (`-reasoning-think` in the tag): a run never mixes with a visible-reasoning one.
+  thinking    `--thinking`: the model's native reasoning (R1-distill style) is kept, `<think>reasoning</think>` + the visible reply (`thinking_reply`, `compose_trace`); only the visible text's last
+              `Answer:` line is scored. Its files and stats say `thinking` (`-reasoning-think` in the tag): a run never mixes with a visible-reasoning one. Round 13: it samples with Qwen3's
+              recommended thinking settings (`THINKING_SAMPLING`, never greedy: `sampling_for`), `--max-tokens` defaults to `DEFAULT_THINKING_MAX_TOKENS` (4096), the server slot holds prompt +
+              max_tokens (`slot_context`) and the length report counts what fits 4096 and 8192 (`THINKING_REPORT_WINDOWS`). `modal_lora.py` trains such a record (`<think>` in the text) with the
+              prompt rendered by the base model's chat template for thinking.
   sizing      `--quota kind=N,...` caps the tasks per family (`apply_quota`, round-robin so that a run stopped early is balanced) and `project` turns
               tasks x k x max_tokens into GPU hours and dollars before a GPU is rented (the assumptions are the constants below).
 """
 from __future__ import annotations
 
 import collections
+import hashlib
 import json
 import math
 import pathlib
@@ -34,6 +38,60 @@ TARGET_SOURCE = "teacher-reasoning"
 DEFAULT_MAX_TOKENS = 768          # `--max-tokens` in reasoning mode (the phase-A sampler used 300 for a headline and one sentence)
 REPORT_WINDOWS = (2048, 3072, 4096)     # the sample stage reports how many teacher records fit each of these training windows
 TRUNCATED = "[truncated at max_tokens]"  # appended by the sampler to a reply the server cut off (finish_reason "length"); it is not an `Answer:` line, so the reply is rejected
+
+# ---- the thinking run's settings (round 13) ----------------------------------------------------------------------------------------------------------
+DEFAULT_SAMPLING = {"temperature": 0.7}          # every run that does not think: what phase A sampled with, unchanged
+# Qwen3's recommended settings for thinking mode (model card: temperature 0.6, top_p 0.95, top_k 20, min_p 0; "do not use greedy decoding, it can lead to performance degradation and endless
+# repetitions"). The order is the order of the request body.
+THINKING_SAMPLING = {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}
+DEFAULT_THINKING_MAX_TOKENS = 4096               # `--max-tokens` of a thinking run: the reasoning counts against it; a reply cut off at it is rejected and counted (`TRUNCATED`)
+THINKING_REPORT_WINDOWS = (4096, 8192)           # the length report of a thinking run: how many records fit each of these training windows
+THINKING_WINDOW = 8192                           # the recommended `--max-len` (sample stage and `modal_lora.py`) for thinking records
+SLOT_CONTEXT = 8192                              # tokens of one slot of the sampler's llama-server (`-c` is slots x this); the phase-A and visible-reasoning runs have always used it
+SLOT_PROMPT_ROOM = 4096                          # what the prompt may take next to a reply of `max_tokens`: the slot holds prompt + max_tokens (4096 + 4096 = 8192)
+SAMPLING_KEYS = tuple(THINKING_SAMPLING)
+
+
+def slot_context(max_tokens: int) -> int:
+    """Tokens per slot of the sampler's server: `SLOT_CONTEXT`, or more when `max_tokens` + `SLOT_PROMPT_ROOM` does not fit (rounded up to a multiple of 1024). A thinking run at the default 4096
+    tokens needs exactly 8192: a prompt of up to 4096 tokens and a reply of up to 4096."""
+    return max(SLOT_CONTEXT, -(-(max_tokens + SLOT_PROMPT_ROOM) // 1024) * 1024)
+
+
+def prompt_fits(prompt_tokens: int, max_tokens: int, slot_ctx: int) -> bool:
+    """True when a prompt of `prompt_tokens` and a reply of up to `max_tokens` fit one slot of `slot_ctx` tokens: otherwise the server cuts the reply off early (or refuses the request)."""
+    return prompt_tokens + max_tokens <= slot_ctx
+
+
+def default_max_tokens(reasoning: bool, thinking: bool) -> int:
+    """`--max-tokens` when it is not given: 300 (phase A), DEFAULT_MAX_TOKENS (768) with `--reasoning`, DEFAULT_THINKING_MAX_TOKENS (4096) with `--thinking`."""
+    return DEFAULT_THINKING_MAX_TOKENS if thinking else DEFAULT_MAX_TOKENS if reasoning else 300
+
+
+def sampling_for(thinking: bool, temperature=None, top_p=None, top_k=None, min_p=None) -> dict:
+    """The sampling settings of a run, in request-body order: the defaults of its mode (`THINKING_SAMPLING` with `--thinking`, `DEFAULT_SAMPLING` otherwise) and each value that is not None replaced.
+    SystemExit for a value out of range, and, in a thinking run, for greedy decoding (temperature 0, or top_k 1), which Qwen3 says loops and repeats; nothing is rented before that."""
+    out = dict(THINKING_SAMPLING if thinking else DEFAULT_SAMPLING)
+    for key, value in (("temperature", temperature), ("top_p", top_p), ("top_k", top_k), ("min_p", min_p)):
+        if value is not None:
+            out[key] = value
+    t = out["temperature"]
+    if not 0 <= t <= 2 or ("top_p" in out and not 0 < out["top_p"] <= 1) or ("top_k" in out and out["top_k"] < 0) or ("min_p" in out and not 0 <= out["min_p"] < 1):
+        raise SystemExit(f"sampling out of range: {out} (temperature 0-2, top_p in (0, 1], top_k >= 0 (0 = off), min_p in [0, 1))")
+    if thinking and (t <= 0 or out.get("top_k") == 1):
+        raise SystemExit(f"a thinking run is never greedy ({out}): temperature 0 or top_k 1 makes the reasoning loop and repeat; Qwen3's recommendation is {THINKING_SAMPLING}")
+    return out
+
+
+def sampling_record(thinking: bool, sampling: dict, max_tokens: int, **more) -> dict:
+    """The `sampling` block of the stats of a reasoning run: whether it thought, every sampling value, the token budget, and what else the caller knows (seed base, slot size...)."""
+    return {"thinking": bool(thinking), **sampling, "max_tokens": max_tokens, **more}
+
+
+def prompt_sha(messages: list) -> str:
+    """A short fingerprint of the messages a request carried. The Kaggle notebook writes it with every reply (it has no copy of this module) and `kaggle-score` compares it with the
+    messages it rebuilds: a reply to another prompt is not stored under this one."""
+    return hashlib.sha256(json.dumps(messages, sort_keys=True, ensure_ascii=True).encode()).hexdigest()[:16]
 
 SYSTEM_REASONING = ("You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. "
                     "First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. "
@@ -450,12 +508,13 @@ def budget_warning(p: dict, budget_usd: float):
 
 def thinking_cost_line(p: dict, source: str = "") -> str:
     """The line of a THINKING run (printed before the GPU is rented). There is no expected cost: the 5x-8x length of the visible-reasoning mode does not hold when the model reasons first and the
-    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`."""
+    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`. The slot of the server holds the prompt and that many tokens (`slot_context`)."""
     w = p["worst"]
+    slot = slot_context(p["max_tokens"])
     return (f"projected cost (thinking pilot): {p['tasks']:,} tasks x k={p['k']} = {p['replies']:,} replies. No estimate: the 5x-8x length assumption is for visible reasoning, and how long this model "
             f"reasons is not measured. Worst case, every reply runs to max_tokens={p['max_tokens']}: {w['gpu_hours']} GPU-h on one L40S = about US${w['usd']:.2f} at US${p['usd_per_h']:.2f}/h "
             f"(an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. The prompt and the reply share "
-            f"one 8,192-token slot of the server. A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
+            f"one {slot:,}-token slot of the server (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted). A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
             f"--resume." + (f" Tasks: {source}." if source else ""))
 
 

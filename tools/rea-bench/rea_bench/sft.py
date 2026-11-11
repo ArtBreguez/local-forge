@@ -31,7 +31,7 @@ from __future__ import annotations
 
 import collections
 
-from .reasoning import DEFAULT_MAX_TRACES, REPORT_WINDOWS, TARGET_SOURCE as TEACHER_SOURCE, TRACE_DROPS, pick_traces, score_reasoning, verdict
+from .reasoning import DEFAULT_MAX_TRACES, TARGET_SOURCE as TEACHER_SOURCE, TRACE_DROPS, pick_traces, score_reasoning, verdict
 from .scoring import is_error_reply, score_strict, sft_target, strict_task, truth_target
 
 AGREE_CHANCE = 0.05          # round 4 (m8): 0.06-0.063 variants (fsm/opcode_value, bounds/char_class, multi/limit_helper) kept one lucky sample of six in 31% of the tasks
@@ -110,13 +110,14 @@ def over_length_line(stats: dict):
 
 
 def fits_line(stats: dict):
-    """The line a reasoning run prints about the training window: how many teacher-reasoning records fit 2048, 3072 and 4096 tokens (None without that measurement)."""
+    """The line a reasoning run prints about the training window: how many teacher-reasoning records fit each window the run measured (a visible-reasoning run: 2048, 3072 and 4096 tokens;
+    a thinking run: 4096 and 8192, `reasoning.THINKING_REPORT_WINDOWS`), as a share of the records: the projection of what `modal_lora.py --max-len` would keep. None without that measurement."""
     o = stats.get("over_length") or {}
     row = (o.get("fits") or {}).get(TEACHER_SOURCE)
     if not row or not row.get("records"):
         return None
     total = row["records"]
-    parts = ", ".join(f"{w} tokens: {row.get(str(w), 0)} of {total} ({100 * row.get(str(w), 0) // total}%)" for w in REPORT_WINDOWS if str(w) in row)
+    parts = ", ".join(f"{w} tokens: {row.get(str(w), 0)} of {total} ({100 * row.get(str(w), 0) // total}%)" for w in sorted(int(k) for k in row if k.isdigit()))
     return f"teacher-reasoning records that fit the training window (prompt + answer + EOS): {parts}; this run dropped at --max-len {o['max_len']}"
 
 
@@ -214,6 +215,13 @@ def reasoning_report(stats: dict) -> list:
     if r.get("mode") == "thinking" and d and r["accepted"] and d.get("no_think", 0) / r["accepted"] > NO_THINK_WARN:
         out.append(f"WARNING: {100 * d['no_think'] // r['accepted']}% of the accepted replies came back without reasoning: the server did not return `reasoning_content` or a <think> block "
                    f"(llama-server --reasoning-format), so they were dropped")
+    s = stats.get("sampling")
+    if s:
+        out.append("sampling: " + ", ".join(f"{k} {v}" for k, v in s.items()))
+    sl = stats.get("slot")
+    if sl and sl.get("prompt_too_long"):
+        out.append(f"WARNING: {sl['prompt_too_long']} task(s) were not asked: their prompt is longer than {sl['max_prompt_tokens']:,} tokens, which with max_tokens {s['max_tokens'] if s else '?'} does not fit one "
+                   f"{sl['slot_context']:,}-token slot of the server ({', '.join(f'{k} {c}' for k, c in sl['by_kind'].items())})")
     p = stats.get("perf")
     if p and p.get("requests"):
         out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over the four slots "

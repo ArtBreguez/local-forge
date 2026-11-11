@@ -662,9 +662,10 @@ class TrainingWindow(ModalCase):
             p = inspect.signature(fn).parameters["max_len"]
             self.assertEqual(p.default, 2048, fn.__name__)
         src = inspect.getsource(self.lora.train)
-        self.assertIn("encode_ids(p_ids, f_ids, max_len)", src)
+        self.assertIn('encode_record(tok, ex["messages"], max_len,', src, "round 13: train encodes through encode_record, with the window")
+        self.assertIn("encode_ids(p_ids, f_ids, max_len)", inspect.getsource(self.lora.encode_record))
         self.assertNotIn("longer than {MAX_LEN}", src)
-        self.assertIn("train.remote(smoke, epochs, lr, rank, max_len, config, tag)", inspect.getsource(self.lora.main))
+        self.assertIn("train.remote(smoke, epochs, lr, rank, max_len, config, tag, mix)", inspect.getsource(self.lora.main))
 
     def test_a_longer_window_keeps_a_longer_pair_and_still_drops_never_cuts(self):
         enc = self.lora.encode_ids

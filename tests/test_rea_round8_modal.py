@@ -138,6 +138,7 @@ class LoraEncode(ModalCase):
     def test_train_uses_it_and_counts_what_it_dropped(self):
         import inspect
         src = inspect.getsource(self.lora.train)
-        self.assertIn("encode_ids(", src)
+        self.assertIn("encode_record(", src, "round 13: train encodes through encode_record, which ends in encode_ids")
+        self.assertIn("encode_ids(", inspect.getsource(self.lora.encode_record))
         self.assertNotIn("[:2048]", src)
         self.assertIn("dropped", src)

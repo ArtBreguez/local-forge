@@ -96,7 +96,7 @@ class SameAsTheStage(StubbedSampleStage):
             replies = write_replies(d, self.kaggle_lines(thinking))
             records, stats = kaggle_score.score(replies, tasks, "m", thinking=thinking)
         self.assertEqual(records, res["sft"], "the same records, in the same order")
-        skip = ("over_length", "perf", "families", "kaggle", "thinking")
+        skip = ("over_length", "perf", "families", "kaggle", "thinking", "sampling", "slot")
         self.assertEqual({k: v for k, v in stats.items() if k not in skip}, {k: v for k, v in res["stats"].items() if k not in skip}, "the same stats")
         return records, stats
 

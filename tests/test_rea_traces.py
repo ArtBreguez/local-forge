@@ -477,19 +477,18 @@ class ThinkingStage(StubbedSampleStage):
     def partial(self, tag):
         return self.root / "data" / f"{outputs.sft_stem('m', tag)}.partial.jsonl"
 
-    def test_the_request_turns_thinking_on_and_carries_the_explicit_token_budget(self):
+    def test_the_request_turns_thinking_on_and_carries_the_token_budget_and_the_thinking_sampling(self):
         self.run_stage(False, **self.KW)
         self.assertEqual(len(self.bodies), len(self.tasks) * self.k)
         for b in self.bodies:
             self.assertEqual(b["chat_template_kwargs"], {"enable_thinking": True})
-            self.assertEqual((b["max_tokens"], b["temperature"], b["cache_prompt"]), (2000, 0.7, False))
+            self.assertEqual((b["max_tokens"], b["temperature"], b["cache_prompt"]), (2000, 0.6, False), "round 13: Qwen3's thinking temperature (tests/test_rea_thinking.py has the rest)")
             self.assertEqual(b["messages"][0], {"role": "system", "content": rsn.SYSTEM_REASONING}, "the same prompt as the visible-reasoning run")
         self.run_stage(False, reasoning=True, max_len=4096)
         self.assertEqual({json.dumps(b["chat_template_kwargs"]) for b in self.bodies}, {'{"enable_thinking": false}'}, "without --thinking it is off, as in round 11")
 
-    def test_thinking_needs_reasoning_and_an_explicit_max_tokens_and_nothing_is_asked_before_that(self):
-        for kw, why in ((dict(reasoning=True, thinking=True, max_len=4096), "--max-tokens"), (dict(thinking=True, max_tokens=500), "--reasoning"),
-                        (dict(reasoning=True, thinking=True, max_tokens=0, max_len=4096), "--max-tokens")):
+    def test_thinking_needs_reasoning_and_a_sane_max_tokens_and_nothing_is_asked_before_that(self):
+        for kw, why in ((dict(reasoning=True, thinking=True, max_tokens=-1, max_len=4096), "--max-tokens"), (dict(thinking=True, max_tokens=500), "--reasoning")):          # round 13: no max_tokens = 4096
             with self.assertRaisesRegex(SystemExit, why):
                 self.run_stage(False, **kw)
             self.assertEqual(self.requests, [], "nothing was asked")
@@ -552,8 +551,8 @@ class ThinkingEntry(ModalCase):
     def sample(self, root, **kw):
         return self.run_main(root, stage="sample", model=self.data.MODELS[0][0], seed=7, family="crc", **kw)
 
-    def test_thinking_without_reasoning_or_max_tokens_stops_before_a_gpu_is_rented(self):
-        for kw, why in ((dict(thinking=True, max_len=2048, max_tokens=500), "--reasoning"), (dict(thinking=True, reasoning=True, max_len=2048), "--max-tokens")):
+    def test_thinking_without_reasoning_stops_before_a_gpu_is_rented(self):
+        for kw, why in ((dict(thinking=True, max_len=2048, max_tokens=500), "--reasoning"), (dict(thinking=True, reasoning=True, max_len=2048, max_tokens=-1), "--max-tokens")):
             with tempfile.TemporaryDirectory() as d:
                 with self.assertRaisesRegex(SystemExit, why):
                     self.sample(pathlib.Path(d), remote_side_effect=AssertionError("a GPU was rented"), **kw)
@@ -685,19 +684,19 @@ class TrainingOutputs(ModalCase):
         remote, gmap = mock.MagicMock(return_value={"tag": "full"}), mock.MagicMock(return_value=[{"which": "lora"}, {"which": "base"}])
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(self.go(d, remote, gmap), ["full-gguf.json", "full-train.json"])
-        remote.assert_called_once_with(False, 2.0, 1.5e-4, 32, 2048, "rea_sft", "full")
+        remote.assert_called_once_with(False, 2.0, 1.5e-4, 32, 2048, "rea_sft", "full", False)
         gmap.assert_called_once_with(["full", "full"], ["lora", "base"])
 
     def test_a_run_on_a_reasoning_file_has_its_own_output_and_never_the_phase_a_one(self):
         remote, gmap = mock.MagicMock(return_value={"tag": "x"}), mock.MagicMock(return_value=[])
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(self.go(d, remote, gmap, config="rea_reasoning", max_len=3072), ["rea_reasoning-gguf.json", "rea_reasoning-train.json"])
-        remote.assert_called_once_with(False, 2.0, 1.5e-4, 32, 3072, "rea_reasoning", "rea_reasoning")
+        remote.assert_called_once_with(False, 2.0, 1.5e-4, 32, 3072, "rea_reasoning", "rea_reasoning", False)
         gmap.assert_called_once_with(["rea_reasoning", "rea_reasoning"], ["lora", "base"])
         remote.reset_mock()
         with tempfile.TemporaryDirectory() as d:
             self.go(d, remote, smoke=True, config="rea_reasoning", tag="r1")
-        remote.assert_called_once_with(True, 2.0, 1.5e-4, 32, 2048, "rea_reasoning", "r1-smoke")
+        remote.assert_called_once_with(True, 2.0, 1.5e-4, 32, 2048, "rea_reasoning", "r1-smoke", False)
 
     def test_the_tag_rule(self):
         rt = self.lora.run_tag
