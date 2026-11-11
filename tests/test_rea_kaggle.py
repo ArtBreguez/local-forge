@@ -91,13 +91,15 @@ class SameAsTheStage(StubbedSampleStage):
         self.reply = lambda tid, i, body: self.answer(tid, i, thinking)
         kw = dict(reasoning=True, max_len=4096, **({"thinking": True, "max_tokens": 900} if thinking else {}))
         res = self.run_stage(False, **kw)
+        run_info = {"thinking": thinking, "sampling": rsn.sampling_for(thinking), "max_tokens": 900 if thinking else rsn.DEFAULT_MAX_TOKENS, "seed_base": 1234, "ctx_per_slot": 8192, "slots": 4}
         with tempfile.TemporaryDirectory() as d:
             tasks = write_tasks(d, list(self.tasks.values()))
             replies = write_replies(d, self.kaggle_lines(thinking))
-            records, stats = kaggle_score.score(replies, tasks, "m", thinking=thinking)
+            records, stats = kaggle_score.score(replies, tasks, "m", thinking=thinking, run_info=run_info)
         self.assertEqual(records, res["sft"], "the same records, in the same order")
-        skip = ("over_length", "perf", "families", "kaggle", "thinking", "sampling", "slot")
-        self.assertEqual({k: v for k, v in stats.items() if k not in skip}, {k: v for k, v in res["stats"].items() if k not in skip}, "the same stats")
+        skip = ("over_length", "perf", "families", "kaggle", "thinking", "slot", "prompts", "projected_fit", "run")          # the Modal stage's own measurements, and what only the Kaggle scorer reads
+        self.assertEqual({k: v for k, v in stats.items() if k not in skip}, {k: v for k, v in res["stats"].items() if k not in skip}, "the same stats, the recorded sampling included (round 13)")
+        self.assertEqual(stats["sampling"], res["stats"]["sampling"])
         return records, stats
 
     def test_visible_reasoning_gives_the_records_and_stats_of_the_modal_stage(self):

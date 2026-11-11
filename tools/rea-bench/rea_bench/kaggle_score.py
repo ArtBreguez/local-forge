@@ -14,6 +14,13 @@ Inputs. `replies.jsonl`: one line per task, `{"id", "kind", "outs": [{"text", "f
 pseudocode, question and truth; a replies line whose id is not in it is counted and skipped, the held-out seed 1001 is refused. The notebook must have asked with `reasoning.SYSTEM_REASONING` and
 `reasoning.user_message(task)`: the records are rebuilt with those messages, so a reply to another prompt would be stored under a prompt it never saw.
 
+Round 13 (thinking). `tools/kaggle/run_teacher.py` is the notebook that writes `replies.jsonl` (README of that directory). It stores a thinking reply as `<think>\nreasoning\n</think>\n\nvisible` (what
+`--thinking` expects), the server's `tokens` and `prompt_tokens` per reply, a `prompt_sha` per line (`reasoning.prompt_sha` of the messages it sent) and a `run.json` next to the replies with the settings it
+used. `--run-info run.json` (default: the `run.json` beside `--replies`, when there is one): its sampling settings go into the stats (`sampling`, the block the Modal stage writes), and `--thinking` must
+agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A line whose `prompt_sha` is not the one of the messages
+rebuilt here is skipped and counted (`prompts`): a reply is never stored under a prompt it did not answer. `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
+training window of 4096 and 8192 tokens (a thinking run; 2048, 3072, 4096 otherwise), counted as the prompt tokens plus the completion tokens the server reported for the reply that became the record.
+
 Outputs: the SFT records (`sft-<model>-<tag>-reasoning[-think].jsonl` next to the tasks file, or `--out`) and `<out>.stats.json`: the stats of `sft.assemble` (`reasoning` block with the drops by reason,
 in total and per family) and `families`, per family and in total: tasks, answers, accepted, kept tasks, traces, `drops` by reason (every reply that is not a trace is under exactly one), truncated
 share, mean and median tokens per reply (the `tokens` the notebook recorded). NOT applied: the over-length rule of the Modal stage (it needs the sampler's tokenizer); `modal_lora.py` drops a pair longer than
@@ -34,6 +41,11 @@ from .scoring import check_mode, check_target, is_error_reply
 
 DEFAULT_TASKS = pathlib.Path("results/phase6/rea-data/decompiled-seed7-all.jsonl")
 REPLY_DROPS = ("error", "truncated", "no_answer_line", "wrong")        # a reply that is not accepted: its verdict (reasoning.verdict)
+
+
+def _count(v) -> bool:
+    """A token count: a number that is not a bool."""
+    return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
 def read_replies(path) -> tuple:
@@ -67,6 +79,48 @@ def reply_of(out, thinking: bool = False) -> str:
     return rsn.reply_text(text, finish, out.get("reasoning_content") or "", thinking)
 
 
+def read_run_info(path):
+    """The `run.json` of a notebook run (a dict), None when the file is not there; SystemExit when it is not a JSON object."""
+    p = pathlib.Path(path)
+    if not p.exists():
+        return None
+    try:
+        info = json.loads(p.read_text())
+        assert isinstance(info, dict)
+    except (json.JSONDecodeError, AssertionError):
+        raise SystemExit(f"{p} is not the JSON object run_teacher.py writes (run.json)")
+    return info
+
+
+def check_run_info(info, thinking: bool) -> None:
+    """SystemExit when the notebook's own record of its run (`thinking`) is not what `--thinking` says."""
+    if info and "thinking" in info and bool(info["thinking"]) != bool(thinking):
+        raise SystemExit(f"the run asked with thinking={bool(info['thinking'])} (run.json), but kaggle-score was run {'with' if thinking else 'without'} --thinking: "
+                         f"{'pass --thinking' if info['thinking'] else 'leave --thinking out'}")
+
+
+def projected_fit(kept: list, lengths: dict, windows: tuple) -> dict:
+    """{"windows": {w: records that fit}, "records": teacher records, "measured": how many of them have a length, "basis"} for the teacher-reasoning records of `kept`. `lengths` maps (task id, record text)
+    to the tokens of the reply that became the record: the server's prompt tokens (chat template, system + user, generation prompt) plus its completion tokens (reasoning, answer, end of turn). A record whose
+    reply has no recorded length is not counted as fitting or not (`measured` says how many are)."""
+    rows = [lengths.get((r["task"], r["messages"][-1]["content"])) for r in kept if r["target_source"] == rsn.TARGET_SOURCE]
+    known = [n for n in rows if n is not None]
+    return {"windows": {str(w): sum(n <= w for n in known) for w in windows}, "records": len(rows), "measured": len(known),
+            "basis": "prompt_tokens + completion_tokens of the server, per reply"}
+
+
+def projected_fit_line(stats: dict):
+    """The line printed about `projected_fit` (None when there is no teacher record)."""
+    f = stats.get("projected_fit")
+    if not f or not f["records"]:
+        return None
+    if not f["measured"]:
+        return f"projected fit: the replies carry no token counts (prompt_tokens, tokens): {f['records']} teacher-reasoning records, none measured"
+    parts = ", ".join(f"{w} tokens: {n} of {f['measured']} ({100 * n // f['measured']}%)" for w, n in f["windows"].items())
+    return (f"projected fit of the teacher-reasoning records to a training window (prompt + reasoning + answer, the server's token counts): {parts}"
+            + (f"; {f['records'] - f['measured']} records have no length" if f["measured"] != f["records"] else ""))
+
+
 def token_stats(counts: list) -> dict:
     return {"n": len(counts), "mean": round(statistics.fmean(counts), 1) if counts else None, "median": statistics.median(counts) if counts else None}
 
@@ -87,11 +141,13 @@ def family_table(stats: dict, tokens: dict) -> dict:
     return out
 
 
-def score(replies_path, tasks_path, model: str, max_traces: int = rsn.DEFAULT_MAX_TRACES, thinking: bool = False) -> tuple:
+def score(replies_path, tasks_path, model: str, max_traces: int = rsn.DEFAULT_MAX_TRACES, thinking: bool = False, run_info: dict = None) -> tuple:
     """(SFT records, stats dict) of a Kaggle replies.jsonl against the decompiled tasks. Records and stats are `sft.assemble`'s, the same call as the Modal sample stage (`reasoning=True`); the stats
-    also hold `families` (family_table), `kaggle` (what was read: lines, malformed, duplicate ids, unknown ids, tasks without replies) and `thinking`, `max_traces`."""
+    also hold `families` (family_table), `kaggle` (what was read: lines, malformed, duplicate ids, unknown ids, tasks without replies), `prompts` (lines whose prompt fingerprint is not the rebuilt messages'),
+    `projected_fit` and `thinking`, `max_traces`; with `run_info` (the notebook's run.json) also `sampling` and `run`."""
     if max_traces < 1:
         raise SystemExit(f"--max-traces {max_traces}: at least 1 teacher record per kept task")
+    check_run_info(run_info, thinking)
     seed = re.search(r"seed(\d+)", pathlib.Path(tasks_path).name)
     if seed:
         dedupe.check_sample_seed(int(seed.group(1)))             # the held-out split is never turned into SFT pairs
@@ -106,17 +162,41 @@ def score(replies_path, tasks_path, model: str, max_traces: int = rsn.DEFAULT_MA
     tasks = [t for t in tasks if t["id"] in replies]
     if not tasks:
         raise SystemExit(f"none of the {len(replies)} task ids of {replies_path} is in {tasks_path}: is it the file of the decompile run the notebook read?")
+    prompts = {"checked": 0, "mismatch": 0, "mismatched_ids": []}
+    for t in list(tasks):
+        sha = replies[t["id"]].get("prompt_sha")
+        if sha is None:                                           # an older notebook: nothing to compare
+            continue
+        prompts["checked"] += 1
+        if sha != rsn.prompt_sha(rsn.messages(t)):
+            prompts["mismatch"] += 1
+            prompts["mismatched_ids"].append(t["id"])
+            tasks.remove(t)
+    if prompts["mismatch"]:
+        sys.stderr.write(f"warning: {prompts['mismatch']} replies line(s) answered a prompt other than the one rebuilt here (reasoning.messages) and were skipped: {', '.join(prompts['mismatched_ids'][:5])}"
+                         f"{' ...' if prompts['mismatch'] > 5 else ''}\n")
+    if not tasks:
+        raise SystemExit(f"no replies line of {replies_path} answered the prompt this version of the code asks: the notebook and kaggle-score disagree on reasoning.messages")
     if any(re.search(r"-1001-\d+$", t["id"]) for t in tasks):
         dedupe.check_sample_seed(dedupe.HELDOUT_SEED)
     for t in tasks:
         check_mode(t)
         check_target(t)                                           # as the sample stage does before it asks anything
-    results, tokens = {}, collections.defaultdict(list)
+    results, tokens, lengths = {}, collections.defaultdict(list), {}
     for t in tasks:
         outs = replies[t["id"]]["outs"]
         results[t["id"]] = {"outs": [[reply_of(o, thinking), False] for o in outs]}
-        tokens[t["kind"]] += [o["tokens"] for o in outs if isinstance(o, dict) and isinstance(o.get("tokens"), (int, float)) and not isinstance(o.get("tokens"), bool)]
+        tokens[t["kind"]] += [o["tokens"] for o in outs if isinstance(o, dict) and _count(o.get("tokens"))]
+        for o, (reply, _flag) in zip(outs, results[t["id"]]["outs"]):
+            if isinstance(o, dict) and _count(o.get("tokens")) and _count(o.get("prompt_tokens")) and rsn.score_reasoning(reply, t):
+                lengths[(t["id"], rsn.trace_text(reply, thinking))] = o["prompt_tokens"] + o["tokens"]
     kept, stats = sft.assemble(tasks, results, model, rsn.messages, True, thinking, max_traces)
+    stats["prompts"] = prompts
+    stats["projected_fit"] = projected_fit(kept, lengths, rsn.THINKING_REPORT_WINDOWS if thinking else rsn.REPORT_WINDOWS)
+    if run_info:
+        stats["sampling"] = rsn.sampling_record(run_info.get("thinking", thinking), run_info.get("sampling") or {}, run_info.get("max_tokens"), seed_base=run_info.get("seed_base"),
+                                                slot_context=run_info.get("ctx_per_slot"), parallel=run_info.get("slots"))
+        stats["run"] = run_info
     stats["families"] = family_table(stats, tokens)
     stats["thinking"] = thinking
     stats["kaggle"] = {**info, "unknown_ids": len(unknown), "tasks_in_file": len(known), "tasks_without_replies": len(known - set(replies)), "replies_file": pathlib.Path(replies_path).name,
@@ -150,6 +230,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--max-traces", type=int, default=rsn.DEFAULT_MAX_TRACES, help="teacher-reasoning records per kept task (default %(default)s)")
     ap.add_argument("--thinking", action="store_true", help="the replies hold the model's reasoning (<think>...</think>, or `reasoning_content`): keep it as the trace; files say -reasoning-think")
     ap.add_argument("--out", type=pathlib.Path, default=None, help="the SFT records (default: sft-<model>-<tag>-reasoning[-think].jsonl next to --tasks); the stats go to <out>.stats.json")
+    ap.add_argument("--run-info", type=pathlib.Path, default=None, help="the notebook's run.json (default: the one beside --replies, if there is one): its sampling settings go into the stats, and it must agree with --thinking")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output (default: refuse)")
 
 
@@ -157,7 +238,10 @@ def run(a: argparse.Namespace) -> None:
     out = a.out or default_out(a.tasks, a.model, a.thinking)
     stats_path = out.with_name(out.name[:-len(out.suffix)] + ".stats.json") if out.suffix else out.with_name(out.name + ".stats.json")
     outputs.refuse_overwrite([out, stats_path], a.force)
-    kept, stats = score(a.replies, a.tasks, a.model, a.max_traces, a.thinking)
+    info_path = a.run_info or a.replies.with_name("run.json")
+    if a.run_info and not a.run_info.exists():
+        raise SystemExit(f"--run-info {a.run_info}: no such file")
+    kept, stats = score(a.replies, a.tasks, a.model, a.max_traces, a.thinking, read_run_info(info_path))
     outputs.write_atomic(out, (json.dumps(r) for r in kept))
     stats_path.write_text(json.dumps(stats, indent=1))
     s = stats
@@ -169,8 +253,12 @@ def run(a: argparse.Namespace) -> None:
     warning = sft.error_warning(s)
     if warning:
         print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
+    if s["prompts"]["mismatch"]:
+        print(f"prompts: {s['prompts']['mismatch']} of {s['prompts']['checked']} lines answered another prompt and were skipped")
     for line in sft.reasoning_report(s):
         print(line)
+    if projected_fit_line(s):
+        print(projected_fit_line(s))
     for line in families_report(s):
         print(line)
 
