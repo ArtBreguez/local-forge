@@ -88,13 +88,16 @@ def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_toke
 
 
 def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = True, max_tokens=None, sampling_overrides=None, deadline_h: float = None,
-          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, *, domain) -> dict:
+          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, llama_dataset: str = "", *, domain) -> dict:
     """Write the files described above under `out`; returns the config. Refuses to overwrite a file that exists, unless `force`. `teacher`: a name of `distill/teachers.py` whose repo and file are the model
-    (`model_repo` and `model_file` still override); the slugs default to `<domain>-reasoning-tasks` and `<domain>-teacher`. `max_tokens_by_family`: see `make_config`."""
+    (`model_repo` and `model_file` still override); the slugs default to `<domain>-reasoning-tasks` and `<domain>-teacher`. `max_tokens_by_family`: see `make_config`. `llama_dataset`: owner/slug of a dataset that holds a built llama-server (`llama-bin/`, see distill/backends/kaggle/README.md): attached to the
+    kernel next to the tasks, so the kernel skips the 30-minute build."""
     base = domain.name.replace("_", "-")
     owner, dataset_slug, kernel_slug = _slug("--owner", owner), _slug("--dataset-slug", dataset_slug or f"{base}-reasoning-tasks"), _slug("--kernel-slug", kernel_slug or f"{base}-teacher")
     if resume_from and not re.fullmatch(r"[a-z0-9-]+/[a-z0-9-]+", resume_from):
         raise SystemExit(f"--resume-from {resume_from!r}: owner/kernel-slug of the earlier run")
+    if llama_dataset and not re.fullmatch(r"[a-z0-9-]+/[a-z0-9-]+", llama_dataset):
+        raise SystemExit(f"--llama-dataset {llama_dataset!r}: owner/dataset-slug of the dataset that holds llama-bin/")
     if teacher:
         found = teachers.find(teacher)
         model_repo, model_file = model_repo or found.repo, model_file or found.file
@@ -113,7 +116,7 @@ def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = 
     paths["dataset"].write_text(json.dumps({"title": dataset_slug, "id": f"{owner}/{dataset_slug}", "licenses": [{"name": "other"}]}, indent=1))
     shutil.copyfile(HERE / "run_teacher.py", paths["run"])
     paths["kernel"].write_text(json.dumps({"id": f"{owner}/{kernel_slug}", "title": kernel_slug, "code_file": "run.py", "language": "python", "kernel_type": "script", "is_private": True,
-                                           "enable_gpu": True, "enable_internet": True, "dataset_sources": [f"{owner}/{dataset_slug}"], "competition_sources": [],
+                                           "enable_gpu": True, "enable_internet": True, "dataset_sources": [f"{owner}/{dataset_slug}", *([llama_dataset] if llama_dataset else [])], "competition_sources": [],
                                            "kernel_sources": [resume_from] if resume_from else []}, indent=1))
     return cfg
 
@@ -138,6 +141,8 @@ def add_arguments(ap: argparse.ArgumentParser, tasks_help: str) -> None:
     ap.add_argument("--dataset-slug", default=None, help="default <domain>-reasoning-tasks")
     ap.add_argument("--kernel-slug", default=None, help="default <domain>-teacher")
     ap.add_argument("--resume-from", default="", help="owner/kernel-slug of an earlier run: its output (replies.jsonl, and the built llama-server) is attached to this kernel")
+    ap.add_argument("--llama-dataset", default="", help="owner/slug of a Kaggle dataset that holds llama-bin/ (a built llama-server and its libraries): attached to the kernel, which then skips the llama.cpp build "
+                    "(distill/backends/kaggle/README.md says how to publish one)")
     ap.add_argument("--teacher", default=None, help="a teacher of distill/teachers.py (its GGUF repo and file); default: the kernel's own default, CodeForge 27B heretic Q4")
     ap.add_argument("--model-repo", default=None, help=f"Hugging Face repo of the GGUF (default {run_teacher.DEFAULTS['model_repo']})")
     ap.add_argument("--model-file", default=None, help=f"the GGUF file (default {run_teacher.DEFAULTS['model_file']})")
@@ -171,7 +176,7 @@ def settings(a: argparse.Namespace, domain) -> dict:
 def run(a: argparse.Namespace, domain) -> None:
     st = settings(a, domain)
     cfg = build(a.tasks, a.out, a.owner, st["quota"], st["k"], st["thinking"], st["max_tokens"], st["sampling_overrides"], a.deadline_h,
-                a.dataset_slug, a.kernel_slug, a.resume_from, a.model_repo, a.model_file, a.force, st["teacher"], st["max_tokens_by_family"], domain=domain)
+                a.dataset_slug, a.kernel_slug, a.resume_from, a.model_repo, a.model_file, a.force, st["teacher"], st["max_tokens_by_family"], a.llama_dataset, domain=domain)
     t = cfg["tasks"]
     slots, ctx = run_teacher.server_geometry({**cfg, "slots": cfg["slots"], "ctx_per_slot": cfg["ctx_per_slot"]}, [{"kind": kind} for kind in t["by_kind"]])
     print(f"{t['n']} tasks {t['by_kind']}, k={cfg['k']}, {'thinking' if cfg['thinking'] else 'visible reasoning'}, sampling {cfg['sampling']}, max_tokens {cfg['max_tokens']}"

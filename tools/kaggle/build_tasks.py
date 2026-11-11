@@ -30,9 +30,9 @@ def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_toke
 
 
 def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = True, max_tokens=None, sampling_overrides=None, deadline_h: float = None,
-          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None) -> dict:
+          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, llama_dataset: str = "") -> dict:
     return _generic.build(files, out, owner, quota, k, thinking, max_tokens, sampling_overrides, deadline_h, dataset_slug, kernel_slug, resume_from, model_repo, model_file, force, teacher, max_tokens_by_family,
-                          domain=DOMAIN)
+                          llama_dataset, domain=DOMAIN)
 
 
 def main(argv=None) -> None:

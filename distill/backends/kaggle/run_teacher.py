@@ -5,7 +5,7 @@ function of this file, so tests/test_rea_kaggle_kit.py runs it against a stub se
 
 What it does, in order:
   1. reads `tasks.jsonl` ({id, kind, messages}: the exact messages of `domain.messages(task, mode)`) and `config.json` from the attached dataset;
-  2. gets a llama-server with CUDA for the T4 (sm_75): a prebuilt one from an attached dataset (the `llama-bin` folder a previous run saved), else it builds llama.cpp (about 30 minutes;
+  2. gets a llama-server with CUDA for the T4 (sm_75): a prebuilt one from an attached dataset or kernel output (`llama-bin/llama-server` and its libraries: `use_prebuilt`), else it builds llama.cpp (about 30 minutes;
      the libcuda stub fix: Kaggle has the driver library but not where cmake looks, so its path is passed as CUDA_cuda_driver_LIBRARY);
   3. downloads the GGUF, starts `llama-server --jinja --reasoning-format deepseek` over the two T4 (layer split), `slots` requests in flight, `ctx_per_slot` tokens each (`server_geometry`: when a family of
      `max_tokens_by_family` has a longer budget than `max_tokens`, the slot grows by the difference and the slots become fewer, 4 x 8192 -> 2 x 12288, the same total context);
@@ -302,16 +302,22 @@ def find_libcuda(patterns=LIBCUDA_PATTERNS):
 
 
 def find_prebuilt(root: pathlib.Path = INPUT):
-    """A llama-server saved by an earlier run (its `llama-bin` folder attached as a dataset), or None: it saves the 30-minute build. It must sit beside its shared libraries."""
+    """The llama-server of an earlier run, or None: `llama-bin/llama-server` in what is attached under `root` (a previous kernel's output, or a dataset made from its `llama-bin` folder), or a `llama-server`
+    file anywhere else under it (a dataset that holds the folder's files at its root); a `llama-bin` one first. It saves the 30-minute build. It must sit beside its shared libraries."""
     root = pathlib.Path(root)
-    return next(iter(sorted(root.rglob("llama-server"))), None) if root.exists() else None
+    if not root.exists():
+        return None
+    return next(iter(sorted((p for p in root.rglob("llama-server") if p.is_file()), key=lambda p: (p.parent.name != "llama-bin", str(p)))), None)
 
 
 def prepare_prebuilt(binary: pathlib.Path, dest: pathlib.Path = pathlib.Path("/tmp/llama-prebuilt")) -> pathlib.Path:
-    """Copy the folder of an attached llama-server (its shared libraries beside it) to `dest` and make the server executable: an attached dataset or kernel output is a read-only mount that does not
-    have to keep the executable bit. Returns the path of the copy."""
+    """Copy an attached llama-server and its shared libraries (`llama-server`, `*.so*` of its folder, nothing else) to `dest` and make the server executable: an attached dataset or kernel output is a
+    read-only mount that does not have to keep the executable bit, and a dataset that holds the files at its root holds other files too. Returns the path of the copy."""
     shutil.rmtree(dest, ignore_errors=True)
-    shutil.copytree(binary.parent, dest)
+    dest.mkdir(parents=True)
+    for f in sorted(binary.parent.iterdir()):
+        if f.is_file() and (f.name == binary.name or ".so" in f.name):
+            shutil.copyfile(f, dest / f.name)
     new = dest / binary.name
     new.chmod(0o755)
     return new
@@ -323,6 +329,22 @@ def binary_works(binary, env=None) -> bool:
         return subprocess.run([str(binary), "--version"], capture_output=True, timeout=120, env=env).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def use_prebuilt(found: pathlib.Path, dest: pathlib.Path = pathlib.Path("/tmp/llama-prebuilt"), environ=os.environ):
+    """The copy of the attached server `found` (`find_prebuilt`) in `dest`, ready to start, or None. LD_LIBRARY_PATH of `environ` starts with `dest`: the server's RUNPATH names the /tmp/llama.cpp/build/bin
+    of the run that built it, which does not exist here, and LD_LIBRARY_PATH is searched before RUNPATH. The copy is tried with `--version`; when it does not start (a library of that build is missing here), LD_LIBRARY_PATH
+    is put back as it was, so that nothing of it shadows the libraries of the build that follows, and None is returned."""
+    candidate = prepare_prebuilt(found, dest)
+    before = environ.get("LD_LIBRARY_PATH")
+    environ["LD_LIBRARY_PATH"] = str(dest) + (":" + before if before else "")
+    if binary_works(candidate, env=environ):
+        return candidate
+    if before is None:
+        environ.pop("LD_LIBRARY_PATH", None)
+    else:
+        environ["LD_LIBRARY_PATH"] = before
+    return None
 
 
 def build_llama(cfg: dict) -> pathlib.Path:
@@ -391,17 +413,13 @@ def main() -> None:
     subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv || ls /dev/nvidia*", shell=True)
     binary, prebuilt = None, find_prebuilt()
     if prebuilt:
-        candidate = prepare_prebuilt(prebuilt)
-        os.environ["LD_LIBRARY_PATH"] = str(candidate.parent) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
-        if binary_works(candidate):
-            binary = candidate
-            log("llama-server from an attached output:", prebuilt)
-        else:
-            log("the attached llama-server does not start here; building llama.cpp")
+        binary = use_prebuilt(prebuilt)
+        log(f"llama-server from an attached output: {prebuilt}" if binary else f"the attached llama-server {prebuilt} does not start here; building llama.cpp")
+    from_prebuilt = binary is not None
     if binary is None:
         binary = build_llama(cfg)
     sh(f"mkdir -p {OUT}/llama-bin && cp -n {binary.parent}/llama-server {binary.parent}/*.so* {OUT}/llama-bin/ 2>/dev/null || true")     # every session's output carries it: a later one attaches it and skips the build
-    commit = f"prebuilt {prebuilt}" if binary.parent == pathlib.Path("/tmp/llama-prebuilt") else subprocess.run("cd /tmp/llama.cpp && git log -1 --format='%h %cd' 2>/dev/null", shell=True, capture_output=True,
+    commit = f"prebuilt {prebuilt}" if from_prebuilt else subprocess.run("cd /tmp/llama.cpp && git log -1 --format='%h %cd' 2>/dev/null", shell=True, capture_output=True,
                                                                                                           text=True).stdout.strip()
     log("llama.cpp", commit)
 
