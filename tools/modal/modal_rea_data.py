@@ -22,11 +22,16 @@ never sampled (the stage refuses it). Output: SFT pairs in results/phase6/rea-da
 with the chat template; the training run drops it, never cuts it) is dropped here and counted per family (round 9, m2: `over_length` in `.stats.json`, a line printed after the run).
     modal run tools/modal/modal_rea_data.py --stage sample --model <name> [--seed 7 --family legacy] [--k 6] [--resume] [--force]
 Teacher-reasoning mode (round 11, `--reasoning`, rea_bench/reasoning.py; README "Next run"): the opposite of the above for the stored text, with the industry-standard rule (rejection sampling,
-STaR, R1 distills): the teacher writes short steps and a LAST line `Answer: <headline>`; the reply is accepted when the text after the last `Answer:` line passes `score_strict` (plus the agreement
-rule), the steps are kept as they are and NOT checked (some may be wrong). A kept task gives two records with the same messages: `target_source: "truth-template"` (as above) and
-`"teacher-reasoning"` (the first accepted reply verbatim, <think> blocks stripped, whitespace trimmed). Own checkpoint and output (`-reasoning` in the tag), thinking off, `--max-tokens` (768),
-`--max-len` (required: the training window; the run reports how many records fit 2048, 3072 and 4096), `--quota kind=N,...` (sizing), and a projected GPU-hours/cost line before the GPU is rented.
+STaR, RFT, R1 distills): the teacher writes short steps and a LAST line `Answer: <headline>`; the reply is accepted when the text after the last `Answer:` line passes `score_strict` (plus the agreement
+rule, counted on the answers), the steps are kept as they are and NOT checked (some may be wrong). A kept task gives the records with the same messages: `target_source: "truth-template"` (one, as above) and
+`"teacher-reasoning"` (round 12: up to `--max-traces` = 3 DISTINCT accepted replies, in sample order, each verbatim, <think> blocks stripped, whitespace trimmed, after the R1-style quality filters: mixed
+language, repetition loop, unreadable, self-contradiction; two replies are duplicates when their normalized text is identical or their token-set Jaccard is >= 0.9; every drop is counted per family in
+`.stats.json` under `reasoning`). Own checkpoint and output (`-reasoning` in the tag), thinking off, `--max-tokens` (768), `--max-len` (required: the training window; the run reports how many records fit
+2048, 3072 and 4096), `--quota kind=N,...` (sizing), and a projected GPU-hours/cost line before the GPU is rented.
     modal run tools/modal/modal_rea_data.py --stage sample --model codeforge-27b-heretic-q4 --reasoning --max-len 3072 --k 4 --quota crc=220,structs=220
+`--thinking` (round 12, a pilot, needs `--reasoning` and an explicit `--max-tokens`): the request sets `enable_thinking: true`, the server's reasoning (`reasoning_content`, or an inline <think> block) is kept and the
+record text is `<think>reasoning</think>` + the visible reply; only the visible text's last `Answer:` line is scored. The records carry `target_source: "teacher-reasoning"` too; the tag, the files and the stats
+say `thinking` (`-reasoning-think`), so a thinking run never mixes with a visible-reasoning one.
 A seed-1001 decompile run (the held-out split) may ask for at most 120 tasks per family: the list that keeps them out of training covers 120.
 The default family is `legacy`. Its frozen whole-reply substring scorer (comparable with the 34/60 -> 50/60 numbers, accepts a content-free
 reply on about 6% of its tasks) is used by modal_rea.py's EVALUATION only; this stage converts a legacy task to the grammar first
@@ -167,9 +172,7 @@ def _decompile_task(task: dict, src: str, tag: str) -> dict:
 def _messages(t: dict, reasoning: bool = False) -> list:
     """The system and user message the sampler answers (and the SFT record is made of). `reasoning`: the system message asks for the steps and a last `Answer:` line
     (rea_bench.reasoning.SYSTEM_REASONING); SYSTEM_RECIPE is untouched, and the user message is the same."""
-    extra = f"\n\nData referenced by the function (bytes at those addresses):\n{t['refs']}" if t.get("refs") else ""
-    return [{"role": "system", "content": rsn.SYSTEM_REASONING if reasoning else SYSTEM_RECIPE},
-            {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}]
+    return [{"role": "system", "content": rsn.SYSTEM_REASONING if reasoning else SYSTEM_RECIPE}, {"role": "user", "content": rsn.user_message(t)}]
 
 
 def _server_token_count(text: str) -> int:
@@ -203,24 +206,38 @@ def _window(reasoning: bool, max_len: int) -> int:
     return max_len or MAX_LEN
 
 
+def _check_thinking(reasoning: bool, thinking: bool, max_tokens: int, max_traces: int) -> None:
+    """A thinking run is a reasoning run with its own explicit token budget: the reasoning is part of the reply, so the default of 768 would cut nearly every reply off, and a number the owner did
+    not choose must not be rented for. `--max-traces` is at least 1."""
+    if thinking and not reasoning:
+        raise SystemExit("--thinking is a variant of --reasoning (the reply is scored by its last `Answer:` line): pass --reasoning too")
+    if thinking and max_tokens <= 0:
+        raise SystemExit("--thinking needs --max-tokens N on the command line: the model's reasoning counts against it and there is no default (the pilot shows how many replies are cut off)")
+    if max_traces < 1:
+        raise SystemExit(f"--max-traces {max_traces}: at least 1 teacher record per kept task")
+
+
 SAMPLER_TIMEOUT_H = 5       # the `timeout` of sample_answers below, in hours (the cost line says how many calls a run needs)
 
 
 @app.function(gpu=["L40S", "A100-40GB"], volumes={"/models": models_vol, "/data": data_vol}, timeout=SAMPLER_TIMEOUT_H * 3600)
 def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-                   max_len: int = 0, quota: str = "") -> dict:
+                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = rsn.DEFAULT_MAX_TRACES) -> dict:
     """K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
     with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those. The SFT
     records are built at the end from all replies (rea_bench.sft: the teacher's headline is a filter, the stored text is rendered from the truth, a
     task of chance >= 0.05 needs two right samples); the stats come per family.
     `reasoning` (round 11, rea_bench.reasoning): the teacher is asked for the steps and a last `Answer:` line, `max_tokens` defaults to 768 (300 otherwise), the final answer is the filter and a kept
-    task gives the truth-rendered record AND the first accepted reply verbatim; the checkpoint and the output have their own tag (`-reasoning`), the thinking stays off. `max_len`: the
+    task gives the truth-rendered record AND up to `max_traces` distinct clean accepted replies verbatim (round 12: quality filters, duplicate rule, cap: rea_bench.reasoning.pick_traces); the checkpoint and the
+    output have their own tag (`-reasoning`), the thinking stays off. `thinking` (a pilot, needs `reasoning` and an explicit `max_tokens`): `enable_thinking: true`, the server's reasoning is kept in
+    the reply and in the record as `<think>...</think>` + the visible reply, only the visible text's last `Answer:` line is scored; own tag (`-reasoning-think`). `max_len`: the
     training window of the length rule (required with `reasoning`, MAX_LEN otherwise). `quota`: `kind=N,...`, at most N tasks of each listed kind and no task of another kind."""
     from huggingface_hub import hf_hub_download
     import urllib.request
+    _check_thinking(reasoning, thinking, max_tokens, max_traces)
     window = _window(reasoning, max_len)
     max_tokens = max_tokens or (rsn.DEFAULT_MAX_TOKENS if reasoning else 300)
-    run_tag = outputs.sample_tag(tag, reasoning)        # the checkpoint and the output of a reasoning run are their own; the decompiled tasks are read by `tag`
+    run_tag = outputs.sample_tag(tag, reasoning, thinking)        # the checkpoint and the output of a reasoning run are their own (`-reasoning`, `-reasoning-think`); the decompiled tasks are read by `tag`
     score = rsn.score_reasoning if reasoning else score_strict
     data_vol.reload()
     src_dir = pathlib.Path(f"/data/{outputs.decompiled_stem(tag)}")
@@ -271,14 +288,16 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                 body_seed = 1234 + i
                 import urllib.request as ur
                 body = {"model": "local", "messages": msgs, "temperature": 0.7, "seed": body_seed, "max_tokens": max_tokens,
-                        "chat_template_kwargs": {"enable_thinking": False}, "cache_prompt": False}
+                        "chat_template_kwargs": {"enable_thinking": thinking}, "cache_prompt": False}
                 req = ur.Request("http://127.0.0.1:8080/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
                 with ur.urlopen(req, timeout=600) as r:
                     reply = json.load(r)
-                txt = reply["choices"][0]["message"].get("content") or ""
-                txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
-                if reasoning and reply["choices"][0].get("finish_reason") == "length":
-                    txt += "\n" + rsn.TRUNCATED        # cut off: not an `Answer:` line, so the reply is rejected, whatever the cut left (a cut headline is not an answer)
+                msg = reply["choices"][0]["message"]
+                if reasoning:       # the reply as the checkpoint stores it (rea_bench.reasoning.reply_text: think blocks stripped, or kept as the trace in a thinking run; a cut-off reply ends in the TRUNCATED marker)
+                    txt = rsn.reply_text(msg.get("content"), reply["choices"][0].get("finish_reason"), msg.get("reasoning_content"), thinking)
+                else:
+                    txt = msg.get("content") or ""
+                    txt = re.sub(r"<think>.*?</think>", "", txt, flags=re.S).strip()
                 with perf_lock:
                     perf["requests"] += 1
                     perf["completion_tokens"] += (reply.get("usage") or {}).get("completion_tokens", 0)
@@ -299,7 +318,7 @@ def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-l
                 if i % 20 == 0:
                     data_vol.commit()
         wall = max(time.time() - t_start, 1e-9)
-        kept, stats = sft.assemble(tasks, results, name, lambda t: _messages(t, reasoning), reasoning)
+        kept, stats = sft.assemble(tasks, results, name, lambda t: _messages(t, reasoning), reasoning, thinking, max_traces)
         if reasoning:           # this call's own throughput, next to the cost line's assumption (a resumed run reports only the replies it asked)
             stats["perf"] = {**perf, "wall_s": round(wall), "tok_per_s": round(perf["completion_tokens"] / wall, 1), "s_per_request": round(wall / max(perf["requests"], 1), 2)}
         kept, stats = _apply_length_rule(kept, stats, window, rsn.REPORT_WINDOWS if reasoning else ())       # round 9, m2: what the training run would drop is dropped (and counted) here, while the server is still up
@@ -356,13 +375,17 @@ def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
 @app.local_entrypoint()
 def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "", k: int = 6, family: str = "legacy", cc: str = "mix",
          exclude_seed: int = -1, force: bool = False, local_gate: bool = True, resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-         max_len: int = 0, quota: str = "", budget_usd: float = 30.0, gpu_usd_per_h: float = rsn.L40S_USD_PER_H):
+         max_len: int = 0, quota: str = "", budget_usd: float = 30.0, gpu_usd_per_h: float = rsn.L40S_USD_PER_H, thinking: bool = False,
+         max_traces: int = rsn.DEFAULT_MAX_TRACES):
     """exclude_seed: tasks of that seed never enter this run (-1: the held-out seed 1001 for any other seed, 0: none).
     local_gate: draw tasks again when the asked constant is not in the code compiled HERE (needs gcc, objdump and, for clang tasks,
     clang on PATH; without them the draws it cannot check are counted and warned about, and only the Modal-side re-check applies).
     resume: continue a sample stage that timed out from its checkpoint on the volume.
     reasoning (sample stage): the teacher-reasoning mode (rea_bench/reasoning.py): the teacher writes short steps and a last `Answer:` line, its final answer is checked against the truth and
     the reply is stored as it is next to the truth-rendered record; own checkpoint and output (`-reasoning` in the tag); needs --max-len. max_tokens: per reply (0: 300, 768 with --reasoning).
+    max_traces (--reasoning): up to this many distinct accepted replies per kept task, after the trace quality filters (default 3; the truth-rendered record stays one). thinking (a pilot, needs --reasoning
+    and an explicit --max-tokens): the model reasons (`enable_thinking: true`), the record is `<think>reasoning</think>` + the visible reply, only the visible text's last `Answer:` line is scored; files,
+    tag and stats say `thinking` (`-reasoning-think`).
     max_len: the training window in tokens the length rule drops against (0: 2048; required with --reasoning; the report says how many teacher records fit 2048, 3072 and 4096).
     quota: `kind=N,...`, sample at most N tasks of each listed kind and none of another (sizing a run). budget_usd, gpu_usd_per_h: the cost line printed before a reasoning run.
     Outputs are keyed by seed and family (rea_bench.outputs); an existing output is never overwritten without --force."""
@@ -379,8 +402,8 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         print("note: the legacy family keeps its frozen whole-reply substring scoring in modal_rea.py's evaluation (comparable with 34/60 -> "
               "50/60); this script's sample stage scores it with the strict headline grammar like every other family (scoring.score_strict).")
     if stage == "decompile":
-        if reasoning or quota or max_tokens or max_len:
-            print("note: --reasoning, --max-tokens, --max-len and --quota belong to --stage sample; the decompile stage ignores them (--family and --n are what limit it)")
+        if reasoning or quota or max_tokens or max_len or thinking or max_traces != rsn.DEFAULT_MAX_TRACES:
+            print("note: --reasoning, --thinking, --max-traces, --max-tokens, --max-len and --quota belong to --stage sample; the decompile stage ignores them (--family and --n are what limit it)")
         dedupe.check_heldout_range(names, n, seed)          # the pinned held-out list covers 120 tasks per family
         _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag)
     else:
@@ -392,21 +415,23 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
             print(f"warning: k={k}: no task with a chance level of {sft.AGREE_CHANCE} or more (CRC init/xorout, pktsum, fsm, TEA/XTEA, ...) can have "
                   f"{sft.AGREE_MIN} right samples, so none of them is kept")
         name, repo, fname, _ = m[0]
+        _check_thinking(reasoning, thinking, max_tokens, max_traces)      # --thinking without --reasoning or --max-tokens stops here, before anything is rented
         window = _window(reasoning, max_len)                 # a reasoning run without --max-len stops here, before anything else is checked or rented
         want = rsn.parse_quota(quota, rsn.known_kinds()) if quota else {}
-        rtag = outputs.sample_tag(tag, reasoning)            # a reasoning run's checkpoint and output are its own: `-reasoning` in the tag
+        rtag = outputs.sample_tag(tag, reasoning, thinking)  # a reasoning run's checkpoint and output are its own: `-reasoning` (`-reasoning-think` with --thinking) in the tag
         out, stats = (dest / f"{outputs.sft_stem(name, rtag)}.{ext}" for ext in ("jsonl", "stats.json"))
         outputs.refuse_overwrite([out, stats], force)       # before a GPU is rented
         if reasoning:
             tokens = max_tokens or rsn.DEFAULT_MAX_TOKENS
             count, source = rsn.local_task_count(dest / f"{outputs.decompiled_stem(tag)}.jsonl", want, n)
             plan = rsn.project(count, k, tokens, gpu_usd_per_h, SAMPLER_TIMEOUT_H)
-            print(rsn.cost_line(plan, source))
-            warning = rsn.budget_warning(plan, budget_usd)
+            print(rsn.thinking_cost_line(plan, source) if thinking else rsn.cost_line(plan, source))
+            warning = rsn.thinking_budget_warning(plan, budget_usd) if thinking else rsn.budget_warning(plan, budget_usd)
             if warning:
                 print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
-            print(f"window of the length rule: --max-len {window}; max_tokens {tokens}; checkpoint and output tag {rtag}")
-        res = sample_answers.remote(name, repo, fname, k, tag, resume=resume, reasoning=reasoning, max_tokens=max_tokens, max_len=max_len, quota=quota)
+            print(f"window of the length rule: --max-len {window}; max_tokens {tokens}; up to {max_traces} traces per kept task; checkpoint and output tag {rtag}")
+        res = sample_answers.remote(name, repo, fname, k, tag, resume=resume, reasoning=reasoning, max_tokens=max_tokens, max_len=max_len, quota=quota,
+                                    thinking=thinking, max_traces=max_traces)
         outputs.write_atomic(out, (json.dumps(r) for r in res["sft"]))
         stats.write_text(json.dumps(res["stats"], indent=1))
         s = res["stats"]

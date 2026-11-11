@@ -3,7 +3,13 @@
     modal run tools/modal_lora.py --smoke            # 60 examples, 1 epoch, proves the pipeline end to end
     modal run tools/modal_lora.py                    # full run
     modal run tools/modal_lora.py --max-len 3072     # a longer training window (a reasoning run's records): a pair over it is dropped, never cut
-Outputs land in the `lf-lora` volume: adapter/, merged/, gguf/{base,lora}-Q4_K_M.gguf, and are copied to results/phase6/lora/.
+    modal run tools/modal/modal_lora.py --config rea_reasoning --max-len 3072    # another dataset config (a reasoning file): its own output path /out/rea_reasoning, never /out/full
+    modal run tools/modal/modal_lora.py --config rea_reasoning --tag reasoning-v1 --max-len 3072    # ... or a name of your own: /out/reasoning-v1
+Outputs land in the `lf-lora` volume: adapter/, merged/, gguf/{base,lora}-Q4_K_M.gguf, and are copied to results/phase6/lora/. The directory is `/out/<tag>/` and the files
+are `<tag>-train.json`, `<tag>-gguf.json` with the tag of `run_tag`: "full" (or "smoke") for the default config `rea_sft` with no `--tag`, exactly as before, and for any other
+`--config` or `--tag` a name of its own that is never "full" or "smoke": phase A's output is never overwritten by a run on another file.
+NOT DONE: the records of a `--thinking` sample run (`<think>...</think>` in the assistant text) are not trainable here: `encode` renders the prompt with `enable_thinking=False`, whose empty think
+block would sit in front of the record's own. That needs the chat template of the base model in front of it; it was not written because it cannot be checked without the tokenizer.
 Base and LoRA GGUFs are produced by the SAME convert+quantize path (Q4_K_M, no imatrix), so the before/after on the
 held-out set compares like with like; the host's i1-IQ4_XS is a different quant and is not the comparison point.
 """
@@ -11,6 +17,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import re
 import subprocess
 import time
 
@@ -39,6 +46,27 @@ vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 hf_secret = modal.Secret.from_name("hf-write")
 app = modal.App("lf-lora")
 
+DEFAULT_CONFIG = "rea_sft"       # the dataset config phase A trained on; its outputs are /out/full and /out/smoke
+RESERVED_TAGS = ("full", "smoke")        # the output names of the default run: no other config or `--tag` may write there
+
+
+def run_tag(smoke: bool = False, config: str = DEFAULT_CONFIG, tag: str = "") -> str:
+    """The name of a run's output: its directory `/out/<tag>/` on the volume and its files `<tag>-train.json`, `<tag>-gguf.json`. The default (config `rea_sft`, no tag) is "full", or "smoke" with
+    `--smoke`: what it always was. A run on another config is named after it (`rea_reasoning`), and `--tag` names it by hand; either way with `-smoke` after it for a smoke run. "full" and "smoke" are
+    reserved for the default run (SystemExit): training on a reasoning file must never overwrite phase A's `/out/full`."""
+    if tag:
+        name = tag
+    elif config == DEFAULT_CONFIG:
+        return "smoke" if smoke else "full"
+    else:
+        name = re.sub(r"[^A-Za-z0-9._-]+", "-", config).strip("-.")
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name or ""):
+        raise SystemExit(f"output tag {name!r} (from {'--tag' if tag else '--config'}) is not a plain name: letters, digits, `.`, `_`, `-`; pass --tag")
+    if name in RESERVED_TAGS:
+        raise SystemExit(f"output tag {name!r} is reserved for the default run on the config {DEFAULT_CONFIG!r} (/out/full, /out/smoke): pass --tag with another name")
+    return f"{name}-smoke" if smoke else name
+
+
 MAX_LEN = 2048          # tokens of prompt + answer + EOS that one training example may have (the default; `--max-len` trains on a longer window: a reasoning run's records are several times longer)
 
 
@@ -60,14 +88,15 @@ def encode_ids(p_ids: list, f_ids: list, max_len: int = MAX_LEN):
 
 
 @app.function(image=train_image, gpu="A100-40GB", volumes={"/out": vol}, secrets=[hf_secret], timeout=4 * 3600)
-def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, max_len: int = MAX_LEN) -> dict:
+def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, max_len: int = MAX_LEN, config: str = DEFAULT_CONFIG, out_tag: str = "") -> dict:
     import torch
     from datasets import load_dataset
     from peft import LoraConfig, get_peft_model
     from transformers import AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, DataCollatorForSeq2Seq
     t0 = time.time()
     tok = AutoTokenizer.from_pretrained(BASE)
-    ds = load_dataset(DATASET, "rea_sft", split="train")
+    tag = out_tag or run_tag(smoke, config)          # /out/<tag>/: the default config is "full" / "smoke" as before, any other config its own name
+    ds = load_dataset(DATASET, config, split="train")
     if smoke:
         ds = ds.select(range(60))
     ds = ds.shuffle(seed=7)
@@ -100,13 +129,12 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
                              bf16=True, report_to=[], dataloader_num_workers=2, seed=7)
     trainer = Trainer(model=model, args=args, train_dataset=ds, data_collator=DataCollatorForSeq2Seq(tok, padding=True, label_pad_token_id=-100))
     out = trainer.train()
-    tag = "smoke" if smoke else "full"
     model.save_pretrained(f"/out/{tag}/adapter"); tok.save_pretrained(f"/out/{tag}/adapter")
     merged = model.merge_and_unload()
     merged.save_pretrained(f"/out/{tag}/merged", safe_serialization=True); tok.save_pretrained(f"/out/{tag}/merged")
     vol.commit()
     log = [x for x in trainer.state.log_history if "loss" in x]
-    return {"tag": tag, "n": len(ds), "dropped_too_long": dropped, "max_len": max_len, "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
+    return {"tag": tag, "config": config, "n": len(ds), "dropped_too_long": dropped, "max_len": max_len, "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
             "steps": out.global_step, "wall_s": round(time.time() - t0), "trainable": str(cfg.target_modules)}
 
 
@@ -143,11 +171,12 @@ def to_gguf(tag: str, which: str) -> dict:
 
 
 @app.local_entrypoint()
-def main(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, skip_train: bool = False, max_len: int = MAX_LEN):
+def main(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32, skip_train: bool = False, max_len: int = MAX_LEN, config: str = DEFAULT_CONFIG, tag: str = ""):
+    """config: the dataset config to train on (default `rea_sft`, phase A's file). tag: the output name; see `run_tag` (a non-default config or a tag never writes to /out/full)."""
+    tag = run_tag(smoke, config, tag)                # checked before anything is rented
     dest = ROOT / "results" / "phase6" / "lora"; dest.mkdir(parents=True, exist_ok=True)
-    tag = "smoke" if smoke else "full"
     if not skip_train:
-        r = train.remote(smoke, epochs, lr, rank, max_len)
+        r = train.remote(smoke, epochs, lr, rank, max_len, config, tag)
         print("train:", r); (dest / f"{tag}-train.json").write_text(json.dumps(r, indent=1))
     g = list(to_gguf.map([tag, tag], ["lora", "base"]))
     print("gguf:", g); (dest / f"{tag}-gguf.json").write_text(json.dumps(g, indent=1))

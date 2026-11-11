@@ -23,12 +23,16 @@ def run_tag(seed: int, family: str) -> str:
 
 
 REASONING_SUFFIX = "-reasoning"
+THINKING_SUFFIX = "-reasoning-think"
 
 
-def sample_tag(tag: str, reasoning: bool = False) -> str:
-    """The tag of a sample run's OWN files (checkpoint and sft output): the decompile tag, plus `-reasoning` for a teacher-reasoning run, so that it never writes into, resumes or moves aside
-    a phase-A checkpoint of the same seed and family. The decompiled tasks are always read by the decompile tag."""
-    return tag + REASONING_SUFFIX if reasoning else tag
+def sample_tag(tag: str, reasoning: bool = False, thinking: bool = False) -> str:
+    """The tag of a sample run's OWN files (checkpoint and sft output): the decompile tag, plus `-reasoning` for a teacher-reasoning run and `-reasoning-think` for a thinking run
+    (`--reasoning --thinking`), so that none of them ever writes into, resumes or moves aside the checkpoint of another kind of run of the same seed and family. The decompiled tasks are
+    always read by the decompile tag. A thinking run is a reasoning run (`thinking` alone is no tag: the stage refuses it)."""
+    if thinking and not reasoning:
+        raise ValueError("a thinking run is a reasoning run: --thinking needs --reasoning")
+    return tag + (THINKING_SUFFIX if thinking else REASONING_SUFFIX) if reasoning else tag
 
 
 def decompiled_stem(tag: str) -> str:

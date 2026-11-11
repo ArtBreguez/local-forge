@@ -1,7 +1,8 @@
 """Round 11: the teacher-reasoning mode of the sample stage (`--stage sample --reasoning`, rea_bench/reasoning.py). Modal and the model are stubbed; nothing here rents anything.
 
 Owner's rule (rejection sampling, STaR / R1-distill style): a reply's FINAL ANSWER passes `score_strict` against the computed truth; the reasoning in front of it is kept as it is and
-is not checked. A kept task gives the truth-rendered record and one record with the first accepted reply verbatim. Default off = what phase A did, byte for byte.
+is not checked. A kept task gives the truth-rendered record and, since round 12, up to three distinct clean accepted replies verbatim (tests/test_rea_traces.py has the rules for those).
+Default off = what phase A did, byte for byte.
 
   AnswerLine        the text after the last `Answer:` line is what is scored; no line, text after it, a think tag, a cut-off or a failed request is rejected
   ReasoningRecords  both sources per kept task, the teacher's text verbatim, the agreement rule, check_records
@@ -33,6 +34,7 @@ from rea_bench import outputs, reasoning as rsn, scoring, sft, targets  # noqa: 
 
 MSGS = lambda task: [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
 STEPS = "The function loads the pointer at an offset.\nThe constant added to the base is the offset."
+OLD_BLOCK = ("replies", "accepted", "wrong", "no_answer_line", "truncated", "error", "teacher_records")      # the keys of the `reasoning` block of round 11; round 12 added more (test_rea_traces.py)
 
 
 def wrong_for(t: dict) -> str:
@@ -143,16 +145,17 @@ class ReasoningRecords(unittest.TestCase):
         t = t or self.t
         return sft.assemble([t], {t["id"]: {"outs": [[o, True] for o in outs]}}, "m", MSGS, reasoning)
 
-    def test_a_kept_task_gives_the_truth_record_and_the_first_accepted_reply_verbatim(self):
+    def test_a_kept_task_gives_the_truth_record_and_its_accepted_replies_verbatim_in_sample_order(self):
         first = f"<think>t</think>\n  Step one.\n\n  Step two   keeps its spaces.\nAnswer: {self.k}\n"
         kept, stats = self.assemble([reply(self.t, answer=self.bad), first, reply(self.t, "Another path, other words.")])
-        self.assertEqual([r["target_source"] for r in kept], ["truth-template", "teacher-reasoning"])
+        self.assertEqual([r["target_source"] for r in kept], ["truth-template", "teacher-reasoning", "teacher-reasoning"])
         self.assertEqual(kept[0]["messages"][-1]["content"], targets.render(self.t)["text"])
-        self.assertEqual(kept[1]["messages"][-1]["content"], f"Step one.\n\n  Step two   keeps its spaces.\nAnswer: {self.k}", "the FIRST accepted reply, not the second")
+        self.assertEqual(kept[1]["messages"][-1]["content"], f"Step one.\n\n  Step two   keeps its spaces.\nAnswer: {self.k}", "the first accepted reply comes first")
+        self.assertEqual(kept[2]["messages"][-1]["content"], reply(self.t, "Another path, other words."), "then the next distinct one (round 12: several traces per task)")
         self.assertEqual(kept[0]["messages"][:2], kept[1]["messages"][:2], "the same system and user message")
         self.assertTrue(all(sorted(r) == sorted(sft.RECORD_KEYS) for r in kept))
-        self.assertEqual((stats["tasks"], stats["kept_tasks"], stats["kept_records"], stats["correct"]), (1, 1, 2, 2))
-        self.assertEqual(stats["reasoning"], {"replies": 3, "accepted": 2, "wrong": 1, "no_answer_line": 0, "truncated": 0, "error": 0, "teacher_records": 1})
+        self.assertEqual((stats["tasks"], stats["kept_tasks"], stats["kept_records"], stats["correct"]), (1, 1, 3, 2))
+        self.assertEqual({k: stats["reasoning"][k] for k in OLD_BLOCK}, {"replies": 3, "accepted": 2, "wrong": 1, "no_answer_line": 0, "truncated": 0, "error": 0, "teacher_records": 2})
 
     def test_the_default_run_still_scores_the_headline_and_gives_one_truth_record(self):
         phase_a = f"{self.k}\nIt is the offset of the pointer in the node."
@@ -170,13 +173,13 @@ class ReasoningRecords(unittest.TestCase):
         kept, stats = self.assemble([one, reply(easy, answer="0x7"), f"{right(easy)}\nIt is the register value."], easy)
         self.assertEqual((kept, stats["agreement"], stats["reasoning"]["accepted"]), ([], 1, 1), "a headline in the phase-A format is not an accepted reply here")
         kept, stats = self.assemble([one, two], easy)
-        self.assertEqual([r["target_source"] for r in kept], ["truth-template", "teacher-reasoning"])
-        self.assertEqual(kept[1]["messages"][-1]["content"], one)
+        self.assertEqual([r["target_source"] for r in kept], ["truth-template", "teacher-reasoning", "teacher-reasoning"])
+        self.assertEqual([r["messages"][-1]["content"] for r in kept[1:]], [one, two])
 
     def test_a_task_without_an_accepted_reply_gives_nothing_and_a_failed_request_is_counted(self):
         kept, stats = self.assemble([reply(self.t, answer=self.bad), "[error TimeoutError('x')]", f"{STEPS}\nAnswer: {self.k}\nDone.", f"{STEPS}\n{rsn.TRUNCATED}"])
         self.assertEqual((kept, stats["no_correct"], stats["errors"]), ([], 1, 1))
-        self.assertEqual(stats["reasoning"], {"replies": 4, "accepted": 0, "wrong": 1, "no_answer_line": 1, "truncated": 1, "error": 1, "teacher_records": 0})
+        self.assertEqual({k: stats["reasoning"][k] for k in OLD_BLOCK}, {"replies": 4, "accepted": 0, "wrong": 1, "no_answer_line": 1, "truncated": 1, "error": 1, "teacher_records": 0})
 
     def test_check_records_accepts_the_two_sources_and_refuses_any_other(self):
         good = {"messages": [], "task": "x", "kind": "k", "model": "m", "target_source": "truth-template"}
@@ -191,8 +194,9 @@ class ReasoningRecords(unittest.TestCase):
 
     def test_assemble_goes_through_check_records(self):
         """A record with another source never reaches the file: `assemble` ends in `check_records`."""
-        bad = lambda o, t: {**rsn.teacher_target(o, t), "target_source": "teacher-verified"}
-        with mock.patch.object(sft, "teacher_target", bad):
+        real = rsn.teacher_target
+        bad = lambda o, t, thinking=False: {**real(o, t, thinking), "target_source": "teacher-verified"}
+        with mock.patch.object(rsn, "teacher_target", bad):
             with self.assertRaisesRegex(ValueError, "target_source"):
                 self.assemble([reply(self.t)])
         self.assertIn("check_records(kept)", inspect.getsource(sft.assemble))
@@ -383,7 +387,8 @@ class ReasoningStage(StubbedSampleStage):
             self.data._window(True, -1)
 
     def long_replies(self, words: dict):
-        self.reply = lambda tid, i, body: answer_body(reply(self.tasks[tid], f"Step for {tid}.\n" + "word " * words.get(tid, 0)))
+        """A reply with `words[tid]` more words, every one different (a repeated word is a loop: the repetition filter of round 12 would drop the trace before the length rule sees it)."""
+        self.reply = lambda tid, i, body: answer_body(reply(self.tasks[tid], f"Step for {tid}.\n" + " ".join(f"w{j}" for j in range(words.get(tid, 0)))))
 
     def test_the_length_report_counts_what_fits_2048_3072_4096_and_the_window_drops_never_cuts(self):
         base = self.run_stage(False, reasoning=True, max_len=4096)
@@ -409,7 +414,7 @@ class ReasoningStage(StubbedSampleStage):
         res4 = self.run_stage(False, reasoning=True, max_len=4096)
         self.assertEqual((res4["stats"]["over_length"]["dropped"], len(self.kept(res4, "teacher-reasoning"))), (1, n - 1))
         kept = {r["task"]: r["messages"][-1]["content"] for r in self.kept(res4, "teacher-reasoning")}
-        self.assertEqual(kept[ids[1]], reply(self.tasks[ids[1]], f"Step for {ids[1]}.\n" + "word " * 3500), "the 3,500-word reply is stored whole, byte for byte")
+        self.assertEqual(kept[ids[1]], reply(self.tasks[ids[1]], f"Step for {ids[1]}.\n" + " ".join(f"w{j}" for j in range(3500))), "the 3,500-word reply is stored whole, byte for byte")
         line = sft.fits_line(res["stats"])
         self.assertIn(f"2048 tokens: {n - 3} of {n}", line)
         self.assertIn(f"3072 tokens: {n - 2} of {n}", line)
@@ -493,7 +498,7 @@ class ReasoningEntry(ModalCase):
         self.assertEqual(len(seen), 1)
         self.assertIn("projected cost: 150 tasks x k=4 = 600 replies", seen[0], "printed before the GPU is rented")
         self.assertIn("the sum of --quota", seen[0])
-        self.assertIn("--max-len 3072; max_tokens 500; checkpoint and output tag seed7-crc-reasoning", seen[0])
+        self.assertIn("--max-len 3072; max_tokens 500; up to 3 traces per kept task; checkpoint and output tag seed7-crc-reasoning", seen[0])
         kw = remote.call_args.kwargs
         self.assertEqual((kw["reasoning"], kw["max_tokens"], kw["max_len"], kw["quota"], kw["resume"]), (True, 500, 3072, "crc=100,structs=50", False))
         self.assertEqual(remote.call_args.args[-1], "seed7-crc", "the decompiled tasks are read by the decompile tag")
@@ -659,7 +664,7 @@ class TrainingWindow(ModalCase):
         src = inspect.getsource(self.lora.train)
         self.assertIn("encode_ids(p_ids, f_ids, max_len)", src)
         self.assertNotIn("longer than {MAX_LEN}", src)
-        self.assertIn("train.remote(smoke, epochs, lr, rank, max_len)", inspect.getsource(self.lora.main))
+        self.assertIn("train.remote(smoke, epochs, lr, rank, max_len, config, tag)", inspect.getsource(self.lora.main))
 
     def test_a_longer_window_keeps_a_longer_pair_and_still_drops_never_cuts(self):
         enc = self.lora.encode_ids

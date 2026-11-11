@@ -21,14 +21,17 @@ evaluation only):
   one record    the rendered text of a task is the same for every accepted sample, so a task gives ONE record.
 
 REASONING MODE (`reasoning=True`, `--stage sample --reasoning`, rea_bench/reasoning.py): the reply's final answer (the text after its last `Answer:` line) is the filter,
-with the same agreement rule, and a kept task gives TWO records: the truth-rendered one above and one that holds the first accepted reply VERBATIM
-(`target_source: "teacher-reasoning"`; `<think>` blocks stripped, whitespace trimmed). The steps in front of the answer are not checked: some may be wrong.
+with the same agreement rule, counted on the answers. A kept task gives the truth-rendered record above and up to `max_traces` (3) records that hold an accepted reply VERBATIM
+(`target_source: "teacher-reasoning"`; `<think>` blocks stripped, whitespace trimmed), distinct (round 12, RFT: several correct reasoning paths per task): each passes the trace quality
+filters (mixed language, repetition loop, unreadable, self-contradiction) and is not a duplicate (identical normalized text, or token-set Jaccard >= 0.9) of one already kept; every other
+accepted reply is counted per family under its reason (`stats["reasoning"]`). The steps in front of the answer are not checked: some may be wrong. A task whose traces were all filtered
+keeps its truth record. `thinking=True` (a pilot): the trace is `<think>reasoning</think>` + the visible reply.
 """
 from __future__ import annotations
 
 import collections
 
-from .reasoning import REPORT_WINDOWS, TARGET_SOURCE as TEACHER_SOURCE, score_reasoning, teacher_target, verdict
+from .reasoning import DEFAULT_MAX_TRACES, REPORT_WINDOWS, TARGET_SOURCE as TEACHER_SOURCE, TRACE_DROPS, pick_traces, score_reasoning, verdict
 from .scoring import is_error_reply, score_strict, sft_target, strict_task, truth_target
 
 AGREE_CHANCE = 0.05          # round 4 (m8): 0.06-0.063 variants (fsm/opcode_value, bounds/char_class, multi/limit_helper) kept one lucky sample of six in 31% of the tasks
@@ -122,20 +125,35 @@ def needs_agreement(t: dict) -> bool:
     return c is not None and c >= AGREE_CHANCE
 
 
-def select(outs: list, t: dict, reasoning: bool = False) -> tuple:
+def select_traces(outs: list, t: dict, thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES) -> tuple:
+    """([records], reason, Counter of the accepted replies that were not stored, by reason) of one task of a reasoning run. A reply is ACCEPTED by `score_reasoning` (its text after the last
+    `Answer:` line); the task is kept (the truth-rendered record) when it has an accepted reply, and for a task with `chance >= AGREE_CHANCE` when AGREE_MIN replies are accepted (the agreement rule
+    counts answers: whether a trace is clean is not a statement about the answer). The teacher records are the first `max_traces` distinct clean accepted replies in sample order
+    (`reasoning.pick_traces`); a kept task whose accepted replies are all filtered has the truth record alone. A task that is not kept has no traces and nothing is counted for its replies."""
+    accepted = [o for o, _flag in outs if score_reasoning(o, t)]
+    if not accepted:
+        return [], "no_correct", collections.Counter()
+    if needs_agreement(t) and len(accepted) < AGREE_MIN:
+        return [], "agreement", collections.Counter()
+    traces, dropped = pick_traces(accepted, t, max_traces, thinking)
+    return [truth_target(t), *traces], "kept", dropped
+
+
+def select(outs: list, t: dict, reasoning: bool = False, max_traces: int = DEFAULT_MAX_TRACES, thinking: bool = False) -> tuple:
     """([records], reason) for one task. `outs` = [(reply, flag)] for its K samples; the flag is not used (every reply is scored again). A record
     is {"text", "headline", "sentence", "template", "target_source"}: all of it rendered from the truth. reason is "kept",
     "no_correct" (no sample has an accepted headline) or "agreement" (too few accepted samples for the task's chance level).
-    `reasoning`: a reply is accepted by `score_reasoning` (its text after the last `Answer:` line), and a kept task gives the truth-rendered record AND the first accepted reply verbatim."""
+    `reasoning`: a reply is accepted by `score_reasoning` (its text after the last `Answer:` line), and a kept task gives the truth-rendered record AND up to `max_traces` distinct clean
+    accepted replies verbatim (`select_traces`)."""
     if reasoning:
-        accepted = [r for r in (teacher_target(o, t) for o, _flag in outs) if r is not None]
-    else:
-        accepted = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
+        records, reason, _dropped = select_traces(outs, t, thinking, max_traces)
+        return records, reason
+    accepted = [r for r in (sft_target(o, t) for o, _flag in outs) if r is not None]
     if not accepted:
         return [], "no_correct"
     if needs_agreement(t) and len(accepted) < AGREE_MIN:
         return [], "agreement"
-    return ([truth_target(t), accepted[0]] if reasoning else [accepted[0]]), "kept"
+    return [accepted[0]], "kept"
 
 
 class Stats:
@@ -181,14 +199,21 @@ def error_warning(stats: dict):
 
 
 def reasoning_report(stats: dict) -> list:
-    """The lines a reasoning run prints about its replies (empty for any other run): how they were judged, and what that run's own throughput was."""
+    """The lines a reasoning run prints about its replies (empty for any other run): how they were judged, what happened to the accepted ones, and what that run's own throughput was."""
     r = stats.get("reasoning")
     if not r:
         return []
-    out = [f"reasoning replies: {r['replies']:,}: accepted {r['accepted']:,}, answer rejected {r['wrong']:,}, no final `Answer:` line (or text after it) {r['no_answer_line']:,}, "
-           f"cut off at max_tokens {r['truncated']:,}, failed requests {r['error']:,}; {r['teacher_records']:,} teacher-reasoning records"]
+    out = [f"{r.get('mode', 'reasoning')} replies: {r['replies']:,}: accepted {r['accepted']:,}, answer rejected {r['wrong']:,}, no final `Answer:` line (or text after it) {r['no_answer_line']:,}, "
+           f"cut off at max_tokens {r['truncated']:,}, failed requests {r['error']:,}; {r['teacher_records']:,} teacher-reasoning records (up to {r.get('max_traces', 1)} per kept task)"]
+    d = r.get("dropped")
+    if d:
+        out.append("accepted replies not stored: " + ", ".join(f"{k} {d.get(k, 0):,}" for k in TRACE_DROPS) + f"; in tasks that were not kept {r.get('in_lost_tasks', 0):,}; "
+                   f"{r.get('tasks_without_trace', 0):,} kept tasks have no trace (their truth record stays)")
     if r["truncated"] and r["replies"] and r["truncated"] / r["replies"] > TRUNCATED_WARN:
         out.append(f"WARNING: {100 * r['truncated'] // r['replies']}% of the replies were cut off at max_tokens: raise --max-tokens (and look at the cost line again)")
+    if r.get("mode") == "thinking" and d and r["accepted"] and d.get("no_think", 0) / r["accepted"] > NO_THINK_WARN:
+        out.append(f"WARNING: {100 * d['no_think'] // r['accepted']}% of the accepted replies came back without reasoning: the server did not return `reasoning_content` or a <think> block "
+                   f"(llama-server --reasoning-format), so they were dropped")
     p = stats.get("perf")
     if p and p.get("requests"):
         out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over the four slots "
@@ -197,13 +222,24 @@ def reasoning_report(stats: dict) -> list:
 
 
 TRUNCATED_WARN = 0.10     # a reasoning run with more than this share of its replies cut off at max_tokens says so
+NO_THINK_WARN = 0.10      # a thinking run in which more than this share of the accepted replies has no reasoning block says so
 
 
-def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bool = False) -> tuple:
+def _fate_row(judged: collections.Counter, fate: collections.Counter) -> dict:
+    """The `reasoning` counters of one family (or of all): how the replies were judged and what became of the accepted ones."""
+    row = {"replies": sum(judged.values()), **{v: judged[v] for v in ("accepted", "wrong", "no_answer_line", "truncated", "error")}, "teacher_records": fate["traces"],
+           "dropped": {k: fate[k] for k in TRACE_DROPS}, "in_lost_tasks": fate["in_lost_tasks"], "tasks_without_trace": fate["tasks_without_trace"]}
+    return row
+
+
+def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bool = False, thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES) -> tuple:
     """(SFT records, stats dict) from the K replies of every task. `results` = {task id: {"outs": [[reply, flag], ...]}} (the sample stage's
     checkpoint format; the flag is ignored, see above); `messages_for(task)` = the system and user message. A task without a result is skipped.
-    `reasoning`: see `select`; the stats get a `reasoning` block (how the replies were judged), and no other key of a default run changes."""
-    st, kept, judged = Stats(), [], collections.Counter()
+    `reasoning`: see `select_traces`; the stats get a `reasoning` block (how the replies were judged, what became of the accepted ones, in total and per family), and no other key of a default
+    run changes. `thinking`: the run kept the server's reasoning (`mode: "thinking"` in the block). `max_traces`: teacher records per kept task."""
+    st, kept = Stats(), []
+    judged, fate = collections.Counter(), collections.Counter()
+    kind_judged, kind_fate = collections.defaultdict(collections.Counter), collections.defaultdict(collections.Counter)
     score = score_reasoning if reasoning else score_strict
     for t in tasks:
         rec = results.get(t["id"])
@@ -211,8 +247,19 @@ def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bo
             continue
         outs = [(o, score(o, t)) for o, _flag in rec["outs"]]
         if reasoning:
-            judged.update(verdict(o, t) for o, _flag in outs)
-        records, reason = select(outs, t, reasoning)
+            verdicts = collections.Counter(verdict(o, t) for o, _flag in outs)
+            records, reason, dropped = select_traces(outs, t, thinking, max_traces)
+            traces = sum(r["target_source"] == TEACHER_SOURCE for r in records)
+            here = collections.Counter({"traces": traces, **dropped})
+            if reason == "agreement":
+                here["in_lost_tasks"] = verdicts["accepted"]
+            if reason == "kept" and not traces:
+                here["tasks_without_trace"] = 1
+            for j, f in ((judged, fate), (kind_judged[t["kind"]], kind_fate[t["kind"]])):
+                j.update(verdicts)
+                f.update(here)
+        else:
+            records, reason = select(outs, t)
         st.add(t, outs, records, reason)
         for r in records:
             kept.append({"messages": [*messages_for(t), {"role": "assistant", "content": r["text"]}], "task": t["id"], "kind": t["kind"],
@@ -220,6 +267,6 @@ def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bo
     check_records(kept)
     stats = st.as_dict()
     if reasoning:
-        stats["reasoning"] = {"replies": sum(judged.values()), **{v: judged[v] for v in ("accepted", "wrong", "no_answer_line", "truncated", "error")},
-                              "teacher_records": sum(r["target_source"] == TEACHER_SOURCE for r in kept)}
+        stats["reasoning"] = {"mode": "thinking" if thinking else "reasoning", "max_traces": max_traces, **_fate_row(judged, fate),
+                              "by_kind": {k: _fate_row(kind_judged[k], kind_fate[k]) for k in sorted(kind_judged)}}
     return kept, stats
