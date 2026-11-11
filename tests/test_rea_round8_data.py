@@ -392,6 +392,9 @@ class Hardening(unittest.TestCase):
     def test_c21_c23_the_held_out_keys_hold_the_pinned_list_and_every_attempt_of_every_slot(self):
         """Each alone is masked by the other (a missing pinned list, a `draws` that starts at attempt 1): together they leak."""
         self.assertLessEqual(dedupe.load_heldout(), dedupe.heldout_keys())
+        with mock.patch.object(dedupe, "_held_out_draws", lambda seed: frozenset()):          # the generator drifted: the pinned list alone still protects
+            self.assertEqual(dedupe.heldout_keys(), dedupe.load_heldout())
+            self.assertEqual(dedupe.heldout_keys(7), set(), "another seed has no pinned list")
         for fam in ("crc", "structs", "strobf"):
             k = 3
             gen = [dedupe.task_key(t) for t in families.generate(fam, 12, core.HELDOUT_SEED)]
