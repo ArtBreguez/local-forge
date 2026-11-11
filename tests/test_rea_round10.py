@@ -1,6 +1,7 @@
 """Round 10 (the last gate before Modal).
 
 M1  the local gate must not RAISE on a draw: "no free probe marker" is a failed probe, the draw is drawn again (`cipher-7171-0090`, salsa at clang -O0, aborted the generation).
+m1  `survive.numbers` does not read the target of a branch or the displacement of a rip-relative operand as a decimal constant (`structs-7171-0174`, gcc -O3, stride 40).
 """
 from __future__ import annotations
 
@@ -12,6 +13,7 @@ import unittest
 
 from .helpers import ROOT
 from .rea_r8 import GCC_OBJDUMP
+from .test_rea_round9_data import literal_lines
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
@@ -81,6 +83,49 @@ class NoFreeMarker(unittest.TestCase):
         ok, why = survive.check_task(t)
         self.assertIsInstance(ok, bool)
         self.assertIsInstance(why, str)
+
+
+# ---- m1 -------------------------------------------------------------------------------------------------------------------------------
+
+class BranchTargets(unittest.TestCase):
+    DIS = ("0000000000000000 <proc>:\n"
+           "   0:\tlea    rcx,[rdx+rdx*4]\n"
+           "   4:\tlea    r8,[rcx*8+0x0]\n"
+           "   c:\tjne    40 <proc+0x40>\n"
+           "   e:\tjmp    1a <proc+0x1a>\n"
+           "  10:\tcall   1050 <helper>\n"
+           "  15:\tlea    rax,[rip+0x2e5f]        # 4010 <tbl>\n"
+           "  1c:\tjmp    QWORD PTR [rdi+0x18]\n"
+           "  20:\tnotrack jmp rax\n"
+           "  22:\tbnd jmp 2a <proc+0x2a>\n"
+           "  24:\tloop   5e <proc+0x5e>\n"
+           "  26:\tjrcxz  72 <proc+0x72>\n"
+           "  28:\tcall   QWORD PTR [rip+0x2fe2]        # 3fd0 <puts@got>\n"
+           "  2e:\tadd    rdi,0x38\n")
+
+    def test_the_target_of_a_branch_and_a_rip_relative_displacement_are_no_numbers_of_the_program(self):
+        self.assertEqual(survive.numbers(self.DIS), {4, 8, 0, 0x18, 0x38}, "the scales and displacements stay; 40, 1a, 1050, 2a, 5e, 72, 0x2e5f, 0x2fe2 are addresses")
+        self.assertEqual(survive.numbers(self.DIS, stack=False), {4, 8, 0, 0x18, 0x38})
+
+    def test_an_indirect_branch_keeps_its_displacement_and_a_constant_is_still_read(self):
+        dis = "0000000000000000 <proc>:\n   0:\tcall   QWORD PTR [rdi+0x18]\n   4:\tcmp    eax,0x28\n   7:\tjne    28 <proc+0x28>\n"
+        self.assertEqual(survive.numbers(dis), {0x18, 0x28}, "0x28 from the cmp, not from the jne")
+        self.assertEqual(survive.numbers("0000000000000000 <proc>:\n   0:\tjne    28 <proc+0x28>\n"), set())
+
+    @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
+    def test_the_stride_40_task_of_the_reviewer_is_rejected(self):
+        """structs-7171-0174: gcc -O3, stride 40, a vectorised loop that scales with `lea rcx,[rdx+rdx*4]` and `lea r8,[rcx*8]`: its only 40 was `jne 40 <proc+0x40>`."""
+        t = next(x for x in families.generate("structs", 175, 7171, "mix", None) if x.id == "structs-7171-0174")
+        self.assertEqual((t.variant, t.cc, t.opt, t.params["size"]), ("array_stride", "gcc", "-O3", 40), "the draw is the reviewer's")
+        dis = objdump_of(t.source(), "gcc", "-O3")
+        body = dis.split("<proc>:")[1].split("<main>:")[0]
+        self.assertTrue(any("jne    40 <proc+0x40>" in x for x in body.splitlines()), "the code has the branch to 0x40 the reviewer named")
+        self.assertEqual(literal_lines(body, 40), [], "no instruction of the code names 40 or 0x28 other than as a branch target")
+        self.assertNotIn(40, survive.numbers(dis, stack=False))
+        ok, why = survive.check(t.facts, t.source(), "gcc", "-O3")
+        self.assertFalse(ok)
+        self.assertIn("outside the stack frame", why)
+        self.assertIs(survive.Gate(warn=lambda m: None)(t), False)
 
 
 if __name__ == "__main__":

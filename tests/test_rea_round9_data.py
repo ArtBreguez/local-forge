@@ -147,6 +147,28 @@ class LengthRulePure(unittest.TestCase):
 
 # ---- m3 -------------------------------------------------------------------------------------------------------------------------------
 
+_PREFIX_WORDS = ("bnd", "notrack", "rep", "repz", "repnz", "lock", "data16", "cs", "ds")
+
+
+def literal_lines(body: str, size: int) -> list:
+    """The lines of a `proc` disassembly (objdump -d -M intel) that name `size` as a number of the program, read independently of survive.numbers: no instruction that touches the
+    stack or frame pointer, and (round 10, m1) not the target of a direct jump, call or loop (`jne 40 <proc+0x40>` is a branch to 0x40) and not a rip-relative displacement."""
+    out = []
+    for line in body.splitlines():
+        if "\t" not in line:
+            continue
+        insn = re.sub(r"#.*|<[^>]*>", "", line.split("\t", 1)[1]).strip()
+        words = [w for w in insn.split() if w not in _PREFIX_WORDS]
+        if len(words) == 2 and re.fullmatch(r"j\w+|call|loop\w*", words[0]) and re.fullmatch(r"[0-9a-f]+|0x[0-9a-f]+", words[1]):
+            continue
+        insn = re.sub(r"\[rip[^\]]*\]", "", insn)
+        if re.search(r"\b[re]?[sb]p\b", insn):
+            continue
+        if re.search(rf"(?<![\w.])-?(0x{size:x}|{size})(?![\w.])", insn):
+            out.append(line)
+    return out
+
+
 class ArrayStride(unittest.TestCase):
     def test_a_frame_offset_is_not_a_constant_of_the_program(self):
         dis = ("0000000000000000 <proc>:\n   0:\tmov    QWORD PTR [rbp-0x18],rdi\n   4:\tsub    rsp,0x30\n   8:\tadd    rdi,0x38\n   c:\tmov    eax,DWORD PTR [rsp+0x20]\n"
@@ -180,8 +202,7 @@ class ArrayStride(unittest.TestCase):
                 dis = survive._objdump(["-d", "--no-show-raw-insn", "-M", "intel"], o)
             body = dis.split("<proc>:")[1].split("<main>:")[0]
             size = t.params["size"]
-            off_stack = [x for x in body.splitlines() if "\t" in x and not re.search(r"\b[re]?[sb]p\b", x) and re.search(rf"(?<![\w.])(0x{size:x}|{size})(?![\w.])", x.split("\t", 1)[1])]
-            self.assertEqual(off_stack, [], t.id)
+            self.assertEqual(literal_lines(body, size), [], t.id)
 
     @unittest.skipUnless(GCC_OBJDUMP, "gcc and objdump are needed")
     def test_every_kept_stride_is_a_literal_of_an_instruction_off_the_stack(self):
@@ -195,8 +216,7 @@ class ArrayStride(unittest.TestCase):
                 dis = survive._objdump(["-d", "--no-show-raw-insn", "-M", "intel"], o)
             size = t.params["size"]
             body = dis.split("<proc>:")[1].split("<main>:")[0]
-            hits = [x for x in body.splitlines() if "\t" in x and not re.search(r"\b[re]?[sb]p\b", x) and re.search(rf"(?<![\w.])-?(0x{size:x}|{size})(?![\w.])", x.split("\t", 1)[1])]
-            self.assertTrue(hits, f"{t.id} {t.cc} {t.opt}: stride {size} is not a literal of an instruction off the stack")
+            self.assertTrue(literal_lines(body, size), f"{t.id} {t.cc} {t.opt}: stride {size} is not a literal of an instruction off the stack (a branch target is not one: round 10, m1)")
 
 
 if __name__ == "__main__":

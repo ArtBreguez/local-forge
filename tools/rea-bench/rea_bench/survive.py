@@ -75,11 +75,26 @@ def compile_object(src: str, cc: str, opt: str, out: pathlib.Path) -> subprocess
 
 
 _STACK = re.compile(r"\b[re]?[sb]p\b")
+_PREFIXES = {"bnd", "notrack", "rep", "repz", "repnz", "repe", "repne", "lock", "data16", "addr32", "cs", "ds", "es", "ss", "fs", "gs", "xacquire", "xrelease"}
+_BRANCH = re.compile(r"(j[a-z]+|call|loop[a-z]*|xbegin)$")
+_ADDRESS = re.compile(r"(0x)?[0-9a-f]+$")
+_RIP = re.compile(r"\[rip[^\]]*\]")
+
+
+def _direct_branch(insn: str) -> bool:
+    """A jump, call or loop whose operand is an address (`jne 40 <proc+0x40>`: objdump prints the hex target without 0x, which the decimal reading below takes for forty).
+    An indirect one (`jmp rax`, `call QWORD PTR [rdi+0x18]`) is not: its displacement is an offset of the program, like any other."""
+    words = insn.split()
+    while words and words[0] in _PREFIXES:
+        words = words[1:]
+    return len(words) == 2 and bool(_BRANCH.match(words[0])) and bool(_ADDRESS.match(words[1]))
 
 
 def numbers(disasm: str, stack: bool = True) -> set:
     """Magnitudes of every number in the instructions of the disassembly (functions other than main). `stack=False` leaves out the instructions that name the stack or frame
-    pointer (`[rbp-0x30]`, `sub rsp, 0x30`): a frame offset is not a constant of the program (round 9, m3)."""
+    pointer (`[rbp-0x30]`, `sub rsp, 0x30`): a frame offset is not a constant of the program (round 9, m3). The operands are parsed (round 10, m1): the target of a direct
+    jump or call and the displacement of a rip-relative operand are addresses, not constants, and are not numbers of the program (a stride of 40 was "found" in
+    `jne 40 <proc+0x40>`, a branch to 0x40)."""
     out, keep = set(), False
     for line in disasm.splitlines():
         m = _FUNC.match(line.strip())
@@ -89,6 +104,9 @@ def numbers(disasm: str, stack: bool = True) -> set:
         if not keep or "\t" not in line:
             continue
         insn = re.sub(r"#.*|<[^>]*>", "", line.split("\t", 1)[1])
+        if _direct_branch(insn):
+            continue
+        insn = _RIP.sub("", insn)
         if not stack and _STACK.search(insn):
             continue
         out |= {int(h, 16) for h in _HEX.findall(insn)}
