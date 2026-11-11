@@ -76,7 +76,7 @@ SEED_BASE = 1234            # the seed of sample i is SEED_BASE + i
 
 
 def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None) -> dict:
+                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None, max_tokens_by_family: dict = None) -> dict:
     """The sample stage, for any subject: `domain` supplies the tasks (`domain.load_tasks(tasks_source)`: for REA the directory of the volume the decompile stage wrote), the messages, the verdict and the truth; `data_vol` is the Modal
     Volume mounted at /data (`reload` and `commit` are called on it); the model is read from /models. The wrapper of a subject (tools/modal/modal_rea_data.py for REA) registers this function with Modal and gives it its own.
     K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
@@ -88,14 +88,18 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
     output have their own tag (`-reasoning`), the thinking stays off. `thinking` (needs `reasoning`): `enable_thinking: true`, `max_tokens` defaults to 4096, the server's reasoning is kept in
     the reply and in the record as `<think>...</think>` + the visible reply, only the visible text's last `Answer:` line is scored; own tag (`-reasoning-think`). `sampling`: the request's sampling values
     (`config.sampling_for`: `{"temperature": 0.7}` as always, Qwen3's thinking settings with `thinking`); a reasoning run records it, the slot and the prompts that did not fit in its stats. `max_len`: the
-    training window of the length rule (required with `reasoning`, MAX_LEN otherwise). `quota`: `kind=N,...`, at most N tasks of each listed kind and no task of another kind."""
+    training window of the length rule (required with `reasoning`, MAX_LEN otherwise). `quota`: `kind=N,...`, at most N tasks of each listed kind and no task of another kind.
+    `max_tokens_by_family` (a reasoning run): {kind: tokens}, the reply budget of the tasks of that kind instead of `max_tokens` (`config.task_max_tokens`); each request asks its own task's budget, the prompt-fit check uses
+    it, and the server's slot is sized for the longest budget among the tasks that are asked (`config.server_plan`: 4 slots of 8192 tokens, or 2 of 12288 when a task of the run has 8192; the same total context)."""
     from huggingface_hub import hf_hub_download
     import urllib.request
     _check_thinking(reasoning, thinking, max_tokens, max_traces)
     window = _window(reasoning, max_len)
     max_tokens = max_tokens or config.default_max_tokens(reasoning, thinking)
     sampling = config.sampling_for(thinking, **(sampling or {}))                    # validated again where it is used: a thinking run is never greedy, whoever called
-    slot_ctx = config.slot_context(max_tokens) if reasoning else config.SLOT_CONTEXT      # tokens per slot of the server: the prompt and max_tokens fit (a default run: the 8192 it always had)
+    by_family = config.check_family_tokens(max_tokens_by_family or {}, domain.kinds())
+    if by_family and not reasoning:
+        raise SystemExit("max_tokens_by_family is for a reasoning or thinking run")
     mode = mode_of(reasoning, thinking)
     run_tag = outputs.sample_tag(tag, reasoning, thinking)        # the checkpoint and the output of a reasoning run are their own (`-reasoning`, `-reasoning-think`); the decompiled tasks are read by `tag`
     score = (lambda txt, t: traces.score_reasoning(txt, t, domain=domain)) if reasoning else (lambda txt, t: records.plain_ok(txt, t, domain))
@@ -110,6 +114,9 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         print(f"--quota {quota}: {len(tasks)} tasks to sample: " + ", ".join(f"{kind} {have[kind]}/{n}" for kind, n in want.items()))
         if not tasks:
             raise SystemExit(f"--quota {quota} selects no task of {tasks_source}")
+    longest = config.run_max_tokens([t["kind"] for t in tasks], max_tokens, by_family)       # the longest budget of a task that is in this run: what the slot holds
+    slots, slot_ctx = config.server_plan(max_tokens, longest, SAMPLER_SLOTS) if reasoning else (SAMPLER_SLOTS, config.SLOT_CONTEXT)      # requests in flight, tokens per slot: the prompt and the budget fit (a run without a longer family: 4 x the 8192 it always had)
+    budget = lambda t: config.task_max_tokens(t["kind"], max_tokens, by_family)
     for t in tasks:
         domain.check_task(t)    # a task the domain cannot score, or whose truth its own verify rejects, must stop the run before the model download and the server start
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, run_tag)}.partial.jsonl")
@@ -121,8 +128,8 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask ({redo} failed or missing samples of checkpointed tasks)")
     path = hf_hub_download(repo, fname, cache_dir="/models")
     server_log = open("/tmp/server.log", "w")
-    srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(SAMPLER_SLOTS * slot_ctx),
-                            "--parallel", str(SAMPLER_SLOTS), "-fa", "off", *(THINKING_SERVER_ARGS if thinking else [])], stdout=subprocess.DEVNULL, stderr=server_log)
+    srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(slots * slot_ctx),
+                            "--parallel", str(slots), "-fa", "off", *(THINKING_SERVER_ARGS if thinking else [])], stdout=subprocess.DEVNULL, stderr=server_log)
     for _ in range(600):
         try:
             if urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2).status == 200:
@@ -130,16 +137,17 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         except Exception:
             time.sleep(1)
     too_long = collections.Counter()
-    if thinking:            # a prompt that leaves less than max_tokens in its slot gets a reply the server cuts off early: it is not asked, and it is counted (kind -> tasks)
+    if thinking or by_family:            # a prompt that leaves less than its budget in the slot gets a reply the server cuts off early: it is not asked, and it is counted (kind -> tasks)
         fits = []
         for t, ask in todo:
             n = sum(_server_token_count(m["content"]) for m in domain.messages(t, mode)) + records.LENGTH_OVERHEAD
-            if config.prompt_fits(n, max_tokens, slot_ctx):
+            if config.prompt_fits(n, budget(t), slot_ctx):
                 fits.append((t, ask))
             else:
                 too_long[t["kind"]] += 1
         if too_long:
-            print(f"{sum(too_long.values())} task(s) not asked: prompt + max_tokens {max_tokens} do not fit a {slot_ctx}-token slot ({', '.join(f'{k} {c}' for k, c in sorted(too_long.items()))})")
+            own = f" (and each family's own: {config.family_tokens_text(by_family)})" if by_family else ""
+            print(f"{sum(too_long.values())} task(s) not asked: prompt + max_tokens {max_tokens}{own} do not fit a {slot_ctx}-token slot ({', '.join(f'{k} {c}' for k, c in sorted(too_long.items()))})")
         todo = fits
     from concurrent.futures import ThreadPoolExecutor
     import threading
@@ -154,10 +162,10 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
             try:
                 body_seed = SEED_BASE + i
                 import urllib.request as ur
-                body = {"model": "local", "messages": msgs, **sampling, "seed": body_seed, "max_tokens": max_tokens,
+                body = {"model": "local", "messages": msgs, **sampling, "seed": body_seed, "max_tokens": budget(t),
                         "chat_template_kwargs": {"enable_thinking": thinking}, "cache_prompt": False}
                 req = ur.Request("http://127.0.0.1:8080/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-                with ur.urlopen(req, timeout=600) as r:
+                with ur.urlopen(req, timeout=max(600, budget(t) * 600 // config.DEFAULT_THINKING_MAX_TOKENS)) as r:       # 600 s up to 4096 tokens, longer for a longer budget
                     reply = json.load(r)
                 msg = reply["choices"][0]["message"]
                 if reasoning:       # the reply as the checkpoint stores it (`traces.reply_text`: think blocks stripped, or kept as the trace in a thinking run; a cut-off reply ends in the TRUNCATED marker)
@@ -176,7 +184,7 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
 
     t_start = time.time()
     try:
-        with ThreadPoolExecutor(SAMPLER_SLOTS) as ex, open(partial, "a") as ck:
+        with ThreadPoolExecutor(slots) as ex, open(partial, "a") as ck:
             for i, (t, outs) in enumerate(ex.map(work, todo), 1):
                 rec = {"id": t["id"], "kind": t["kind"], "outs": outs}
                 results[t["id"]] = rec
@@ -188,9 +196,11 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         kept, stats = records.assemble(tasks, results, name, lambda t: domain.messages(t, mode), reasoning, thinking, max_traces, domain=domain)
         if reasoning:           # this call's own throughput, next to the cost line's assumption (a resumed run reports only the replies it asked)
             stats["perf"] = {**perf, "wall_s": round(wall), "tok_per_s": round(perf["completion_tokens"] / wall, 1), "s_per_request": round(wall / max(perf["requests"], 1), 2)}
-            stats["sampling"] = config.sampling_record(thinking, sampling, max_tokens, seed_base=SEED_BASE, slot_context=slot_ctx, parallel=SAMPLER_SLOTS)
+            stats["sampling"] = config.sampling_record(thinking, sampling, max_tokens, seed_base=SEED_BASE, slot_context=slot_ctx, parallel=slots,
+                                                       **({"max_tokens_by_family": by_family} if by_family else {}))
             if thinking:
-                stats["slot"] = {"slot_context": slot_ctx, "max_prompt_tokens": slot_ctx - max_tokens, "prompt_too_long": sum(too_long.values()), "by_kind": dict(sorted(too_long.items()))}
+                stats["slot"] = {"slot_context": slot_ctx, "max_prompt_tokens": slot_ctx - max_tokens, "prompt_too_long": sum(too_long.values()), "by_kind": dict(sorted(too_long.items())),
+                                 **({"max_prompt_tokens_by_kind": {k: slot_ctx - n for k, n in sorted(by_family.items())}} if by_family else {})}
         windows = (config.THINKING_REPORT_WINDOWS if thinking else config.REPORT_WINDOWS) if reasoning else ()
         kept, stats = _apply_length_rule(kept, stats, window, windows)       # round 9, m2: what the training run would drop is dropped (and counted) here, while the server is still up
     finally:

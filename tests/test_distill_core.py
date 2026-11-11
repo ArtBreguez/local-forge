@@ -395,7 +395,9 @@ class Config(unittest.TestCase):
         self.assertEqual((plain.k, plain.teacher, plain.student), (6, "codeforge-27b-heretic-q4", "xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic"))
         self.assertEqual(reasoning.resolved(), {"mode": "reasoning", "sampling": {"temperature": 0.7}, "max_tokens": 768, "max_len": 3072, "slot_context": 8192, "report_windows": (2048, 3072, 4096)})
         self.assertEqual((reasoning.k, reasoning.max_traces, reasoning.quota.split(",")[0]), (4, 3, "structs=220"))
-        self.assertEqual(thinking.resolved(), {"mode": "thinking", "sampling": config.THINKING_SAMPLING, "max_tokens": 4096, "max_len": 8192, "slot_context": 8192, "report_windows": (4096, 8192)})
+        # the pilot quota (structs, crc) has none of the three families that have 8192 tokens, so the slot is the 4 x 8192 of every thinking run
+        self.assertEqual(thinking.resolved(), {"mode": "thinking", "sampling": config.THINKING_SAMPLING, "max_tokens": 4096, "max_len": 8192, "slot_context": 8192, "report_windows": (4096, 8192),
+                                               "max_tokens_by_family": {"cipher": 8192, "magic": 8192, "password": 8192}, "slots": 4})
         self.assertEqual(thinking.k, 4)
         for c in (plain, reasoning, thinking):
             self.assertEqual(c.domain, "rea")
