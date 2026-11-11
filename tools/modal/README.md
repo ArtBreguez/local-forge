@@ -191,6 +191,14 @@ For a model that reasons before it answers. The request sets `chat_template_kwar
 modal run tools/modal/modal_rea_data.py --stage sample --model codeforge-27b-heretic-q4 --family structs,crc --seed 9 --k 2 --reasoning --thinking --max-tokens 4096 --max-len 8192 --quota structs=10,crc=10
 ```
 
+### Scoring a Kaggle run without Modal (`rea_bench/kaggle_score.py`)
+
+A Kaggle notebook can ask the same questions for free. `kaggle-score` turns its `replies.jsonl` (one line per task: `{"id", "kind", "outs": [{"text", "finish", "tokens", "secs"}]}`; `finish: "length"` is a reply cut off, `"error"` or a text starting `[error` a failed request) and the decompiled tasks into the same SFT records and the same stats as the Modal stage, by calling the same functions: the reply text (`reasoning.reply_text`), the acceptance (`score_reasoning`), the agreement rule, the filters, the duplicate rule, the cap and the records (`sft.assemble`), with the messages of `reasoning.messages`. A test runs the stubbed Modal stage and the scorer on the same server answers and compares the records and the stats. The notebook must ask with `reasoning.SYSTEM_REASONING` and `reasoning.user_message(task)`; the records are rebuilt with those. It reads `decompiled-seed<seed>-<family>.jsonl` (never seed 1001), writes `sft-<model>-<tag>-reasoning[-think].jsonl` next to it (or `--out`) and `<out>.stats.json`: the stats of `sft.assemble` plus `families`, per family and in total: tasks, answers, accepted, kept tasks, traces, `drops` by reason, truncated share, mean and median tokens per reply (the `tokens` the notebook recorded). `--thinking` keeps the `<think>` blocks of the texts (or a `reasoning_content` key of an entry) as the traces. **Not applied:** the over-length rule (it needs the sampler's tokenizer; `modal_lora.py` drops a pair longer than its window at training time, never cuts it).
+
+```bash
+python3 tools/rea-bench kaggle-score --replies replies.jsonl --model codeforge-27b-heretic-q4 --tasks results/phase6/rea-data/decompiled-seed7-all.jsonl --max-traces 3
+```
+
 ### Training on a reasoning file
 
 `modal_lora.py` takes `--config` (the dataset config; default `rea_sft`, phase A's) and `--tag` (the output name). The output directory on the volume and the result files are named by `run_tag`: **`full` (or `smoke`) for the default config with no `--tag`, exactly as before; any other config or tag has a name of its own, and `full` / `smoke` are refused for them**, so a run on a reasoning file can never overwrite phase A's `/out/full`:

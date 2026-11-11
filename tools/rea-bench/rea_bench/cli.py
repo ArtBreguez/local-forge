@@ -23,7 +23,7 @@ import pathlib
 import re
 import sys
 
-from . import dedupe, families
+from . import dedupe, families, kaggle_score
 from . import core
 from .core import write_tasks
 
@@ -243,5 +243,8 @@ def main(argv=None) -> None:
     st.add_argument("--n", type=int, default=3000, help="tasks PER FAMILY")
     st.add_argument("--seed", type=int, default=7)
     st.set_defaults(fn=cmd_stats)
+    ks = sub.add_parser("kaggle-score", help="SFT records and stats from the replies.jsonl of a Kaggle sampling run (teacher-reasoning mode, no Modal)")
+    kaggle_score.add_arguments(ks)
+    ks.set_defaults(fn=kaggle_score.run)
     a = ap.parse_args(argv)
     a.fn(a)
