@@ -83,9 +83,9 @@ class SampleSelection(unittest.TestCase):
         self.assertEqual(len(kept), 1)
 
 
-class ResumeAsksFailedRequestsAgain(ModalCase):
-    """Round 4, M3: `--resume` is the remedy the failure warning prints, so it must ask again the samples that failed, and only those. The real body
-    of `sample_answers` runs against a scripted fake llama-server (urlopen) and a temporary stand-in for the /data volume."""
+class StubbedSampleStage(ModalCase):
+    """The real body of `sample_answers` against a scripted fake llama-server (urlopen) and a temporary stand-in for the /data volume (no test of its own: the
+    classes below use it, tests/test_rea_round8.py too). `self.requests` holds (task id, sample index), `self.bodies` the JSON body of every request."""
 
     def setUp(self):
         import urllib.error
@@ -102,7 +102,7 @@ class ResumeAsksFailedRequestsAgain(ModalCase):
             self.tasks[t.id] = m
             (src / f"{t.id}.json").write_text(json.dumps(m))
         self.root, self.k = root, 3
-        self.requests, self.lock = [], __import__("threading").Lock()
+        self.requests, self.bodies, self.lock = [], [], __import__("threading").Lock()
         self.fail = lambda tid, i: False
         real = pathlib.Path
         shim = types.SimpleNamespace(Path=lambda p, *a: real(str(self.root / "data" / str(p)[len("/data/"):]) if str(p).startswith("/data/") else p, *a))
@@ -130,6 +130,7 @@ class ResumeAsksFailedRequestsAgain(ModalCase):
             i = body["seed"] - 1234
             with self.lock:
                 self.requests.append((tid, i))
+                self.bodies.append(body)
             if self.fail(tid, i):
                 raise urllib.error.URLError("connection refused")
             return Resp(json.dumps({"choices": [{"message": {"content": right(self.tasks[tid])}}]}).encode())
@@ -143,10 +144,15 @@ class ResumeAsksFailedRequestsAgain(ModalCase):
 
     def run_stage(self, resume):
         self.requests.clear()
+        self.bodies.clear()
         with contextlib.redirect_stdout(io.StringIO()) as printed:
             res = self.data.sample_answers("m", "repo", "f.gguf", self.k, self.tag, resume=resume)
         self.printed = printed.getvalue()
         return res
+
+
+class ResumeAsksFailedRequestsAgain(StubbedSampleStage):
+    """Round 4, M3: `--resume` is the remedy the failure warning prints, so it must ask again the samples that failed, and only those."""
 
     def test_a_dead_server_then_a_live_one_resume_asks_every_failed_request_again(self):
         n = len(self.tasks)

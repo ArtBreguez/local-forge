@@ -38,6 +38,18 @@ vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 hf_secret = modal.Secret.from_name("hf-write")
 app = modal.App("lf-lora")
 
+MAX_LEN = 2048          # tokens of prompt + answer + EOS that one training example may have
+
+
+def encode_ids(p_ids: list, f_ids: list, max_len: int = MAX_LEN):
+    """The training example for one SFT pair, or None when it must not be trained on. `p_ids`: the prompt (system + user + generation prompt), `f_ids`: the prompt,
+    the answer and the EOS token. Only the answer is trained (labels -100 on the prompt). A pair longer than `max_len` is DROPPED, never cut: a cut pair has no
+    EOS, so the model would be taught an answer that does not end, and a prompt that alone fills the window leaves nothing to learn from (round 8, m12: the
+    encoder used to slice `f_ids[:2048]` without a word, and the Ghidra pseudocode of a task is not bounded by anything in the generator)."""
+    if len(f_ids) > max_len or len(f_ids) <= len(p_ids):
+        return None
+    return {"input_ids": list(f_ids), "attention_mask": [1] * len(f_ids), "labels": [-100] * len(p_ids) + list(f_ids[len(p_ids):])}
+
 
 @app.function(image=train_image, gpu="A100-40GB", volumes={"/out": vol}, secrets=[hf_secret], timeout=4 * 3600)
 def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: int = 32) -> dict:
@@ -57,11 +69,16 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
         prompt = tok.apply_chat_template(msgs[:-1], tokenize=False, add_generation_prompt=True, enable_thinking=False)
         full = prompt + msgs[-1]["content"] + tok.eos_token
         p_ids = tok(prompt, add_special_tokens=False)["input_ids"]
-        f_ids = tok(full, add_special_tokens=False)["input_ids"][:2048]
-        labels = [-100] * min(len(p_ids), len(f_ids)) + f_ids[len(p_ids):]
-        return {"input_ids": f_ids, "attention_mask": [1] * len(f_ids), "labels": labels}
+        f_ids = tok(full, add_special_tokens=False)["input_ids"]
+        row = encode_ids(p_ids, f_ids)
+        return {**(row or {"input_ids": [], "attention_mask": [], "labels": []}), "keep": row is not None}
 
-    ds = ds.map(encode, remove_columns=ds.column_names)
+    n_in = len(ds)
+    ds = ds.map(encode, remove_columns=ds.column_names).filter(lambda ex: ex["keep"]).remove_columns(["keep"])
+    dropped = n_in - len(ds)
+    print(f"{n_in} SFT pairs, {dropped} dropped because prompt + answer is longer than {MAX_LEN} tokens (none is cut), {len(ds)} trained on")
+    if not len(ds):
+        raise SystemExit(f"every one of the {n_in} SFT pairs is longer than {MAX_LEN} tokens: nothing to train on")
     model = AutoModelForCausalLM.from_pretrained(BASE, torch_dtype=torch.bfloat16, device_map={"": 0})
     model.gradient_checkpointing_enable()
     model.enable_input_require_grads()
@@ -80,7 +97,7 @@ def train(smoke: bool = False, epochs: float = 2.0, lr: float = 1.5e-4, rank: in
     merged.save_pretrained(f"/out/{tag}/merged", safe_serialization=True); tok.save_pretrained(f"/out/{tag}/merged")
     vol.commit()
     log = [x for x in trainer.state.log_history if "loss" in x]
-    return {"tag": tag, "n": len(ds), "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
+    return {"tag": tag, "n": len(ds), "dropped_too_long": dropped, "max_len": MAX_LEN, "train_loss_first": log[0]["loss"] if log else None, "train_loss_last": log[-1]["loss"] if log else None,
             "steps": out.global_step, "wall_s": round(time.time() - t0), "trainable": str(cfg.target_modules)}
 
 
