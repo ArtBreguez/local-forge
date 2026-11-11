@@ -126,7 +126,12 @@ class RunConfigAtTheEntrypoint(ModalCase):
 
 class Kit(Same):
     def test_the_files_the_kaggle_kit_writes(self):
-        import build_tasks
+        # Load the REA wrapper by path: a bare `import build_tasks` resolves to whichever kaggle dir another test put first on sys.path
+        # (test_distill_core inserts distill/backends/kaggle, whose build() needs domain=).
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("rea_kaggle_build_tasks", ROOT / "tools" / "kaggle" / "build_tasks.py")
+        build_tasks = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(build_tasks)
         self.same("kit.json", fx.kit_artifacts(build_tasks))
 
 
