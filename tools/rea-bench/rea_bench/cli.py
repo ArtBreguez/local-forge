@@ -103,7 +103,7 @@ def cmd_check(a) -> None:
             problems += dups
         for t in tasks:
             problems += verify.check_task(t, ubsan, survive_check=gate is not None)
-        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if survive.gated(t))} with a fact, an object gate or a table checked at their own cc/opt" if gate else ""), flush=True)
+        print(f"  {nm}: {len(tasks)} tasks, {len(problems)} problems" + (f"; {sum(1 for t in tasks if t.cc and survive.gated(t))} with a fact, an object gate or a table checked at their own cc/opt" if gate else ""), flush=True)
         for pr in problems[:20]:
             print("    " + pr)
         bad += len(problems)
