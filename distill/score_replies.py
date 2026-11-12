@@ -38,7 +38,7 @@ import re
 import statistics
 import sys
 
-from . import config, outputs, records, traces as tr
+from . import config, outputs, records, teachers, traces as tr
 from .domain import mode_of
 from .traces import is_error_reply
 
@@ -108,6 +108,15 @@ def check_run_info(info, thinking: bool) -> None:
                          f"{'pass --thinking' if info['thinking'] else 'leave --thinking out'}")
 
 
+def check_teacher(info, model: str) -> None:
+    """SystemExit when the notebook's own record of the GGUF it asked (`model_repo` and `model_file` of run.json, when it has them) is a teacher whose text may not be stored: the rule of
+    `teachers.require_reasoning` where the kit is built, applied again where the replies become records (round 12, M2: a replies file does not say who wrote it, and `--model` is only a label).
+    The label is judged too: one that is a catalogue name must be the GGUF run.json names, and one that says gpt-oss or claude is refused. With both repo and file the GGUF must be a catalogue entry."""
+    if info and (info.get("model_repo") or info.get("model_file")):
+        repo, file = info.get("model_repo") or "", info.get("model_file") or ""
+        teachers.require_reasoning(model, repo, file, strict=bool(repo and file), why="kaggle-score")
+
+
 def projected_fit(kept: list, lengths: dict, windows: tuple) -> dict:
     """{"windows": {w: records that fit}, "records": teacher records, "measured": how many of them have a length, "basis"} for the teacher-reasoning records of `kept`. `lengths` maps (task id, record text)
     to the tokens of the reply that became the record: the server's prompt tokens (chat template, system + user, generation prompt) plus its completion tokens (reasoning, answer, end of turn). A record whose
@@ -158,6 +167,7 @@ def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX
     if max_traces < 1:
         raise SystemExit(f"--max-traces {max_traces}: at least 1 teacher record per kept task")
     check_run_info(run_info, thinking)
+    check_teacher(run_info, model)
     mode = mode_of(True, thinking)
     messages_for = lambda t: domain.messages(t, mode)
     tasks = domain.load_tasks(tasks_path)            # the order the sample stage reads them in, so the records come out in its order

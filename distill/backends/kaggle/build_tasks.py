@@ -172,6 +172,10 @@ def settings(a: argparse.Namespace, domain) -> dict:
     clash = [f for f in RUN_CONFIG_FLAGS if getattr(a, f) not in (None, "")]
     if clash:
         raise SystemExit(f"--run-config {a.run_config} sets the run: do not also give " + ", ".join("--" + f.replace("_", "-") for f in clash))
+    entry = teachers.find(cfg.teacher)            # the config names the teacher, and so its GGUF: another --model-repo / --model-file would carry a model the config never named (round 12, M2)
+    other = [flag for flag, given, own in (("--model-repo", a.model_repo, entry.repo), ("--model-file", a.model_file, entry.file)) if given not in (None, "", own)]
+    if other:
+        raise SystemExit(f"--run-config {a.run_config} sets the teacher: {cfg.teacher} is {entry.repo}/{entry.file}; do not also give another GGUF ({', '.join(other)}), leave them out or give the teacher's own")
     if not cfg.reasoning:
         raise SystemExit(f"--run-config {a.run_config} is a plain run (mode {cfg.mode!r}): the Kaggle kit asks a reasoning or thinking run")
     sampling = cfg.sampling or {}

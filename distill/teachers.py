@@ -68,14 +68,25 @@ def matching(name: str = "", repo: str = "", file: str = "") -> list:
 
 
 def require_reasoning(name: str = "", repo: str = "", file: str = "", strict: bool = False, why: str = "--reasoning / --thinking") -> None:
-    """SystemExit unless the teacher may have its text stored (`why` names what stores it). A catalogue entry that matches by name or by repo and file and lacks `reasoning_ok` refuses. A model that is in
-    no entry is refused only with `strict` (the Kaggle kit, where `--model-repo` can name any GGUF: add it to distill/teachers.py, with its provenance, first); the Modal stage looks the name up before
-    it gets here, and its generic body, which other subjects call with their own names, refuses what the catalogue says is filter-only."""
+    """SystemExit unless the teacher may have its text stored (`why` names what stores it). It judges what was GIVEN as well as the catalogue entries it finds, because the name, the repo and the file can
+    disagree and a caller can pass any of them (round 12, M2: `--teacher qwen35-9b --model-repo unsloth/gpt-oss-120b-GGUF --model-file ...` used to pass on the name alone):
+      - `name` is an entry and `repo` and `file` are both given: they must be that entry's own GGUF, else "name and GGUF disagree" (a catalogue name that may store text does not carry another GGUF);
+      - an entry that matches by name or by repo and file and lacks `reasoning_ok` refuses, and so does one whose text names an OpenAI or Anthropic model (FILTER_ONLY_MARKERS);
+      - the text given (name, repo, file) is read for those markers too, so a GGUF that is in no entry but is called gpt-oss-... is refused, with a name or without one;
+      - a model that is in no entry is refused only with `strict` (the Kaggle kit, where `--model-repo` can name any GGUF: add it to distill/teachers.py, with its provenance, first); the Modal stage looks the
+        name up before it gets here, and its generic body, which other subjects call with their own names, refuses what the catalogue says is filter-only."""
+    named = [t for t in TEACHERS if name and t.name == name]
+    if named and repo and file and (named[0].repo, named[0].file) != (repo, file):
+        raise SystemExit(f"{why} stores the teacher's reply verbatim, and the name and the GGUF disagree: {name} is {named[0].repo}/{named[0].file}, not {repo}/{file}. Give the name alone, or add that GGUF to "
+                         f"distill/teachers.py under its own name, with `reasoning_ok` set by the rule (docs/TEACHER_CANDIDATES.md)")
     found = matching(name, repo, file)
     refused = [t for t in found if not t.reasoning_ok or marked_filter_only(t)]
-    if refused:
-        raise SystemExit(f"{why} stores the teacher's reply verbatim, and {', '.join(t.name for t in refused)} may only FILTER (default mode: its text is not stored): it is an OpenAI or Anthropic model or a distill of one "
-                         f"(`reasoning_ok` is False in distill/teachers.py; docs/TEACHER_CANDIDATES.md has the rule). Teachers that may: {[t.name for t in TEACHERS if t.reasoning_ok and not marked_filter_only(t)]}")
+    said = [m for m in FILTER_ONLY_MARKERS if m in f"{name} {repo} {file}".lower()]
+    if refused or said:
+        who = ", ".join(t.name for t in refused) or name or f"{repo}/{file}"
+        raise SystemExit(f"{why} stores the teacher's reply verbatim, and {who} may only FILTER (default mode: its text is not stored): it is an OpenAI or Anthropic model or a distill of one "
+                         f"(`reasoning_ok` is False in distill/teachers.py, or its name, repo or file says {', '.join(said) or 'so'}; docs/TEACHER_CANDIDATES.md has the rule). "
+                         f"Teachers that may: {[t.name for t in TEACHERS if t.reasoning_ok and not marked_filter_only(t)]}")
     if strict and not found:
         raise SystemExit(f"{why} stores the teacher's reply verbatim, and {name or repo + '/' + file} is in no entry of distill/teachers.py: add it there, and set `reasoning_ok` only when it was not trained by or "
                          f"distilled from an OpenAI or Anthropic model (docs/TEACHER_CANDIDATES.md)")

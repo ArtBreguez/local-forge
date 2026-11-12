@@ -5,10 +5,15 @@ teacher not trained by or distilled from an OpenAI or Anthropic model may be use
   Refusal      `teachers.require_reasoning`: by name, by repo and file, strict for the Kaggle kit
   ModalStage   the REA entrypoint and the generic sample stage refuse `--reasoning` / `--thinking`, and a default run is not touched
   KaggleKit    `build_tasks` refuses a teacher without it, and a GGUF that is in no entry
+  Bypasses     round 12, M2: a catalogue name that carries another GGUF (`--teacher` / `--run-config` with `--model-repo` / `--model-file`), a GGUF that says gpt-oss and is in no entry, the
+               generic sample stage, and `kaggle-score` reading the GGUF run.json names
   Docs         the rule in docs/TEACHER_CANDIDATES.md, distill/teachers.py, distill/README.md, and the open question about CodeForge
 """
 from __future__ import annotations
 
+import contextlib
+import io
+import json
 import pathlib
 import sys
 import tempfile
@@ -16,12 +21,17 @@ import unittest
 from unittest import mock
 
 from .helpers import ROOT
+from .test_rea_kaggle import stamp, write_replies, write_tasks
+from .test_rea_kaggle_kit import make_tasks
 from .test_rea_modal import ModalCase, StubbedSampleStage
-from .thinking_pilot import build_tasks
+from .test_rea_reasoning import reply
+from .thinking_pilot import build_tasks, run_teacher
 
 from distill import teachers  # noqa: E402
+from rea_bench import kaggle_score  # noqa: E402
 
 GPT_OSS = teachers.Teacher("gpt-oss-120b-derestricted", "ArliAI/gpt-oss-120b-Derestricted-GGUF", "gpt-oss-120b-Derestricted-Q4_K_M.gguf", "L40S", False)
+GPT_OSS_GGUF = ("unsloth/gpt-oss-120b-GGUF", "gpt-oss-120b-Q4_K_M.gguf")        # the review's: a GGUF that no entry of the catalogue has, and that says it is OpenAI's
 GPT4O = teachers.Teacher("llama33-70b-gpt4o-distill", "MuXodious/gpt-4o-distil-Llama-3.3-70B-Instruct-PaperWitch-heresy", "gpt-4o-distil.Q4_K_M.gguf", "L40S")
 
 
@@ -90,6 +100,82 @@ class Refusal(unittest.TestCase):
         self.assertEqual(teachers.matching("", q4.repo, ""), [], "a repo alone is not a GGUF")
 
 
+class Bypasses(unittest.TestCase):
+    """Round 12, M2: the gate judged only the catalogue entries it found, by name OR by repo and file, so a name that may store text carried any GGUF with it, and a GGUF that says gpt-oss but is in no entry
+    passed the Modal stage's generic body. One test per way the review found; each is refused with the catalogue as it ships (no entry added for the occasion)."""
+
+    def test_a_catalogue_name_does_not_carry_another_gguf(self):
+        for name in ("qwen35-9b", "codeforge-27b-heretic-q4"):
+            for strict in (True, False):
+                with self.assertRaisesRegex(SystemExit, "name and the GGUF disagree"):
+                    teachers.require_reasoning(name, *GPT_OSS_GGUF, strict=strict)
+        other = teachers.find("qwen35-27b")
+        with self.assertRaisesRegex(SystemExit, "name and the GGUF disagree.*qwen35-9b is "):
+            teachers.require_reasoning("qwen35-9b", other.repo, other.file, strict=True)       # another entry that may store text is still not this name's GGUF
+        own = teachers.find("qwen35-9b")
+        teachers.require_reasoning("qwen35-9b", own.repo, own.file, strict=True)                # its own GGUF, and the name alone, pass
+        teachers.require_reasoning("qwen35-9b", strict=True)
+        teachers.require_reasoning("a-name-no-entry-has", own.repo, own.file, strict=True)      # the same GGUF under another name is the same teacher (`matching`)
+
+    def test_the_text_given_is_read_for_the_markers_even_when_no_entry_has_it(self):
+        for kw in (dict(repo=GPT_OSS_GGUF[0], file=GPT_OSS_GGUF[1]), dict(name="m", repo=GPT_OSS_GGUF[0], file=GPT_OSS_GGUF[1]), dict(name="claude-distill-9b", repo="x/y", file="z.gguf"),
+                   dict(name="m", repo="x/y", file="Opus-9b.gguf"), dict(repo=GPT_OSS_GGUF[0])):
+            for strict in (True, False):
+                with self.assertRaisesRegex(SystemExit, "may only FILTER"):
+                    teachers.require_reasoning(strict=strict, **kw)
+        teachers.require_reasoning("m", "repo", "f.gguf")                       # the generic stage's own names in the tests: nothing says no
+
+    def test_the_kit_refuses_the_flags_the_review_used_and_writes_nothing(self):
+        with tempfile.TemporaryDirectory() as d:
+            d = pathlib.Path(d)
+            tasks = write_tasks(d, make_tasks((("crc", 2),)), "decompiled-seed9-all.jsonl")
+            thinking = str(ROOT / "distill" / "configs" / "rea-thinking.json")
+            base = ["--tasks", str(tasks), "--owner", "me"]
+            own = teachers.find("codeforge-27b-heretic-q4")
+            run = lambda out, *args: build_tasks.main([*base, "--out", str(d / out), *args])
+            for out, args, why in (
+                    ("a", ("--run-config", thinking, "--model-repo", GPT_OSS_GGUF[0], "--model-file", GPT_OSS_GGUF[1]), "do not also give another GGUF \\(--model-repo, --model-file\\)"),
+                    ("b", ("--run-config", thinking, "--model-file", GPT_OSS_GGUF[1]), "do not also give another GGUF \\(--model-file\\)"),
+                    ("c", ("--run-config", thinking, "--model-repo", teachers.find("qwen35-9b").repo), "do not also give another GGUF \\(--model-repo\\)"),
+                    ("d", ("--quota", "crc=1", "--teacher", "qwen35-9b", "--model-repo", GPT_OSS_GGUF[0], "--model-file", GPT_OSS_GGUF[1]), "name and the GGUF disagree"),
+                    ("e", ("--quota", "crc=1", "--teacher", "qwen35-9b", "--model-file", own.file), "name and the GGUF disagree"),
+                    ("f", ("--quota", "crc=1", "--model-repo", GPT_OSS_GGUF[0], "--model-file", GPT_OSS_GGUF[1]), "may only FILTER")):
+                with self.subTest(out), self.assertRaisesRegex(SystemExit, why):
+                    run(out, *args)
+                self.assertFalse((d / out).exists(), f"{out}: refused before anything was written")
+            with contextlib.redirect_stdout(io.StringIO()):
+                run("ok1", "--run-config", thinking)
+                run("ok2", "--run-config", thinking, "--model-repo", own.repo, "--model-file", own.file)          # the entry's own GGUF, given again: the same run
+                run("ok3", "--quota", "crc=1", "--teacher", "qwen35-9b", "--model-repo", teachers.find("qwen35-9b").repo)
+            for out, repo in (("ok1", own.repo), ("ok2", own.repo), ("ok3", teachers.find("qwen35-9b").repo)):
+                self.assertEqual(json.loads((d / out / "data" / "config.json").read_text())["model_repo"], repo)
+
+    def run_info(self, repo, file):
+        return {"thinking": True, "model_repo": repo, "model_file": file, "sampling": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}, "max_tokens": 4096}
+
+    def score(self, model, info):
+        with tempfile.TemporaryDirectory() as d:
+            tasks = make_tasks((("structs", 2),))
+            steps = ("The function reads a field at a fixed offset from the base.", "Following the loop gives the key material directly.")       # two distinct replies: the agreement rule keeps the task
+            lines = stamp([{"id": t["id"], "kind": t["kind"], "outs": [{"text": run_teacher.stored_text(reply(t, step), f"Reasoning {i} about {t['id']}: it reads the field.", True),
+                                                                     "finish": "stop", "tokens": 400, "prompt_tokens": 200, "secs": 1.0} for i, step in enumerate(steps)]} for t in tasks], tasks)
+            return kaggle_score.score(write_replies(d, lines), write_tasks(d, tasks, "decompiled-seed9-all.jsonl"), model, thinking=True, run_info=info)
+
+    def test_kaggle_score_reads_the_gguf_run_json_names_before_it_stores_the_replies(self):
+        default = (run_teacher.DEFAULTS["model_repo"], run_teacher.DEFAULTS["model_file"])
+        for model, info, why in (("codeforge-27b-heretic-q4", self.run_info(*GPT_OSS_GGUF), "name and the GGUF disagree"),          # the label says CodeForge, the run asked gpt-oss
+                                 ("m", self.run_info(*GPT_OSS_GGUF), "may only FILTER"),
+                                 ("qwen35-9b", self.run_info(*default), "name and the GGUF disagree"),                             # the label is another catalogue entry than the GGUF that ran
+                                 ("gpt-oss-120b", self.run_info(*default), "may only FILTER"),                                    # the label itself says OpenAI
+                                 ("m", self.run_info("someone/some-model-GGUF", "some-model.gguf"), "is in no entry of distill/teachers.py")):
+            with self.subTest(model=model, why=why), self.assertRaisesRegex(SystemExit, why):
+                self.score(model, info)
+        kept, stats = self.score("codeforge-27b-heretic-q4", self.run_info(*default))
+        self.assertTrue(kept and stats["run"]["model_repo"] == default[0], "the teacher of the catalogue, under its own name")
+        kept, stats = self.score("m", {k: v for k, v in self.run_info(*default).items() if k not in ("model_repo", "model_file")})
+        self.assertTrue(kept, "a run.json that does not say which GGUF ran (an older kernel) is not judged: there is nothing to judge")
+
+
 class ModalStage(StubbedSampleStage):
     """The generic body of the stage (`sample_answers`) with a teacher that is in the catalogue and may only filter; the other tests of the stage call it with the name "m", which is in no entry."""
 
@@ -103,6 +189,17 @@ class ModalStage(StubbedSampleStage):
             with self.assertRaisesRegex(SystemExit, "may only FILTER"):
                 self.stage(**kw)
             self.assertEqual(self.requests, [])
+
+    def test_the_stage_refuses_a_catalogue_name_with_another_gguf_and_a_gguf_that_says_gpt_oss_whatever_its_name(self):
+        """Round 12, M2: another subject calls the generic body with a catalogue name and any repo and file (and the kit's strictness does not apply here)."""
+        for name, why in (("qwen35-9b", "name and the GGUF disagree"), ("codeforge-27b-heretic-q4", "name and the GGUF disagree"), ("m", "may only FILTER"), ("", "may only FILTER")):
+            for kw in (dict(reasoning=True, max_len=4096), dict(reasoning=True, thinking=True, max_len=8192)):
+                with self.subTest(name=name), self.assertRaisesRegex(SystemExit, why):
+                    self.requests.clear()
+                    self.data.sample_answers(name, *GPT_OSS_GGUF, 2, self.tag, **kw)
+                self.assertEqual(self.requests, [])
+        self.run_stage(False)               # and a default run of any name and GGUF still filters
+        self.assertTrue(self.requests)
 
     def test_a_default_run_of_the_same_teacher_is_not_touched(self):
         with mock.patch.object(teachers, "TEACHERS", [*teachers.TEACHERS, GPT_OSS]):
@@ -200,6 +297,14 @@ class Docs(unittest.TestCase):
             self.assertNotIn("No output of an OpenAI or Anthropic model enters a dataset", text)
             self.assertNotIn("does not forbid it", text)
         self.assertNotIn("no output of an OpenAI or Anthropic model enters a dataset", (ROOT / "distill" / "backends" / "modal_sample.py").read_text())
+
+    def test_the_gate_is_described_where_the_rule_is(self):
+        text = (ROOT / "distill" / "README.md").read_text()
+        for part in ("judges what was GIVEN", "name and GGUF disagree", "`--run-config` refuses any `--model-repo` / `--model-file`", "`kaggle-score` reads the GGUF that run.json names"):
+            self.assertIn(part, text)
+        code = (ROOT / "distill" / "teachers.py").read_text()
+        for part in ('name and the GGUF disagree', "FILTER_ONLY_MARKERS", "the text given (name, repo, file) is read for those markers too"):
+            self.assertIn(part, code)
 
     def test_the_candidate_rows_that_are_openai_or_a_gpt4o_distill_say_filter_only(self):
         rows = [l for l in (ROOT / "docs" / "TEACHER_CANDIDATES.md").read_text().splitlines() if l.startswith("|") and ("gpt-oss" in l or "gpt-4o" in l)]
