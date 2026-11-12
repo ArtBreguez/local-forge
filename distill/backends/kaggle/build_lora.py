@@ -68,16 +68,17 @@ import lora_eval  # noqa: E402
 lora_eval.main()
 '''
 
-# What the estimate ASSUMES until a smoke run measures it (`--measured`). Nothing here has been measured on a T4.
+# What the estimate ASSUMES until a smoke run measures it (`--measured`). Nothing here has been measured on a T4; the two that matter most are the review's (PR 34, M3), not the first guesses.
 RATES = {
-    "train_tok_per_s_per_gpu": 220.0,       # QLoRA of a 9B on a T4: 6 x 9e9 FLOP per token (forward, recompute, backward) at ~12 TFLOP/s effective of the T4's 65 (fp16 tensor cores, 4-bit dequantization, no fused kernels)
-    "prefill_tok_per_s_per_gpu": 660.0,     # forward only: three times the training rate
-    "gen_step_s": 0.12,                     # one decode step of a batch of 8, HF generate on the 4-bit model (dominated by per-step overhead, so it grows little with the batch)
+    "train_tok_per_s_per_gpu": 150.0,       # QLoRA of a 9B on a T4: 100-180 tok/s expected. 6 x 9e9 FLOP per token at ~12 TFLOP/s of the T4's 65 is 220, but without flash-linear-attention the 24 linear-attention layers run a PyTorch fallback
+    "prefill_tok_per_s_per_gpu": 450.0,     # forward only: three times the training rate
+    "gen_step_s": 0.3,                      # one decode step of a batch of 8, HF generate on the 4-bit model: bitsandbytes' fused 4-bit gemv is for ONE token, a batch of 8 dequantizes and runs a GEMM (~34 GB of traffic per step, 0.14 s at the T4's ~250 GB/s), then the 248,320-logit head and sampling and HF's per-step Python: 0.2-0.3 s
     "setup_s": 1200.0,                      # pip install and the 18 GB download
     "load_s": 300.0,                        # one load + 4-bit quantization of the student (training and evaluation each load it)
     "export_s": 1800.0,                     # merge on the CPU, convert, quantize
-    "typical_gen_share": 0.75,              # the longest reply of a batch is rarely the budget
+    "typical_gen_share": 0.75,              # the longest reply of a batch is rarely the budget (the pilot cut every cipher reply off at 4096, so a batch of 8 usually has one that is)
 }
+DEADLINE_MARGIN_H = 0.25                    # what the kernel's deadline leaves of the quota that is left: the merge of the shards and run.json are written after the last batch
 MIN_FAMILY = 5                              # a family that the exclusion leaves with fewer held-out tasks than this is left out of the evaluation
 CHARS_PER_TOKEN = 3.0                       # no tokenizer on this machine: pseudocode and reasoning, ~3 characters per token (+-25%; the kernel counts the real tokens and prints them)
 
@@ -299,31 +300,42 @@ def plan(lengths: list, eval_prompts: list, *, epochs: float, gpus: int, global_
             "global_batch": global_batch, "k": k, "max_new_tokens": max_new_tokens, "eval_batch": eval_batch, "rates": rates}
 
 
-def smoke_plan(longest: int, *, gpus: int, steps: int, max_new_tokens: int, rates: dict) -> dict:
-    """The cost of a smoke run: the setup, two loads, `steps` steps of two of the longest records per process, one batch of two replies per process and arm of `max_new_tokens` tokens."""
+def smoke_plan(longest: int, *, gpus: int, steps: int, max_new_tokens: int, eval_batch: int, rates: dict) -> dict:
+    """The cost of a smoke run: the setup, two loads, `steps` steps of two of the longest records per process, one batch of `eval_batch` replies per process and arm of `max_new_tokens` tokens (a batch of the
+    size the full run uses, so that the `gen_step_s` it measures is the one the estimate needs)."""
     step_s = 2 * longest / rates["train_tok_per_s_per_gpu"]
     gen = 2 * (max_new_tokens * rates["gen_step_s"])
     total = rates["setup_s"] + 2 * rates["load_s"] + steps * step_s + gen
-    return {"smoke": True, "steps": steps, "step_s": round(step_s, 1), "total_upper_s": round(total), "total_typical_s": round(total), "gpus": gpus, "rates": rates}
+    return {"smoke": True, "steps": steps, "step_s": round(step_s, 1), "eval_batch": eval_batch, "total_upper_s": round(total), "total_typical_s": round(total), "gpus": gpus, "rates": rates}
 
 
 def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
-    """The lines the builder prints about a plan (`plan` or `smoke_plan`): what is assumed, what each stage costs, whether it fits `gpu_hours` (the quota that is left), and what the kernel does at the deadline."""
+    """The lines the builder prints about a plan (`plan` or `smoke_plan`): what is assumed, what each stage costs, whether it fits `gpu_hours` (the quota that is left when the kernel starts, with the smoke run
+    that has still to be run added: `p["smoke_s"]`), and what the kernel does at the deadline."""
     h = lambda s: f"{s / 3600:.1f} h"
     r = p["rates"]
     where = "assumed" if r == RATES else "assumed, with the numbers of --measured"
+    share = f"{100 * r['typical_gen_share']:.0f}%"
     out = []
     if p.get("smoke"):
-        out.append(f"smoke run: {p['steps']} steps of the longest records at {p['step_s']} s, two replies per process and arm; {h(p['total_upper_s'])} in all ({where}); it measures what the full estimate assumes")
+        out.append(f"smoke run: {p['steps']} steps of the longest records at {p['step_s']} s, one batch of {p['eval_batch']} replies per process and arm; {h(p['total_upper_s'])} in all ({where}); it measures what the full estimate assumes")
     else:
         out.append(f"training: {p['examples']} examples of ~{p['mean_tokens']} tokens (estimated), {p['steps_per_epoch']} steps per epoch, {p['steps_full']} steps for the epochs asked, {p['global_batch']} sequences per step on {p['gpus']} GPU(s): "
                    f"{p['step_s']} s per step at {r['train_tok_per_s_per_gpu']:.0f} tok/s per GPU ({where})")
-        out.append(f"          -> {p['steps']} steps = {p['epochs_effective']} epochs, {h(p['train_s'])}" + (f"; the training budget caps it (--max-steps {p['max_steps']} in the config)" if p["max_steps"] else "; the training budget does not bind"))
+        out.append(f"          -> {p['steps']} of the {p['steps_full']} steps = {p['epochs_effective']} epochs, {h(p['train_s'])}" + (f"; the training budget BINDS: --max-steps {p['max_steps']} in the config sizes the cosine schedule to these steps, "
+                   "and a step slower than assumed stops the clock before the schedule ends (a higher last learning rate): measure it with the smoke run and --measured" if p["max_steps"] else "; the training budget does not bind"))
         out.append(f"eval:     {p['eval_items_per_arm']} replies per arm (k={p['k']}), batches of {p['eval_batch']}, {p['eval_batches_per_process']} per process and arm, up to {p['max_new_tokens']} new tokens at {r['gen_step_s']} s per step ({where}): "
-                   f"{h(p['eval_upper_s'])} at most, ~{h(p['eval_typical_s'])} typically")
+                   f"{h(p['eval_upper_s'])} assuming every batch runs to the budget, ~{h(p['eval_typical_s'])} assuming {share} of it")
         out.append(f"overhead: {h(p['overhead_s'])} (pip install, download, two model loads)" + (f"; GGUF export {h(p['export_s'])}" if p["export_s"] else ""))
-    fits = p["total_upper_s"] <= gpu_hours * 3600
-    out.append(f"total:    {h(p['total_upper_s'])} at most, ~{h(p['total_typical_s'])} typically, of the {gpu_hours:g} h of quota left: " + ("it fits" if fits else "IT DOES NOT FIT: lower --train-hours, --k, --per-family or --max-new-tokens"))
+        if p.get("smoke_s"):
+            out.append(f"smoke:    + {h(p['smoke_s'])} for the smoke run that comes first (README step 1), out of the same quota")
+        elif p.get("smoke_done"):
+            out.append("smoke:    the smoke run is done (--measured): --gpu-hours is the quota that is left after it")
+    extra = p.get("smoke_s", 0)
+    total, typical = p["total_upper_s"] + extra, p["total_typical_s"] + extra
+    fits = total <= gpu_hours * 3600
+    out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
+               + ("it fits" if fits else "IT DOES NOT FIT: lower --train-hours, --k, --per-family or --max-new-tokens"))
     out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_reserve_s'])} for the evaluation"))
     return out
 
@@ -355,7 +367,7 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
           gpu_hours: float = 8.0, export_gguf: bool = False, fla: bool = False, smoke: bool = False, measured=None, dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "",
           force: bool = False) -> dict:
     """Write the files described above under `out`; returns the config. `train_tasks`: the training task files (ALL the tasks the records were made from). Refuses to overwrite a file that exists, unless `force`.
-    The settings that are None take `lora_eval.DEFAULTS`."""
+    The settings that are None take `lora_eval.DEFAULTS`. `gpu_hours` is the quota left when the kernel starts: the smoke run that has still to be run (no `measured`) is taken out of it for the deadline."""
     base = domain.name.replace("_", "-")
     owner, dataset_slug, kernel_slug = _slug("--owner", owner), _slug("--dataset-slug", dataset_slug or f"{base}-lora-data"), _slug("--kernel-slug", kernel_slug or f"{base}-lora-eval")
     if resume_from and not OWNER_KERNEL.fullmatch(resume_from):
@@ -374,16 +386,22 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
     d = lora_eval.DEFAULTS
     given = {"student": student or d["student"], "max_len": max_len, "rank": rank or d["rank"], "epochs": epochs or d["epochs"], "lr": lr or d["lr"], "global_batch": global_batch or d["global_batch"], "mix": mix,
              "gpus": gpus or d["gpus"], "k": k, "max_new_tokens": max_new_tokens or d["max_new_tokens"], "eval_batch": eval_batch or d["eval_batch"], "train_hours": train_hours or d["train_hours"],
-             "deadline_h": deadline_h or d["deadline_h"], "export_gguf": export_gguf, "fla": fla}
+             "export_gguf": export_gguf, "fla": fla}
     lengths = trainable_lengths(rows, given["max_len"], mix)
     if not lengths:
         raise SystemExit(f"every thinking record is over --max-len {given['max_len']} tokens (estimated): nothing to train on")
     rates = rates_from(measured) if measured else RATES
     prompts = [est_tokens({"messages": domain.messages(t, "thinking")}) for t in eval_tasks]
-    p = plan(lengths, prompts, epochs=given["epochs"], gpus=given["gpus"], global_batch=given["global_batch"], train_hours=given["train_hours"], k=k, max_new_tokens=given["max_new_tokens"],
-             eval_batch=given["eval_batch"], export=export_gguf, rates=rates)
-    if smoke:
-        p = smoke_plan(max(lengths), gpus=given["gpus"], steps=d["smoke_steps"], max_new_tokens=256, rates=rates)
+    smoke_kw = dict(gpus=given["gpus"], steps=d["smoke_steps"], max_new_tokens=d["smoke_new_tokens"], eval_batch=given["eval_batch"], rates=rates)
+    p = smoke_plan(max(lengths), **smoke_kw) if smoke else plan(lengths, prompts, epochs=given["epochs"], gpus=given["gpus"], global_batch=given["global_batch"], train_hours=given["train_hours"], k=k,
+                                                                   max_new_tokens=given["max_new_tokens"], eval_batch=given["eval_batch"], export=export_gguf, rates=rates)
+    if not smoke:
+        p = {**p, "smoke_s": 0 if measured else smoke_plan(max(lengths), **smoke_kw)["total_upper_s"], "smoke_done": bool(measured)}
+    limit_h = gpu_hours - p.get("smoke_s", 0) / 3600 - DEADLINE_MARGIN_H          # the quota is spent by the smoke run that comes first, and the kernel needs a margin to write its last files
+    if limit_h <= 0 or (deadline_h is not None and deadline_h > limit_h):
+        raise SystemExit(f"--gpu-hours {gpu_hours:g}: the kernel's deadline can be at most {max(limit_h, 0):.2f} h (the quota left, less {p.get('smoke_s', 0) / 3600:.1f} h for the smoke run that is still to come, less {DEADLINE_MARGIN_H} h)"
+                         + ("" if deadline_h is None else f", and --deadline-h is {deadline_h:g}"))
+    given["deadline_h"] = deadline_h or min(d["deadline_h"], math.floor(limit_h * 100) / 100)          # never later than the limit, in hundredths of an hour
     facts = {**facts, "files": [pathlib.Path(sft_path).name], "sha256": hashlib.sha256(pathlib.Path(sft_path).read_bytes()).hexdigest()[:16], "est_examples": len(lengths)}
     cfg = make_config(facts=facts, eval_tasks=eval_tasks, heldout_files=heldout_files, excluded=excluded, p=p, smoke=smoke, **given)
     for path in paths.values():
@@ -424,11 +442,11 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--max-new-tokens", type=int, default=None, help=f"reply budget of the evaluation, reasoning included (default {d['max_new_tokens']}); a reply cut off at it is counted")
     ap.add_argument("--eval-batch", type=int, default=None, help=f"replies generated together on one GPU (default {d['eval_batch']})")
     ap.add_argument("--train-hours", type=float, default=None, help=f"stop training after this many hours (default {d['train_hours']}); the number of steps is capped to fit it")
-    ap.add_argument("--deadline-h", type=float, default=None, help=f"hours after the start at which the kernel starts nothing (default {d['deadline_h']}: the weekly quota, not the 12 h session, is the limit)")
-    ap.add_argument("--gpu-hours", type=float, default=8.0, help="GPU hours of quota left, what the estimate is judged against (default %(default)s)")
+    ap.add_argument("--deadline-h", type=float, default=None, help=f"hours after the start at which the kernel starts nothing (default min({d['deadline_h']}, --gpu-hours less the smoke run still to come less {DEADLINE_MARGIN_H} h): the weekly quota, not the 12 h session, is the limit)")
+    ap.add_argument("--gpu-hours", type=float, default=8.0, help="GPU hours of quota left when the kernel starts, what the estimate and the deadline are judged against (default %(default)s). Without --measured the smoke run that comes first is taken out of it; with --measured it has been run, so give what is left after it")
     ap.add_argument("--export-gguf", action="store_true", help="also merge the adapter into fp16 weights and write a Q4_K_M GGUF to /kaggle/working/gguf (about 5.6 GB; not what was evaluated; not tried on Kaggle)")
     ap.add_argument("--fla", action="store_true", help="install flash-linear-attention in the kernel (fast kernels for the student's linear-attention layers; not tried on a T4)")
-    ap.add_argument("--smoke", action="store_true", help="build the SMOKE run: 4 steps on the longest records and two replies per process, files named smoke-*; it measures the step time, the generation speed and the peak memory")
+    ap.add_argument("--smoke", action="store_true", help="build the SMOKE run: 4 steps on the longest records and one batch of 8 replies per process, files named smoke-*; it measures the step time, the generation speed (at the full run's batch) and the peak memory")
     ap.add_argument("--measured", type=pathlib.Path, default=None, help="the run.json of a smoke run: its measured step time and generation speed replace the assumed ones in the estimate")
     ap.add_argument("--dataset-slug", default=None, help="default <domain>-lora-data")
     ap.add_argument("--kernel-slug", default=None, help="default <domain>-lora-eval")

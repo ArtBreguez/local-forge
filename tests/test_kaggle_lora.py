@@ -145,7 +145,7 @@ class Builder(Kit):
             build_lora.main(["--domain", "example_arith", "--sft", str(self.sft), "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), "--owner", "someone", "--out", str(self.dir / "cli"),
                              "--per-family", "3", "--min-family", "1"])
         text = buf.getvalue()
-        for needle in ("60 training records", "9 held-out tasks", "excluded from the evaluation: 2 of 12", "training:", "eval:", "overhead:", "total:", "it fits", "kaggle datasets create", "kaggle kernels push", "GPU T4 x2"):
+        for needle in ("60 training records", "9 held-out tasks", "excluded from the evaluation: 2 of 12", "training:", "eval:", "overhead:", "smoke:", "total:", "it fits", "kaggle datasets create", "kaggle kernels push", "GPU T4 x2"):
             self.assertIn(needle, text)
 
     def test_a_smoke_build_is_marked_and_measures_instead_of_capping(self):
@@ -223,14 +223,21 @@ class Estimate(unittest.TestCase):
     def plan(self, n=1200, tokens=3000, prompts=70, **kw):
         return build_lora.plan([tokens] * n, [2000] * prompts, **{**self.PLAN, **kw})
 
+    def smoke(self, **kw):
+        return build_lora.smoke_plan(4000, **{"gpus": 2, "steps": 4, "max_new_tokens": 256, "eval_batch": 8, "rates": self.R, **kw})
+
+    def test_the_assumed_rates_are_the_reviewers_not_the_first_guesses(self):
+        self.assertEqual((self.R["gen_step_s"], self.R["train_tok_per_s_per_gpu"]), (0.3, 150.0), "PR 34 review, M3: a batch of 8 dequantizes and runs a GEMM; no flash-linear-attention")
+        self.assertEqual(self.R["prefill_tok_per_s_per_gpu"], 3 * self.R["train_tok_per_s_per_gpu"], "forward only: three times the training rate")
+
     def test_the_training_budget_caps_the_steps(self):
         p = self.plan()
-        step_s = 16 * 3000 / (2 * 220)
+        step_s = 16 * 3000 / (2 * self.R["train_tok_per_s_per_gpu"])
         self.assertEqual((p["steps_per_epoch"], p["steps_full"]), (75, 150))
         self.assertAlmostEqual(p["step_s"], step_s, delta=0.1)
         self.assertEqual((p["steps"], p["max_steps"]), (int(10800 // step_s), int(10800 // step_s)))
         self.assertLessEqual(p["train_s"], 3 * 3600)
-        self.assertLess(p["epochs_effective"], 2.0)
+        self.assertLess(p["epochs_effective"], 1.0, "150 tok/s: 3 h buys less than one epoch of 1,200 records of 3,000 tokens")
 
     def test_a_small_set_is_trained_for_every_epoch_and_the_budget_does_not_bind(self):
         p = self.plan(n=300, tokens=1500)
@@ -240,15 +247,17 @@ class Estimate(unittest.TestCase):
     def test_the_evaluation_is_batches_of_the_budget_upper_bound(self):
         p = self.plan()
         self.assertEqual((p["eval_items_per_arm"], p["eval_batches_per_process"]), (70, 5))
-        batch = 8 * 2000 / 660 + 4096 * 0.12
+        batch = 8 * 2000 / self.R["prefill_tok_per_s_per_gpu"] + 4096 * self.R["gen_step_s"]
         self.assertAlmostEqual(p["eval_upper_s"], 2 * 5 * batch, delta=2)
         self.assertLess(p["eval_typical_s"], p["eval_upper_s"])
         self.assertGreater(self.plan(k=2)["eval_upper_s"], 1.9 * p["eval_upper_s"] - 2 * batch * 2)
 
-    def test_the_default_sizes_fit_three_hours_of_training_and_the_quota_that_is_left(self):
+    def test_the_default_sizes_come_to_the_reviewers_seven_hours_with_the_smoke_run(self):
         p = self.plan()
         self.assertLessEqual(p["train_s"], 3 * 3600)
-        self.assertLess(p["total_upper_s"], 8 * 3600, "the assumed figures: ~5 h of the 8 h")
+        self.assertGreater(p["eval_upper_s"], 3 * 3600, "PR 34 review: 2.3-3.4 h of evaluation, not 1.4 h")
+        self.assertTrue(6 * 3600 < p["total_upper_s"] < 7.5 * 3600, p["total_upper_s"] / 3600)
+        self.assertTrue(6.5 * 3600 < p["total_upper_s"] + self.smoke()["total_upper_s"] < 8 * 3600, "about 7 h of the 8 h with the smoke run")
         self.assertEqual(p["overhead_s"], round(self.R["setup_s"] + 2 * self.R["load_s"]))
         self.assertEqual(p["eval_reserve_s"], round(p["eval_upper_s"] + self.R["load_s"]))
         self.assertGreater(self.plan(export=True)["total_upper_s"], p["total_upper_s"])
@@ -260,6 +269,31 @@ class Estimate(unittest.TestCase):
         self.assertIn("IT DOES NOT FIT", build_lora.describe(p, 2.0, 7.5)[-2])
         self.assertIn("starts nothing after 7.5 h", build_lora.describe(p, 8.0, 7.5)[-1])
         self.assertIn("assumed", build_lora.describe(p, 8.0, 7.5)[0])
+
+    def test_the_smoke_run_that_comes_first_is_added_to_the_plan_and_judged_with_it(self):
+        p = {**self.plan(), "smoke_s": self.smoke()["total_upper_s"], "smoke_done": False}
+        lines = build_lora.describe(p, 8.0, 7.0)
+        text = "\n".join(lines)
+        self.assertIn("smoke:    + 0.", text)
+        self.assertIn("smoke run included", lines[-2])
+        total = p["total_upper_s"] + p["smoke_s"]
+        self.assertIn(f"total:    {total / 3600:.1f} h", lines[-2])
+        self.assertIn("it fits", lines[-2])
+        self.assertNotIn("IT DOES NOT FIT", build_lora.describe(p, (total + 60) / 3600, 7.0)[-2])
+        self.assertIn("IT DOES NOT FIT", build_lora.describe(p, (total - 60) / 3600, 7.0)[-2], "the plan alone fits this quota: the smoke run's hours make it not")
+        self.assertIn("it fits", build_lora.describe({**p, "smoke_s": 0}, (total - 60) / 3600, 7.0)[-2])
+
+    def test_a_smoke_run_that_is_done_adds_nothing_and_says_so(self):
+        lines = build_lora.describe({**self.plan(), "smoke_s": 0, "smoke_done": True}, 7.3, 7.0)
+        self.assertIn("smoke run is done", "\n".join(lines))
+        self.assertNotIn("smoke run included", lines[-2])
+
+    def test_the_estimate_is_labelled_as_an_assumption_never_as_a_ceiling(self):
+        text = "\n".join(build_lora.describe({**self.plan(), "smoke_s": 600, "smoke_done": False}, 8.0, 7.0))
+        self.assertIn("assuming every batch", text)
+        self.assertNotIn("at most", text, "the upper figure is the typical cost when one reply of a batch of 8 runs to the budget")
+        self.assertNotIn("at most", "\n".join(build_lora.describe(self.smoke(), 8.0, 7.5)))
+        self.assertIn("BINDS", text, "the cap does bind at the default rates, and the plan says so")
 
     def test_a_measured_run_replaces_the_assumed_rates(self):
         with tempfile.TemporaryDirectory() as d:
@@ -285,10 +319,13 @@ class Estimate(unittest.TestCase):
         self.assertEqual(len(build_lora.trainable_lengths([short, truth], 4096, False)), 1)
         self.assertEqual(len(build_lora.trainable_lengths([short, truth], 4096, True)), 2)
 
-    def test_the_smoke_plan_is_a_short_run(self):
-        s = build_lora.smoke_plan(4000, gpus=2, steps=4, max_new_tokens=256, rates=self.R)
+    def test_the_smoke_plan_is_a_short_run_that_asks_the_batch_the_full_run_uses(self):
+        s = self.smoke()
         self.assertLess(s["total_upper_s"], 1.5 * 3600)
+        self.assertEqual(s["eval_batch"], 8)
         self.assertIn("smoke run", build_lora.describe(s, 8.0, 7.5)[0])
+        self.assertIn("one batch of 8 replies per process and arm", build_lora.describe(s, 8.0, 7.5)[0])
+        self.assertEqual(lora_eval.DEFAULTS["smoke_new_tokens"], 256)
 
 
 class Training(unittest.TestCase):
@@ -843,6 +880,22 @@ class Docs(unittest.TestCase):
                        "FUN_", "truth-template record that has think text", "user message is an evaluation task's"):
             self.assertIn(needle, text, needle)
         self.assertRegex(text, r"(?s)build_lora overlap --train-tasks .*?--heldout", "the overlap command is shown with both its inputs")
+
+    def test_the_estimate_is_an_assumption_and_adds_the_smoke_run(self):
+        text = self.section()
+        self.assertNotIn("at most", text)
+        self.assertNotIn("4.9 h", text)
+        for needle in ("assuming", "0.3 s", "150 tok/s", "smoke run first", "7.6 of the 8 h", "IT DOES NOT FIT"):
+            self.assertIn(needle, text, needle)
+
+    def test_the_numbers_of_the_estimate_are_the_ones_the_builder_prints(self):
+        p = build_lora.plan([3000] * 1200, [2000] * 70, epochs=2.0, gpus=2, global_batch=16, train_hours=3.0, k=1, max_new_tokens=4096, eval_batch=8, export=False, rates=build_lora.RATES)
+        smoke = build_lora.smoke_plan(4000, gpus=2, steps=4, max_new_tokens=256, eval_batch=8, rates=build_lora.RATES)
+        h = lambda s: f"{s / 3600:.1f}"
+        text = self.section()
+        for needle in (f"{p['steps']} of the {p['steps_full']} steps asked: {p['epochs_effective']} epoch", f"| {h(p['eval_upper_s'])} assuming", f"{h(p['eval_typical_s'])} assuming 75%", f"**{h(p['total_upper_s'])}** assuming the budget",
+                       f"~{h(p['total_typical_s'])} at 75%", f"+ {h(smoke['total_upper_s'])}", f"**{h(p['total_upper_s'] + smoke['total_upper_s'])} of the 8 h**", f"{math.floor((8 - smoke['total_upper_s'] / 3600 - build_lora.DEADLINE_MARGIN_H) * 100) / 100:g} h"):
+            self.assertIn(needle, text, needle)
 
     def test_the_files_the_readme_names_exist(self):
         for name in re.findall(r"`((?:tests/|distill/)[\w./-]+\.py)`", self.section()):

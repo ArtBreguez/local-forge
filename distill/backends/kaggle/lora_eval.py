@@ -16,8 +16,8 @@ What it does, in order (`main`, no GPU library imported in this process):
      replies each, the tasks split between the processes; every batch is appended at once to `replies-base.r<rank>.jsonl` / `replies-lora.r<rank>.jsonl` in the line format of `run_teacher.py`, base and
      adapter for the same tasks next to each other, so a run stopped by the deadline holds paired answers. Resume asks only what is missing, failed or stale (`run_teacher.pending`);
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
-`--smoke` does all of it on a few of the longest records and two tasks (files are named `smoke-...`, so that it can never be taken for a result): it measures the step time, the generation speed and the peak
-memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
+`--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, so that it can never be taken for a result): it measures the
+step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
 Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
 """
 from __future__ import annotations
@@ -95,6 +95,7 @@ DEFAULTS = {
     "fla": False,                            # also install flash-linear-attention (fast kernels for the student's linear-attention layers; not tried on a T4)
     "smoke": False,
     "smoke_steps": 4,
+    "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
     "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
@@ -471,8 +472,8 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
         raise SystemExit("no finished adapter to evaluate (train.json with status done or partial)")
     tasks = [json.loads(line) for line in (data_dir / "eval_tasks.jsonl").read_text().splitlines() if line.strip()]
     if cfg["smoke"]:
-        cfg = {**cfg, "k": 1, "max_new_tokens": 256}
-        tasks = sorted(tasks, key=lambda t: -sum(len(m["content"]) for m in t["messages"]))[:world * 2]
+        cfg = {**cfg, "k": 1, "max_new_tokens": cfg["smoke_new_tokens"]}
+        tasks = sorted(tasks, key=lambda t: -sum(len(m["content"]) for m in t["messages"]))[:world * cfg["eval_batch"]]          # one full batch per process: `gen_step_s` is measured at the batch the run uses
     previous = {arm: run_teacher.load_previous(previous_files(arm, OUT, INPUT, prefix)) for arm in ARMS}
     items = assign(work_items(tasks, previous, cfg), rank, world)
     tok = AutoTokenizer.from_pretrained(str(STUDENT_DIR), padding_side="left")

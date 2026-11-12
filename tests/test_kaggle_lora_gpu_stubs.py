@@ -415,3 +415,12 @@ class EvalOnStubs(unittest.TestCase):
         self.run_eval(deadline=1000 + 200 + 200 + 1, clock=Clock())
         self.assertEqual(len(self.model.calls), 4, "the second batch is expected to end at 1400, before 1401")
 
+    def test_the_smoke_run_asks_one_full_batch_per_process_and_arm(self):
+        self.run_eval(n=12, smoke=True, eval_batch=8, k=3, max_new_tokens=4096, smoke_new_tokens=32)
+        self.assertEqual([c["adapter_on"] for c in self.model.calls], [False, True])
+        self.assertEqual([len(c["input_ids"]) for c in self.model.calls], [8, 8], "the batch the full run uses: the gen_step_s it measures is the estimate's")
+        self.assertEqual(self.model.calls[0]["kwargs"]["max_new_tokens"], 32)
+        self.assertEqual(sorted(p.name for p in self.out.glob("smoke-replies-*.jsonl")), ["smoke-replies-base.r0.jsonl", "smoke-replies-lora.r0.jsonl"], "never named like a result")
+        self.assertFalse(list(self.out.glob("replies-*")))
+        self.assertEqual(len(self.shard("base", "smoke-")), 8)
+

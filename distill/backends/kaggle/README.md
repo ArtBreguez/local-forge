@@ -78,7 +78,7 @@ python3 -m distill.backends.kaggle.build_lora overlap --train-tasks results/phas
     --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl
 ```
 
-1. Build the **smoke** run (4 steps on the longest records, two replies per process: ~0.7 h of quota) and look at the estimate it prints:
+1. Build the **smoke** run (4 steps on the longest records, one batch of 8 replies per process and arm: ~0.6 h of quota) and look at the estimate it prints:
 
 ```bash
 python3 -m distill.backends.kaggle.build_lora --domain rea --owner <kaggle-user> --out ~/work/kaggle-lora-smoke --smoke \
@@ -95,12 +95,12 @@ kaggle kernels status <kaggle-user>/rea-lora-eval
 kaggle kernels output <kaggle-user>/rea-lora-eval -p ~/work/kaggle-lora-smoke/out
 ```
 
-3. Read `out/run.json`: `measured` has the training speed per GPU, the step time, the generation step time and the **peak memory** of both workers. If the peak is above ~14.5 GiB lower `--max-len` (3072, 2048) or `--rank` before the real run. Then build the real run with what was measured (`--measured` replaces the assumed rates of the estimate):
+3. Read `out/run.json`: `measured` has the training speed per GPU, the step time, the generation step time (at a batch of 8, the one the full run uses) and the **peak memory** of both workers. If the peak is above ~14.5 GiB lower `--max-len` (3072, 2048) or `--rank` before the real run. Then build the real run with what was measured (`--measured` replaces the assumed rates of the estimate, and sizes `--max-steps` from the measured step time) and with `--gpu-hours` the quota **that is left after the smoke run** (its hours are out of it; the kernel's deadline is that, less 15 minutes, and never later than 7.5 h):
 
 ```bash
 python3 -m distill.backends.kaggle.build_lora --domain rea --owner <kaggle-user> --out ~/work/kaggle-lora \
     --sft results/phase6/rea-data/sft-<teacher>-<tag>-reasoning-think.jsonl --train-tasks results/phase6/rea-data/decompiled-seed7-all.jsonl \
-    --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl --measured ~/work/kaggle-lora-smoke/out/run.json \
+    --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl --measured ~/work/kaggle-lora-smoke/out/run.json --gpu-hours 7.3 \
     --per-family 10 --max-len 4096 --k 1 --train-hours 3
 ```
 
@@ -133,11 +133,22 @@ This is the strict reading. `rea_bench/dedupe.py` applies its answer rule only t
 | evaluation | **HF transformers**, not llama-server: the base arm is `model.disable_adapter()` on the very weights the adapter sits on, so one load, no GGUF conversion, and both arms see the same quantization. The prebuilt `arthurbreguez/llama-bin-t4` holds `llama-server` only (no `llama-quantize`, no convert script), the base GGUF of this student **failed to convert** in the Modal smoke run (`model-mtp.safetensors`), and two conversions + quantizations would cost ~40 min before the first reply. **Nothing here serves a GGUF, so that dataset is not attached.** Cost of the choice: the arms run on NF4, not on the Q4_K_M that `modal_lora` makes |
 | sampling | the thinking template (`enable_thinking`, the prompt ends in `<think>\n`), Qwen3's thinking settings (never greedy), `--k` replies per task and arm, `--max-new-tokens` 4096 (the pilot cut every cipher reply off at 4096: read the cut-off column), batches of 8, sorted by prompt length. `generate` seeds a batch, not a reply |
 | scoring | `score_lora.py`: `score_replies.reply_of` and `traces.verdict` (the code of `kaggle-score`; REA's `domain.verify` is `scoring.score_strict`, equal to rea-bench's held-out `score` for the generated families), a reply to another prompt refused. Per family and arm: accuracy with its 95% **Wilson** interval, wrong / no `Answer:` line / truncated / error, the share cut off at the budget, mean tokens; and the arms **paired** (only base, only adapter, exact sign test). Ten tasks per family give wide intervals: read the overall paired line first |
-| deadline | nothing is started after `--deadline-h` (7.5 h: the weekly quota, not the 12 h session, is the limit); training stops at `--train-hours` (3) or early enough to leave the evaluation's upper bound before the deadline; a generation batch is not started when 2 x the mean batch would pass it; replies are appended per batch and the adapter is checkpointed every 10 steps; a partial adapter (`status: partial`) is evaluated and said so |
+| deadline | nothing is started after `--deadline-h`: by default `min(7.5 h, --gpu-hours less the smoke run that is still to come less 0.25 h)` (the weekly quota, not the 12 h session, is the limit; the builder refuses a deadline past it); training stops at `--train-hours` (3) or early enough to leave the evaluation's upper bound before the deadline; a generation batch is not started when 2 x the mean batch would pass it (the first one always starts); replies are appended per batch and the adapter is checkpointed every 10 steps; a partial adapter (`status: partial`) is evaluated and said so, with the learning rate it stopped at (`lr_last` of `lr_peak`: the cosine is sized to `--max-steps`, so a clock that stops it earlier leaves a weaker, noisier adapter) |
 
 ### The estimate (assumed, not measured)
 
-`build_lora.py` prints it. With the defaults, 70 held-out tasks and ~1,200 thinking records of ~3,000 tokens it says: 220 tok/s per GPU (6 x 9e9 FLOP per token at ~12 TFLOP/s of the T4's 65) -> ~109 s per step -> the 3 h budget caps training at ~99 steps (~1.3 epochs); evaluation 70 replies per arm, 5 batches per process and arm, up to 4096 steps of 0.12 s -> 1.4 h at most (~1.1 h typically); setup 0.33 h and two model loads 0.17 h: **~4.9 h at most of the 8 h** (the rest is room for `--k 2`). Every one of these figures is an assumption until the smoke run measures it; if the verdict line says `IT DOES NOT FIT`, lower `--train-hours`, `--k`, `--per-family` or `--max-new-tokens`.
+`build_lora.py` prints it. With the defaults, 70 held-out tasks and ~1,200 thinking records of ~3,000 tokens it says (PR 34 review, M3: the first figures were optimistic):
+
+| stage | assumed | hours |
+|---|---|---|
+| training | 150 tok/s per GPU (100-180 expected: without flash-linear-attention the 24 linear-attention layers run a PyTorch fallback; 6 x 9e9 FLOP at ~12 TFLOP/s would be 220) -> 160 s per step -> the 3 h budget caps it at **67 of the 150 steps asked: 0.89 epoch** | 3.0 |
+| evaluation | 70 replies per arm, 5 batches of 8 per process and arm, 4096 decode steps of **0.3 s** (a batch of 8 takes bitsandbytes' dequantize-then-GEMM path, not its fused 4-bit gemv, which is for one token: ~34 GB of traffic per step, 0.14 s at the T4's ~250 GB/s before the head, the sampling over 248,320 logits and HF's per-step Python) | 3.5 assuming every batch runs to the budget (one reply in a batch of 8 usually does: the pilot cut every cipher reply off at 4096), 2.7 assuming 75% of it |
+| overhead | setup 0.33 h, two model loads 0.17 h | 0.5 |
+| **full run** | | **7.0** assuming the budget, ~6.1 at 75% |
+| **smoke run first** | the builder adds it (`--measured`: it is already run, and `--gpu-hours` is what is left) | + 0.6 |
+| **both** | | **7.6 of the 8 h** assuming the budget (~6.7 at 75%): the kernel's deadline is then 7.14 h |
+
+That is not a ceiling: the evaluation figure is the *typical* cost when a reply of every batch runs to the budget, and the training figure rests on one unmeasured rate. If the smoke run measures slower, the deadline guard cuts the evaluation short (longest prompts first, so the tail that is lost is the short-prompt tasks) and `--measured` shows it before the real run. If the verdict line says `IT DOES NOT FIT`, lower `--train-hours`, `--k`, `--per-family` or `--max-new-tokens`.
 
 ### Not tried, and what to read first
 
