@@ -180,6 +180,58 @@ class ChunkedLoss(unittest.TestCase):
 
 # ---- a tiny tokenizer, model and clock --------------------------------------------------------------------------------------------------------
 
+class TrainSummary(unittest.TestCase):
+    CFG = lora_eval.resolve_config({"config_sha": SHA, "lr": 1.5e-4})
+
+    def info(self, last, steps=100, **kw):
+        return lora_eval.train_info(self.CFG, last=last, start=0, steps=steps, counts={"think": 3}, examples=3, gb=16, world=2, losses=[1.5, 0.7], wall_s=3601.4, tokens=9000, step_secs=[100.0, 80.0], peak_gib=11.456, **kw)
+
+    def test_a_finished_schedule_is_done_and_ends_annealed(self):
+        i = self.info(100)
+        self.assertEqual((i["status"], i["deadline_hit"], i["steps_done"], i["steps_planned"]), ("done", False, 100, 100))
+        self.assertLess(i["lr_last"], 1e-7, "the cosine reached zero")
+        self.assertEqual(i["lr_peak"], 1.5e-4)
+
+    def test_a_run_the_clock_stopped_is_partial_and_says_where_the_learning_rate_was(self):
+        i = self.info(40)
+        self.assertEqual((i["status"], i["deadline_hit"]), ("partial", True))
+        self.assertEqual(i["lr_last"], lora_eval.lr_at(39, 100, 1.5e-4))
+        self.assertGreater(i["lr_last"] / i["lr_peak"], 0.5, "40 of 100 steps: the learning rate has hardly come down")
+
+    def test_it_carries_the_config_and_what_was_measured(self):
+        i = self.info(100)
+        self.assertEqual((i["config_sha"], i["tok_per_s_per_gpu"], i["step_s"], i["peak_gib"], i["wall_s"], i["loss_first"], i["loss_last"]), (SHA, 50.0, 90.0, 11.46, 3601, 1.5, 0.7))
+        self.assertEqual(lora_eval.find_adapter([self.write_adapter(i)], SHA).name, "adapter", "what it writes is what find_adapter asks for")
+
+    def write_adapter(self, info):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        d = pathlib.Path(self.tmp.name) / "adapter"
+        d.mkdir()
+        (d / "adapter_model.safetensors").write_text("x")
+        (d / "train.json").write_text(json.dumps(info))
+        return pathlib.Path(self.tmp.name)
+
+    def test_no_step_taken_has_no_learning_rate(self):
+        self.assertIsNone(self.info(0)["lr_last"])
+
+
+class Checkpoints(unittest.TestCase):
+    def test_a_checkpoint_is_written_complete_and_tells_its_config(self):
+        with tempfile.TemporaryDirectory() as d:
+            ckpt = pathlib.Path(d) / "ckpt"
+            torch = SimpleNamespace(save=lambda obj, path: pathlib.Path(path).write_text(json.dumps(obj)))
+            model = SimpleNamespace(save_pretrained=lambda path: (pathlib.Path(path).mkdir(parents=True), (pathlib.Path(path) / "adapter_model.safetensors").write_text("x")))
+            state = SimpleNamespace(state_dict=lambda: {"s": 1})
+            for step in (10, 20, 30):
+                lora_eval.save_checkpoint(torch, model, state, state, step, ckpt, SHA)
+            self.assertEqual(sorted(p.name for p in ckpt.iterdir()), ["step-20", "step-30"], "the two newest are kept, and nothing half written")
+            self.assertEqual(json.loads((ckpt / "step-30" / "DONE").read_text()), {"step": 30, "config_sha": SHA})
+            self.assertEqual(lora_eval.latest_checkpoint([pathlib.Path(d)], SHA), ckpt / "step-30")
+            with self.assertRaisesRegex(SystemExit, "written under config"):
+                lora_eval.latest_checkpoint([pathlib.Path(d)], "0" * 16)
+
+
 class Row(list):
     def sum(self):
         return sum(self)
@@ -327,7 +379,7 @@ class GenerateBatch(unittest.TestCase):
         self.assertEqual([o["text"] for o in base], [f"<think>\nthinking r{i}\n</think>\n\nAnswer: BASE" for i in (0, 1)])
         self.assertEqual([o["text"] for o in lora], [f"<think>\nthinking r{i}\n</think>\n\nAnswer: LORA" for i in (0, 1)])
         for out, (t, _) in zip(base, items):
-            self.assertEqual((out["finish"], out["tokens"], out["max_tokens"], out["prompt_sha"]), ("stop", 5, 64, run_teacher.prompt_sha(t["messages"])))
+            self.assertEqual((out["finish"], out["tokens"], out["max_tokens"], out["prompt_sha"], out["config_sha"]), ("stop", 5, 64, run_teacher.prompt_sha(t["messages"]), cfg["config_sha"]))
 
     def test_the_seed_follows_the_first_item_of_the_batch(self):
         for first, want in ((0, 1234), (3, 1237)):
@@ -335,6 +387,22 @@ class GenerateBatch(unittest.TestCase):
             self.assertEqual([c["seed"] for c in model.calls], [want, want])
         model, _, _, _, _ = self.run_arms([(task(0), 0)], seed_base=99)
         self.assertEqual([c["seed"] for c in model.calls], [99, 99])
+
+    def test_a_row_that_ends_at_a_token_the_model_stops_at_is_a_reply_not_a_cut_off(self):
+        torch, tok = GenTorch(), GenTok()
+        model, cfg = StubModel(torch, end=77, eos=[99, 77]), self.cfg()
+        outs, _ = lora_eval.generate_batch(torch, model, tok, [(task(0), 0)], "lora", cfg, lora_eval.eos_token_ids(tok, model), 0)
+        self.assertEqual((outs[0]["finish"], outs[0]["tokens"]), ("stop", 5))
+        outs, _ = lora_eval.generate_batch(torch, model, tok, [(task(0), 0)], "lora", cfg, {99}, 0)
+        self.assertEqual((outs[0]["finish"], outs[0]["tokens"]), ("length", 5), "without the model's own end token the same row would be counted as cut off at the budget")
+
+    def test_every_end_of_reply_token_is_one(self):
+        tok = GenTok()
+        for config_ids, want in ((None, {99}), (99, {99}), (77, {99, 77}), ([99, 77], {99, 77}), ((77, 5), {99, 77, 5}), ([], {99})):
+            self.assertEqual(lora_eval.eos_token_ids(tok, SimpleNamespace(generation_config=SimpleNamespace(eos_token_id=config_ids))), want, config_ids)
+        self.assertEqual(lora_eval.eos_token_ids(tok, SimpleNamespace()), {99}, "a model with no generation config")
+        self.assertEqual(lora_eval.eos_token_ids(tok, SimpleNamespace(generation_config=SimpleNamespace(eos_token_id=True))), {99}, "a bool is not a token id")
+
 
 class EvalOnStubs(unittest.TestCase):
     """`eval_worker` end to end: the files it reads and writes are real (in a temporary directory), the GPU libraries, the model and the clock are stand-ins."""
@@ -401,6 +469,7 @@ class EvalOnStubs(unittest.TestCase):
             self.assertTrue(all("Answer: BASE" in o["text"] for o in line["outs"]), line)
         for line in lora:
             self.assertTrue(all("Answer: LORA" in o["text"] for o in line["outs"]), line)
+            self.assertEqual([o["config_sha"] for o in line["outs"]], [SHA])
             self.assertEqual(line["prompt_sha"], run_teacher.prompt_sha(next(task(i)["messages"] for i in range(4) if task(i)["id"] == line["id"])))
 
     def test_the_deadline_stops_the_next_batch_when_the_mean_batch_would_pass_it(self):
@@ -424,3 +493,24 @@ class EvalOnStubs(unittest.TestCase):
         self.assertFalse(list(self.out.glob("replies-*")))
         self.assertEqual(len(self.shard("base", "smoke-")), 8)
 
+    def test_a_row_the_model_ended_at_its_own_end_token_is_not_counted_as_cut_off(self):
+        self.run_eval(n=2, end=77, eos=[99, 77])
+        self.assertEqual({o["finish"] for l in self.shard("lora") for o in l["outs"]}, {"stop"})
+        self.assertEqual({o["finish"] for l in self.shard("base") for o in l["outs"]}, {"stop"})
+
+    def test_an_adapter_of_another_config_is_refused_before_anything_is_asked(self):
+        write_jsonl(self.data / "eval_tasks.jsonl", [task(0)])
+        self.adapter(self.inp / "earlier", sha="ffffffffffffffff")
+        torch = GenTorch()
+        GenTok._current = GenTok()
+        cfg = lora_eval.resolve_config({"config_sha": SHA})
+        with contextlib.ExitStack() as stack, self.assertRaisesRegex(SystemExit, "trained under config 'ffffffffffffffff', this build is"):
+            stack.enter_context(mock.patch.dict(sys.modules, {"torch": torch, "transformers": SimpleNamespace(AutoTokenizer=GenTok)}))
+            stack.enter_context(mock.patch.dict(os.environ, {"LORA_DEADLINE": "1e12"}))
+            for name, value in (("OUT", self.out), ("INPUT", self.inp), ("dist_setup", lambda t: (0, 1, 0)), ("log", lambda *a: None)):
+                stack.enter_context(mock.patch.object(lora_eval, name, value))
+            lora_eval.eval_worker(cfg, self.data)
+
+
+if __name__ == "__main__":
+    unittest.main()

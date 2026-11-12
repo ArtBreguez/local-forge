@@ -18,11 +18,13 @@ What it does, in order (`main`, no GPU library imported in this process):
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
 `--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, so that it can never be taken for a result): it measures the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
+Resume is tied to `config_sha` (the training records and settings, `config_sha`): an attached adapter or checkpoint of another one is refused, and a reply of another one is asked again.
 Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
 """
 from __future__ import annotations
 
 import functools
+import hashlib
 import json
 import math
 import os
@@ -96,9 +98,11 @@ DEFAULTS = {
     "smoke": False,
     "smoke_steps": 4,
     "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
+    "config_sha": "",                        # the builder's: the training records and the training settings (`config_sha`); an adapter, a checkpoint or a reply of another one is refused or asked again
     "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
+TRAIN_KEYS = ("student", "max_len", "rank", "dropout", "epochs", "lr", "global_batch", "mix", "seed")          # the settings that make one adapter another (the time controls, max_steps and train_hours, do not)
 
 
 def log(*a):
@@ -117,6 +121,12 @@ def resolve_config(user: dict) -> dict:
     if cfg["epochs"] <= 0 or cfg["lr"] <= 0 or cfg["train_hours"] <= 0 or cfg["deadline_h"] <= 0:
         raise ValueError("epochs, lr, train_hours and deadline_h must be positive")
     return cfg
+
+
+def config_sha(train_sha: str, cfg: dict) -> str:
+    """What an adapter, a checkpoint and the replies of an adapter are tied to: the training records (`train_sha`, the sha of the SFT file the builder read) and the settings of `TRAIN_KEYS`. A resume that attaches
+    an output of another one (another --sft, --max-len, --rank, ...) would otherwise evaluate or continue the old adapter without a word."""
+    return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}], sort_keys=True).encode()).hexdigest()[:16]
 
 
 # ---- what training does with its steps (pure) -------------------------------------------------------------------------------------------------
@@ -169,6 +179,16 @@ def smoke_examples(examples: list, steps: int, global_batch: int) -> list:
     return sorted(examples, key=lambda e: -len(e["input_ids"]))[:steps * global_batch]
 
 
+def train_info(cfg: dict, *, last: int, start: int, steps: int, counts: dict, examples: int, gb: int, world: int, losses: list, wall_s: float, tokens: int, step_secs: list, peak_gib: float) -> dict:
+    """The adapter's `train.json`: `done` when the schedule's `steps` were all taken, else `partial` (the clock stopped it: `deadline_hit`, and the learning rate it stopped at, `lr_last` of `lr_peak`, which is
+    how far the cosine got), the `config_sha` that ties it to the records and settings it was trained with, and what was measured (`tok_per_s_per_gpu`, `step_s`, `peak_gib`)."""
+    done = last >= steps
+    return {"status": "done" if done else "partial", "steps_done": last, "steps_planned": steps, "resumed_from_step": start, "records": counts, "examples": examples, "global_batch": gb, "gpus": world,
+            "loss_first": losses[0] if losses else None, "loss_last": losses[-1] if losses else None, "wall_s": round(wall_s), "deadline_hit": not done, "config_sha": cfg["config_sha"], "lr_peak": cfg["lr"],
+            "lr_last": lr_at(last - 1, steps, cfg["lr"]) if last else None, "tok_per_s_per_gpu": round(tokens / max(sum(step_secs), 1e-9), 1), "step_s": round(sum(step_secs) / max(len(step_secs), 1), 1),
+            "peak_gib": round(peak_gib, 2)}
+
+
 def encode_records(tok, rows: list, max_len: int, mix: bool) -> tuple:
     """([training example], fate counts) of the SFT records, by `sft.encode_record` (the Modal trainer's code): a thinking file trains its thinking records, and its truth-template ones only with `mix`; a record
     over `max_len` is dropped, never cut. The examples are in the file's order; the shuffle is `step_indices`'."""
@@ -184,31 +204,46 @@ def encode_records(tok, rows: list, max_len: int, mix: bool) -> tuple:
 
 # ---- the checkpoints and the finished adapter (pure: files only) ------------------------------------------------------------------------------
 
-def find_adapter(roots) -> "pathlib.Path | None":
+def find_adapter(roots, config_sha: str = None) -> "pathlib.Path | None":
     """The finished adapter of an earlier session: a folder `adapter/` with `adapter_model.safetensors` and a `train.json` that says `done` or `partial`, under one of `roots` (this kernel's output first, then
-    attached outputs). Training is skipped when there is one. A smoke run's is `adapter-smoke` and never matches."""
+    attached outputs). Training is skipped when there is one. A smoke run's is `adapter-smoke` and never matches. With `config_sha`, an adapter whose train.json says another one (or none) is SystemExit: it was
+    trained on other records or with other settings than this build, and evaluating it under this build's name would be a wrong answer."""
     for root in roots:
         root = pathlib.Path(root)
         for marker in sorted(root.rglob("train.json")) if root.exists() else []:
             try:
-                status = json.loads(marker.read_text()).get("status")
+                info = json.loads(marker.read_text())
             except (OSError, json.JSONDecodeError):
                 continue
-            if marker.parent.name == "adapter" and (marker.parent / "adapter_model.safetensors").exists() and status in ("done", "partial"):
+            if marker.parent.name == "adapter" and (marker.parent / "adapter_model.safetensors").exists() and info.get("status") in ("done", "partial"):
+                if config_sha and info.get("config_sha") != config_sha:
+                    raise SystemExit(f"the adapter {marker.parent} was trained under config {info.get('config_sha')!r}, this build is {config_sha!r} (another --sft or training setting): build again with the same ones, or without --resume-from")
                 return marker.parent
     return None
 
 
-def latest_checkpoint(roots) -> "pathlib.Path | None":
-    """The newest COMPLETE checkpoint `ckpt/step-<n>/` (it has the `DONE` file, written last) under one of `roots`, None when there is none. A checkpoint a killed session left half written has no DONE."""
+def latest_checkpoint(roots, config_sha: str = None) -> "pathlib.Path | None":
+    """The newest COMPLETE checkpoint `ckpt/step-<n>/` (it has the `DONE` file, written last: `{"step", "config_sha"}`) under one of `roots`, None when there is none. A checkpoint a killed session left half written
+    has no DONE. With `config_sha`, a complete one of another config (or none) is SystemExit, as for `find_adapter`: it would be continued under settings it was not trained with."""
     best, best_step = None, -1
     for root in roots:
         root = pathlib.Path(root)
         for marker in root.rglob("DONE") if root.exists() else []:
             d = marker.parent
-            if d.parent.name == "ckpt" and d.name.startswith("step-") and d.name[5:].isdigit() and int(d.name[5:]) > best_step:
-                best, best_step = d, int(d.name[5:])
+            if d.parent.name == "ckpt" and d.name.startswith("step-") and d.name[5:].isdigit():
+                if config_sha and _done_sha(marker) != config_sha:
+                    raise SystemExit(f"the checkpoint {d} was written under config {_done_sha(marker)!r}, this build is {config_sha!r} (another --sft or training setting): build again with the same ones, or without --resume-from")
+                if int(d.name[5:]) > best_step:
+                    best, best_step = d, int(d.name[5:])
     return best
+
+
+def _done_sha(marker: pathlib.Path):
+    try:
+        data = json.loads(marker.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return data.get("config_sha") if isinstance(data, dict) else None
 
 
 # ---- what evaluation does (pure) --------------------------------------------------------------------------------------------------------------
@@ -229,12 +264,19 @@ def eval_cfg(cfg: dict) -> dict:
     return {"k": cfg["k"], "max_tokens": cfg["max_new_tokens"], "max_tokens_by_family": {}, "trust_unfingerprinted": False}
 
 
+def other_config(rec, sha: str, k: int) -> list:
+    """The sample indices below `k` of the line `rec` whose reply was written under another `config_sha` than `sha` (none when `sha` is empty: nothing to compare with). A reply with no `config_sha` is another one."""
+    if not sha or not rec:
+        return []
+    return [i for i, out in enumerate((rec.get("outs") or [])[:k]) if isinstance(out, dict) and out.get("config_sha") != sha]
+
+
 def work_items(tasks: list, previous: dict, cfg: dict) -> list:
     """[(task, sample index)] the evaluation still has to ask: for each task, every sample index that is missing, failed or stale in EITHER arm (`previous` = {arm: {id: line}}), so that the two arms stay
-    on the same samples. Sorted by prompt length (the batches pad less), longest first, ties by id."""
+    on the same samples. Stale includes a reply written under another `config_sha` than `cfg`'s (another adapter). Sorted by prompt length (the batches pad less), longest first, ties by id."""
     ec, items = eval_cfg(cfg), []
     for t in tasks:
-        todo = sorted({i for arm in ARMS for i in run_teacher.pending(ec, t, previous.get(arm, {}).get(t["id"]))})
+        todo = sorted({i for arm in ARMS for i in [*run_teacher.pending(ec, t, previous.get(arm, {}).get(t["id"])), *other_config(previous.get(arm, {}).get(t["id"]), cfg.get("config_sha"), cfg["k"])]})
         items += [(t, i) for i in todo]
     return sorted(items, key=lambda it: (-sum(len(m["content"]) for m in it[0]["messages"]), it[0]["id"], it[1]))
 
@@ -258,6 +300,15 @@ def split_generation(text: str) -> tuple:
         text = text[len("<think>"):]
     reasoning, sep, content = text.partition("</think>")
     return (reasoning.strip(), content.strip()) if sep else (text.strip(), "")
+
+
+def eos_token_ids(tok, model) -> set:
+    """Every token that ends a reply: the tokenizer's end of text, `<|im_end|>`, and the model's own `generation_config.eos_token_id` (an int or a list), which is what `generate` stops at: a row it stopped
+    at a token that is not in this set would be counted as cut off at the budget."""
+    ids = [tok.eos_token_id, tok.convert_tokens_to_ids("<|im_end|>")]
+    cfg_ids = getattr(getattr(model, "generation_config", None), "eos_token_id", None)
+    ids += cfg_ids if isinstance(cfg_ids, (list, tuple)) else [cfg_ids]
+    return {i for i in ids if isinstance(i, int) and not isinstance(i, bool)}
 
 
 def finish_and_tokens(ids: list, eos_ids) -> tuple:
@@ -343,13 +394,13 @@ def all_reduce_mean(torch, params, world: int) -> None:
         off += n
 
 
-def save_checkpoint(torch, model, opt, scaler, step: int, ckpt: pathlib.Path) -> None:
-    """`ckpt/step-<step>/` (adapter, optimizer, scaler) written to a `.tmp` folder and renamed, `DONE` last; the two newest are kept. Process 0 only."""
+def save_checkpoint(torch, model, opt, scaler, step: int, ckpt: pathlib.Path, sha: str = "") -> None:
+    """`ckpt/step-<step>/` (adapter, optimizer, scaler) written to a `.tmp` folder and renamed, `DONE` last (the step and the `config_sha` it was trained under); the two newest are kept. Process 0 only."""
     tmp, final = ckpt / f"step-{step}.tmp", ckpt / f"step-{step}"
     shutil.rmtree(tmp, ignore_errors=True)
     model.save_pretrained(str(tmp / "adapter"))
     torch.save({"opt": opt.state_dict(), "scaler": scaler.state_dict(), "step": step}, tmp / "state.pt")
-    (tmp / "DONE").write_text(str(step))
+    (tmp / "DONE").write_text(json.dumps({"step": step, "config_sha": sha}))
     shutil.rmtree(final, ignore_errors=True)
     os.replace(tmp, final)
     for old in sorted((d for d in ckpt.glob("step-*") if d.name[5:].isdigit()), key=lambda d: int(d.name[5:]))[:-2]:
@@ -373,7 +424,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     steps = cfg["smoke_steps"] if cfg["smoke"] else total_steps(len(examples), cfg["epochs"], gb, cfg["max_steps"])
     deadline = float(os.environ["LORA_TRAIN_DEADLINE"])
     ckpt = OUT / "ckpt"
-    resume = None if cfg["smoke"] else latest_checkpoint([OUT, INPUT])
+    resume = None if cfg["smoke"] else latest_checkpoint([OUT, INPUT], cfg["config_sha"])
     model = load_student(torch, cfg, local, adapter=resume / "adapter" if resume else None, train=True)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=cfg["lr"], weight_decay=0.0)
@@ -426,16 +477,14 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
         if rank == 0:
             log(f"step {last}/{steps} loss {step_loss:.4f} lr {lr_at(step, steps, cfg['lr']):.2e} {step_tokens / step_secs[-1]:.0f} tok/s (this process) peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB")
             if not cfg["smoke"] and last % cfg["save_every"] == 0 and last < steps:
-                save_checkpoint(torch, model, opt, scaler, last, ckpt)
+                save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["config_sha"])
         if world > 1:
             torch.distributed.barrier()
-    done = last >= steps
     if rank == 0:
         adapter = OUT / ("adapter-smoke" if cfg["smoke"] else "adapter")
         model.save_pretrained(str(adapter))
-        info = {"status": "done" if done else "partial", "steps_done": last, "steps_planned": steps, "resumed_from_step": start, "records": counts, "examples": len(examples), "global_batch": gb, "gpus": world,
-                "loss_first": losses[0] if losses else None, "loss_last": losses[-1] if losses else None, "wall_s": round(time.time() - t_run), "deadline_hit": not done,
-                "tok_per_s_per_gpu": round(tokens / max(sum(step_secs), 1e-9), 1), "step_s": round(sum(step_secs) / max(len(step_secs), 1), 1), "peak_gib": round(torch.cuda.max_memory_allocated() / 2**30, 2)}
+        info = train_info(cfg, last=last, start=start, steps=steps, counts=counts, examples=len(examples), gb=gb, world=world, losses=losses, wall_s=time.time() - t_run, tokens=tokens, step_secs=step_secs,
+                          peak_gib=torch.cuda.max_memory_allocated() / 2**30)
         (adapter / "train.json").write_text(json.dumps(info, indent=1))
         if not cfg["smoke"]:
             shutil.rmtree(ckpt, ignore_errors=True)
@@ -444,7 +493,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
 
 def generate_batch(torch, model, tok, items: list, arm: str, cfg: dict, eos_ids: set, local: int) -> tuple:
     """([reply], decode steps) for each (task, sample index) of `items` (one batch), by the thinking template and the config's sampling: [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha",
-    "max_tokens"}], the format of `run_teacher.ask_one`. `secs` is the whole batch's time. `arm` "base" runs with the adapter off, on the very weights the adapter sits on."""
+    "max_tokens", "config_sha"}], the format of `run_teacher.ask_one` and the adapter's `config_sha`. `secs` is the whole batch's time. `arm` "base" runs with the adapter off, on the very weights the adapter sits on."""
     import contextlib
     prompts = [tok.apply_chat_template(t["messages"], tokenize=False, add_generation_prompt=True, enable_thinking=True) for t, _ in items]
     enc = tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False).to(f"cuda:{local}")
@@ -458,7 +507,7 @@ def generate_batch(torch, model, tok, items: list, arm: str, cfg: dict, eos_ids:
         finish, tokens, ids = finish_and_tokens(row, eos_ids)
         reasoning, content = split_generation(tok.decode(ids, skip_special_tokens=False))
         outs.append({"text": run_teacher.stored_text(content, reasoning, True), "finish": finish, "tokens": tokens, "prompt_tokens": int(mask.sum()), "secs": secs,
-                     "prompt_sha": run_teacher.prompt_sha(t["messages"]), "max_tokens": cfg["max_new_tokens"]})
+                     "prompt_sha": run_teacher.prompt_sha(t["messages"]), "max_tokens": cfg["max_new_tokens"], "config_sha": cfg["config_sha"]})
     return outs, int(new.shape[1])
 
 
@@ -467,7 +516,7 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     from transformers import AutoTokenizer
     rank, world, local = dist_setup(torch)
     prefix = "smoke-" if cfg["smoke"] else ""
-    adapter = OUT / "adapter-smoke" if cfg["smoke"] else find_adapter([OUT, INPUT])
+    adapter = OUT / "adapter-smoke" if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
     if adapter is None:
         raise SystemExit("no finished adapter to evaluate (train.json with status done or partial)")
     tasks = [json.loads(line) for line in (data_dir / "eval_tasks.jsonl").read_text().splitlines() if line.strip()]
@@ -477,8 +526,8 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     previous = {arm: run_teacher.load_previous(previous_files(arm, OUT, INPUT, prefix)) for arm in ARMS}
     items = assign(work_items(tasks, previous, cfg), rank, world)
     tok = AutoTokenizer.from_pretrained(str(STUDENT_DIR), padding_side="left")
-    eos_ids = {i for i in (tok.eos_token_id, tok.convert_tokens_to_ids("<|im_end|>")) if isinstance(i, int)}
     model = load_student(torch, cfg, local, adapter=adapter).eval()
+    eos_ids = eos_token_ids(tok, model)
     deadline, mean_secs, done, gen_tokens, gen_secs, decode_steps = float(os.environ["LORA_DEADLINE"]), 0.0, 0, 0, 0.0, 0
     lines = {arm: {tid: dict(rec, outs=list(rec["outs"])) for tid, rec in previous[arm].items()} for arm in ARMS}
     log(f"eval (process {rank}): {len(items)} replies per arm to ask of {len(tasks)} tasks, batches of {cfg['eval_batch']}, up to {cfg['max_new_tokens']} new tokens")
@@ -579,13 +628,13 @@ def main() -> None:
     snapshot_download(cfg["student"], local_dir=str(STUDENT_DIR), allow_patterns=["*.json", "*.safetensors", "*.jinja", "*.txt", "tokenizer*"])
     log("student downloaded", cfg["student"])
     info = {"smoke": cfg["smoke"], "gpus": gpus, "started": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(T0)), "config": cfg}
-    existing = None if cfg["smoke"] else find_adapter([OUT, INPUT])
+    existing = None if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
     if existing is None:
         stop = train_deadline(time.time(), deadline, cfg["train_hours"], cfg["eval_reserve_s"])
         info["train_rc"] = run_worker("train", gpus, data_dir, {"LORA_TRAIN_DEADLINE": str(stop)})
     else:
         log(f"finished adapter found: {existing}: training skipped")
-    final = (OUT / "adapter-smoke") if cfg["smoke"] else find_adapter([OUT, INPUT])
+    final = (OUT / "adapter-smoke") if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
     if final is None or not (final / "train.json").exists():
         info["error"] = "training left no adapter"
     elif time.time() < deadline:

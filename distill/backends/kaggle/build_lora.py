@@ -11,7 +11,7 @@ kernel's files; and print what the run will cost. The kernel is `lora_eval.py`; 
 Writes under --out:
     data/train.jsonl             the SFT records, as given (checked: see below)
     data/eval_tasks.jsonl        {"id", "kind", "messages"} per held-out task: `domain.messages(task, "thinking")`, the prompt the training records have; nothing of the task's truth
-    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values) and what it was built from (record counts, teacher labels, the held-out tasks and the ones that were
+    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its `config_sha`) and what it was built from (record counts, teacher labels, the held-out tasks and the ones that were
                                  excluded and why, the estimate)
     data/lora_eval.py            the kernel's code (`run.py` below imports it; the GPU workers start it by path), data/run_teacher.py (reused by it)
     data/distill.<module>.py     the stdlib-only core it runs (`distill/sft.py`, the Modal trainer's code, and the three modules it needs); flat, because the Kaggle CLI skips the sub-folders of a dataset
@@ -350,7 +350,8 @@ def kernel_files() -> dict:
 
 
 def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict, p: dict, smoke: bool, **settings) -> dict:
-    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, and what it was built from, the held-out tasks that were excluded included."""
+    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its `config_sha` (what the adapter and the replies are tied to: the training records
+    and the training settings), and what it was built from, the held-out tasks that were excluded included."""
     cfg = {**{k: v for k, v in lora_eval.DEFAULTS.items() if k != "pins"}, **settings, "smoke": smoke}
     if not smoke:
         cfg.update(max_steps=p["max_steps"], eval_reserve_s=p["eval_reserve_s"], export_reserve_s=p["export_reserve_s"])
@@ -358,6 +359,7 @@ def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict,
         lora_eval.resolve_config(cfg)
     except ValueError as e:
         raise SystemExit(f"the run config is refused by the kernel: {e}")
+    cfg["config_sha"] = lora_eval.config_sha(facts["sha256"], cfg)
     return {**cfg, "built_from": {"train": facts, "eval": {"tasks": len(eval_tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in eval_tasks).items())),
                                                            "files": [pathlib.Path(f).name for f in heldout_files], "excluded": excluded}, "estimate": {k: v for k, v in p.items() if k != "rates"}, "rates": p["rates"]}}
 

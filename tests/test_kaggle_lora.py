@@ -505,6 +505,51 @@ class Resume(unittest.TestCase):
             self.assertNotIn(a[0]["id"], {t["id"] for t, _ in shares[1]})
         self.assertEqual(lora_eval.assign(items, 0, 1), items)
 
+    def test_an_attached_adapter_of_another_config_is_refused_and_one_of_this_config_is_used(self):
+        inp = self.root / "in"
+        d = inp / "earlier" / "adapter"
+        d.mkdir(parents=True)
+        (d / "adapter_model.safetensors").write_text("x")
+        (d / "train.json").write_text(json.dumps({"status": "done", "config_sha": "aaaa"}))
+        self.assertEqual(lora_eval.find_adapter([inp], "aaaa"), d)
+        self.assertEqual(lora_eval.find_adapter([inp]), d, "no sha asked: nothing compared")
+        self.assertEqual(lora_eval.find_adapter([inp], ""), d)
+        with self.assertRaisesRegex(SystemExit, "trained under config 'aaaa', this build is 'bbbb'"):
+            lora_eval.find_adapter([inp], "bbbb")
+        (d / "train.json").write_text(json.dumps({"status": "partial"}))
+        with self.assertRaisesRegex(SystemExit, "config None"):
+            lora_eval.find_adapter([inp], "bbbb")
+
+    def test_a_checkpoint_of_another_config_is_refused_and_one_of_this_config_is_resumed(self):
+        inp = self.root / "in"
+        for step, sha in ((10, "aaaa"), (20, "aaaa")):
+            d = inp / "ckpt" / f"step-{step}"
+            d.mkdir(parents=True)
+            (d / "DONE").write_text(json.dumps({"step": step, "config_sha": sha}))
+        self.assertEqual(lora_eval.latest_checkpoint([inp], "aaaa"), inp / "ckpt" / "step-20")
+        self.assertEqual(lora_eval.latest_checkpoint([inp]), inp / "ckpt" / "step-20", "no sha asked: nothing compared")
+        with self.assertRaisesRegex(SystemExit, "checkpoint .* written under config 'aaaa', this build is 'bbbb'"):
+            lora_eval.latest_checkpoint([inp], "bbbb")
+        (inp / "ckpt" / "step-20" / "DONE").write_text("20")          # a checkpoint of the first version of the kernel: its DONE holds the step only
+        with self.assertRaisesRegex(SystemExit, "written under config None"):
+            lora_eval.latest_checkpoint([inp], "aaaa")
+
+    def test_a_reply_of_another_config_is_asked_again_in_both_arms(self):
+        t0, t1, t2 = self.tasks[:3]
+        stamped = lambda t, sha: self.line(t, [{**self.out(t), **({"config_sha": sha} if sha else {})}])
+        prev = {"base": {t0["id"]: stamped(t0, "aaaa"), t1["id"]: stamped(t1, "aaaa"), t2["id"]: stamped(t2, "aaaa")},
+                "lora": {t0["id"]: stamped(t0, "aaaa"), t1["id"]: stamped(t1, "other"), t2["id"]: stamped(t2, None)}}
+        cfg = {**self.cfg, "config_sha": "aaaa"}
+        self.assertEqual(sorted(t["id"] for t, _ in lora_eval.work_items([t0, t1, t2], prev, cfg)), sorted([t1["id"], t2["id"]]), "another sha and no sha are another adapter's")
+        self.assertEqual(lora_eval.work_items([t0, t1, t2], prev, self.cfg), [], "a config with no sha compares nothing")
+        self.assertEqual(lora_eval.work_items([t0, t1, t2], prev, {**self.cfg, "config_sha": ""}), [])
+
+    def test_only_the_samples_the_run_asks_for_are_compared_to_the_config(self):
+        t = self.tasks[0]
+        prev = {"base": {t["id"]: self.line(t, [{**self.out(t), "config_sha": "aaaa"}, {**self.out(t), "config_sha": "old"}])}, "lora": {}}
+        items = lora_eval.work_items([t], {"base": prev["base"], "lora": {t["id"]: prev["base"][t["id"]]}}, {**self.cfg, "config_sha": "aaaa"})
+        self.assertEqual(items, [], "sample 1 is beyond k=1: not asked, not compared")
+
     def test_the_shards_and_the_attached_replies_become_one_file_and_the_last_line_wins(self):
         out, inp = self.root / "out", self.root / "in"
         (inp / "earlier").mkdir(parents=True)
@@ -681,6 +726,14 @@ class GpuGlue(unittest.TestCase):
         self.assertIn('add_generation_prompt=True', gen)
         self.assertIn("**cfg[\"sampling\"]", gen)
         self.assertEqual(self.body("eval_worker").count("load_student("), 1, "one model load for both arms")
+
+    def test_what_resumes_is_tied_to_the_builds_config_sha_and_train_json_is_the_summary(self):
+        train, main = self.body("train_worker"), self.body("main")
+        self.assertIn('latest_checkpoint([OUT, INPUT], cfg["config_sha"])', train, "a checkpoint of another config stops the kernel instead of being continued")
+        self.assertIn('save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["config_sha"])', train, "and a checkpoint says which config it was written under")
+        self.assertEqual(main.count('find_adapter([OUT, INPUT], cfg["config_sha"])'), 2, "training is skipped, and the evaluation run, only for an adapter of this config")
+        self.assertIn("train_info(cfg,", train)
+        self.assertEqual(self.body("eval_worker").count('find_adapter([OUT, INPUT], cfg["config_sha"])'), 1)
 
     def test_a_gpu_that_is_not_a_t4_stops_the_kernel_before_the_download(self):
         main = self.body("main")
@@ -896,6 +949,12 @@ class Docs(unittest.TestCase):
         for needle in (f"{p['steps']} of the {p['steps_full']} steps asked: {p['epochs_effective']} epoch", f"| {h(p['eval_upper_s'])} assuming", f"{h(p['eval_typical_s'])} assuming 75%", f"**{h(p['total_upper_s'])}** assuming the budget",
                        f"~{h(p['total_typical_s'])} at 75%", f"+ {h(smoke['total_upper_s'])}", f"**{h(p['total_upper_s'] + smoke['total_upper_s'])} of the 8 h**", f"{math.floor((8 - smoke['total_upper_s'] / 3600 - build_lora.DEADLINE_MARGIN_H) * 100) / 100:g} h"):
             self.assertIn(needle, text, needle)
+
+    def test_a_resume_is_spelled_out_with_the_dataset_version_and_what_it_is_tied_to(self):
+        text = self.section()
+        for needle in ("kaggle datasets version -p ~/work/kaggle-lora/data", "new version", "config_sha", "same `--sft`"):
+            self.assertIn(needle, text, needle)
+        self.assertLess(text.index("kaggle datasets version"), text.index("kaggle kernels push -p ~/work/kaggle-lora/kernel\n```\n\nThe new kernel"), "the dataset first, then the kernel")
 
     def test_the_files_the_readme_names_exist(self):
         for name in re.findall(r"`((?:tests/|distill/)[\w./-]+\.py)`", self.section()):

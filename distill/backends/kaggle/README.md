@@ -111,7 +111,14 @@ python3 -m distill.backends.kaggle.score_lora --domain rea --heldout results/pha
     --base ~/work/kaggle-lora/out/replies-base.jsonl --lora ~/work/kaggle-lora/out/replies-lora.jsonl --run-info ~/work/kaggle-lora/out/run.json --out ~/work/kaggle-lora/out/report.json
 ```
 
-A session that ends early (quota, crash, the deadline) is **resumed**, not restarted: build again with `--resume-from <kaggle-user>/rea-lora-eval --force` (same options), push, and the new kernel finds the newest complete `ckpt/step-N` or the finished adapter and the replies of the output it has attached, and asks only what is missing, failed or stale (`run_teacher.pending`, the teacher kernel's rule). `--export-gguf` (off) also merges the adapter into fp16 weights and writes `gguf/lora-Q4_K_M.gguf` (~5.6 GB, far under the 20 GB output limit) at the end, time permitting: **not tried**, and not what was evaluated (see below).
+A session that ends early (quota, crash, the deadline) is **resumed**, not restarted. Fetch its output (`kaggle kernels output ...`), then build again with `--resume-from <kaggle-user>/rea-lora-eval --force` and **the same `--sft`, `--train-tasks` and training settings** (`--max-len`, `--rank`, `--epochs`, `--lr`, `--global-batch`, `--mix`, `--student`), push the changed `data/` as a **new version** of the dataset (`kaggle datasets create` fails for a dataset that exists), and only then push the kernel:
+
+```bash
+kaggle datasets version -p ~/work/kaggle-lora/data -m "resume"
+kaggle kernels push -p ~/work/kaggle-lora/kernel
+```
+
+The new kernel finds the newest complete `ckpt/step-N` or the finished adapter and the replies of the output it has attached, and asks only what is missing, failed or stale (`run_teacher.pending`, the teacher kernel's rule). What it attaches is **tied to the build**: `lora-config.json` has a `config_sha` (the SFT file and the training settings), the adapter's `train.json`, the checkpoints and every reply carry it, a finished adapter or a checkpoint of another one stops the kernel (`SystemExit`, before the download is used) and a reply of another one is asked again. The evaluation subset is not part of it: a build with another `--per-family` or `--quota` keeps the replies of tasks it no longer asks, and `score_lora` scores every held-out task that has replies. `--export-gguf` (off) also merges the adapter into fp16 weights and writes `gguf/lora-Q4_K_M.gguf` (~5.6 GB, far under the 20 GB output limit) at the end, time permitting: **not tried**, and not what was evaluated (see below).
 
 ### What it checks before anything is written
 
