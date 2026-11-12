@@ -173,7 +173,8 @@ class RunConfig:
     """A run. `sampling` / `max_tokens` / `max_len` left out (None / 0) mean the default of the mode (`sampling_for`, `default_max_tokens`, `MAX_LEN`); `max_len` of a reasoning or thinking run has no default
     (the stage refuses it: a reasoning record is several times longer than a truth record, and what survives depends on the window). `mix` is a training choice: a thinking file's truth-template records are trained too.
     `max_tokens_by_family`: {family: tokens}, the reply budget of the tasks of a family whose reasoning does not fit `max_tokens` (the thinking pilot cut off every cipher reply at 4096); empty (the default): `max_tokens`
-    for every task. The names are the tasks' `kind`; a family no task of the run has changes nothing."""
+    for every task. The names are the tasks' `kind`; a family no task of the run has changes nothing. `trust_unfingerprinted`: a resume keeps the earlier replies that carry no fingerprint (a replies file or
+    checkpoint of an older kernel: the thinking pilot's) instead of asking them again; it is the owner's word that they were asked under this prompt and `max_tokens` (a reasoning or thinking run only)."""
     domain: str = "rea"
     teacher: str = DEFAULT_TEACHER
     student: str = DEFAULT_STUDENT
@@ -186,6 +187,7 @@ class RunConfig:
     mix: bool = False
     quota: str = ""
     max_tokens_by_family: dict = dataclasses.field(default_factory=dict)
+    trust_unfingerprinted: bool = False
 
     def __post_init__(self):
         if self.mode not in MODES:
@@ -200,6 +202,10 @@ class RunConfig:
         self.max_tokens_by_family = check_family_tokens(self.max_tokens_by_family)
         if self.max_tokens_by_family and not self.reasoning:
             raise SystemExit("run config: max_tokens_by_family is for a reasoning or thinking run (a plain run's reply is one short line)")
+        if not isinstance(self.trust_unfingerprinted, bool):
+            raise SystemExit(f"run config: trust_unfingerprinted {self.trust_unfingerprinted!r}: true or false")
+        if self.trust_unfingerprinted and not self.reasoning:
+            raise SystemExit("run config: trust_unfingerprinted is for a reasoning or thinking run (a plain run's checkpoint carries no fingerprint and needs none)")
 
     @property
     def reasoning(self) -> bool:
@@ -245,13 +251,14 @@ class RunConfig:
     def sample_kwargs(self) -> dict:
         """The keyword arguments of the sample stage (`modal_sample.sample_answers`) for this run."""
         return {"reasoning": self.reasoning, "thinking": self.thinking, "max_tokens": self.max_tokens, "max_len": self.max_len, "quota": self.quota, "max_traces": self.max_traces,
-                "sampling": self.sampling or None, **({"max_tokens_by_family": dict(self.max_tokens_by_family)} if self.max_tokens_by_family else {})}
+                "sampling": self.sampling or None, **({"max_tokens_by_family": dict(self.max_tokens_by_family)} if self.max_tokens_by_family else {}),
+                **({"trust_unfingerprinted": True} if self.trust_unfingerprinted else {})}
 
 
 # ---- a run config in place of flags -----------------------------------------------------------------------------------------------------------------
 
 FLAG_DEFAULTS = {"model": "", "k": 6, "reasoning": False, "thinking": False, "max_tokens": 0, "max_len": 0, "quota": "", "max_traces": DEFAULT_MAX_TRACES,
-                 "temperature": -1.0, "top_p": -1.0, "top_k": -1, "min_p": -1.0, "max_tokens_by_family": ""}      # the defaults of the sample stage's flags (a negative sampling value is "not given"); a test pins them to the wrapper's
+                 "temperature": -1.0, "top_p": -1.0, "top_k": -1, "min_p": -1.0, "max_tokens_by_family": "", "trust_unfingerprinted": False}      # the defaults of the sample stage's flags (a negative sampling value is "not given"); a test pins them to the wrapper's
 TRAIN_FLAG_DEFAULTS = {"student": DEFAULT_STUDENT, "max_len": MAX_LEN, "mix": False}      # the same for the training stage
 
 
@@ -266,7 +273,8 @@ def merge_flags(path, flags: dict, domain: str) -> dict:
         raise SystemExit(f"--run-config {path} sets the run: do not also give " + ", ".join("--" + k.replace("_", "-") for k in clash))
     sampling = cfg.sampling or {}
     return {"model": cfg.teacher, "k": cfg.k, "reasoning": cfg.reasoning, "thinking": cfg.thinking, "max_tokens": cfg.max_tokens, "max_len": cfg.max_len, "quota": cfg.quota,
-            "max_traces": cfg.max_traces, **{key: sampling.get(key, FLAG_DEFAULTS[key]) for key in SAMPLING_KEYS}, "max_tokens_by_family": family_tokens_text(cfg.max_tokens_by_family)}
+            "max_traces": cfg.max_traces, **{key: sampling.get(key, FLAG_DEFAULTS[key]) for key in SAMPLING_KEYS}, "max_tokens_by_family": family_tokens_text(cfg.max_tokens_by_family),
+            "trust_unfingerprinted": cfg.trust_unfingerprinted}
 
 
 def merge_train_flags(path, flags: dict) -> dict:

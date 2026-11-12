@@ -13,16 +13,18 @@ What it does, in order:
      `max_tokens_by_family` entry, when it has one);
   5. appends each finished task to `/kaggle/working/replies.jsonl` at once (a checkpoint) and stops starting requests when the deadline comes (`deadline_h` hours after the start);
   6. resumes: every `replies.jsonl` found under /kaggle/input (a previous session's output attached to the kernel or uploaded as a dataset) is read first; only the samples that are missing, failed or
-     STALE are asked again, a task with none of those is not (`samples_to_ask`). A reply is stale when it was asked under another prompt than the task's now (its `prompt_sha`), or was cut off at a smaller
-     budget than the task's now (`finish` "length" and its `max_tokens` below `task_max_tokens`: a longer budget gives a different reply, not the same cut). Attaching an earlier output brings its replies with it;
-     to take only its llama-server, attach the `llama-bin` dataset instead (build_tasks --llama-dataset);
+     STALE are asked again, a task with none of those is not (`samples_to_ask`). A reply is stale when it was asked under another prompt than the task's now (its `prompt_sha`), when it has NO fingerprint
+     (the prompt it answered is not known: the thinking pilot's `out2`, which has none anywhere, is asked again in full), or when it was cut off ("length") at a smaller budget than the task's now (its
+     `max_tokens` below `task_max_tokens`: a longer budget gives a different reply, not the same cut) or at a budget it does not say. `"trust_unfingerprinted": true` in config.json (build_tasks
+     --trust-unfingerprinted) is the owner's word that a file without fingerprints was asked under this very prompt and the config's `max_tokens`: such a reply then takes both, and stays. Attaching an
+     earlier output brings its replies with it; to take only its llama-server, attach the `llama-bin` dataset instead (build_tasks --llama-dataset);
   7. writes `run.json` (settings, throughput, llama.cpp commit, what was skipped) next to the replies, which `kaggle-score` reads.
 
 A line of `replies.jsonl`: {"id", "kind", "prompt_sha", "outs": [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha", "max_tokens"}]}. In a thinking run `text` is `<think>\\nreasoning\\n</think>\\n\\nvisible reply`
 (the server's `reasoning_content` and `content`: `stored_text`, the form `kaggle-score --thinking` reads); `finish` is the server's finish_reason ("length" = cut off at max_tokens, which is rejected
 downstream), or "error" with `[error ...]` as the text for a request that failed (never scored). A reply carries its own `prompt_sha` (the fingerprint of the messages that were sent) and the `max_tokens` it was asked
 with, because a line can hold replies of several sessions; the line's `prompt_sha` is the task's prompt of the session that wrote it. `kaggle-score` refuses each reply to another prompt. A reply of an older
-kernel has no such fields: it takes its line's `prompt_sha` and the config's `max_tokens` as the budget it was asked with (that kernel had one budget for all).
+kernel has no such fields: it takes its line's `prompt_sha` when the line has one; a reply with no fingerprint at all, and a cut-off reply with no budget, are asked again (unless `trust_unfingerprinted`).
 Nothing is scored here: the truth is not in the dataset.
 """
 from __future__ import annotations
@@ -58,6 +60,7 @@ DEFAULTS = {
     "seed_base": 1234,            # sample i is asked with seed seed_base + i, as the Modal stage does
     "reasoning_format": "deepseek",     # llama-server --reasoning-format: the reasoning comes back as `reasoning_content`
     "llama_cpp_ref": "",          # a llama.cpp tag or commit to build ("" = the head of the default branch; run.json records what was built)
+    "trust_unfingerprinted": False,     # True = the owner says that the earlier replies WITHOUT a fingerprint were asked under this prompt and `max_tokens`: they are kept (see `with_own_sha`); False = they are asked again
 }
 
 T0 = time.time()
@@ -95,6 +98,8 @@ def resolve_config(user: dict) -> dict:
     if not isinstance(by_family, dict) or any(not isinstance(k, str) or not isinstance(n, int) or isinstance(n, bool) or n < 1 for k, n in by_family.items()):
         raise ValueError(f"max_tokens_by_family {by_family!r}: a map family -> tokens (an integer of at least 1)")
     cfg["max_tokens_by_family"] = dict(by_family)
+    if not isinstance(cfg["trust_unfingerprinted"], bool):
+        raise ValueError(f"trust_unfingerprinted {cfg['trust_unfingerprinted']!r}: true or false")
     return cfg
 
 
@@ -144,36 +149,54 @@ def is_failed(out) -> bool:
     return not isinstance(out, dict) or out.get("finish") == "error" or str(out.get("text", "")).startswith("[error")
 
 
-def with_own_sha(rec: dict) -> list:
+def valid_budget(n) -> bool:
+    """A token budget: an integer of at least 1 that is not a bool (anything else in a replies file is a hand edit: the budget is not known)."""
+    return isinstance(n, int) and not isinstance(n, bool) and n >= 1
+
+
+def with_own_sha(rec: dict, assume: dict = None) -> list:
     """The outs of an earlier line, each carrying its own `prompt_sha`: a reply of an older kernel takes the line's (that is the prompt it was asked under, as far as the file says). A new line gets the CURRENT
-    prompt's fingerprint whatever its replies are, so the fingerprint has to travel with each reply that is kept."""
-    sha = rec.get("prompt_sha")
-    return [{**o, "prompt_sha": sha} if sha and isinstance(o, dict) and not o.get("prompt_sha") else o for o in rec.get("outs", [])]
+    prompt's fingerprint whatever its replies are, so the fingerprint has to travel with each reply that is kept. A reply that has none, on a line that has none (a file with no fingerprints at all, the thinking
+    pilot's `out2`), stays without: `is_stale` asks it again. `assume`: {"prompt_sha", "max_tokens"} (`assumed`), the owner's word (`trust_unfingerprinted`) that such a file was asked under the task's prompt
+    now and the config's `max_tokens`: a reply takes the one it lacks, which is written with it from then on."""
+    sha, assume = rec.get("prompt_sha"), assume or {}
+    outs = []
+    for o in rec.get("outs", []):
+        if isinstance(o, dict):
+            own_sha = o.get("prompt_sha") or sha or assume.get("prompt_sha")
+            budget = o["max_tokens"] if valid_budget(o.get("max_tokens")) else assume.get("max_tokens")
+            o = {**o, **({"prompt_sha": own_sha} if own_sha else {}), **({"max_tokens": budget} if budget else {})}
+        outs.append(o)
+    return outs
 
 
-def is_stale(out, sha: str = None, budget: int = None, old_budget: int = None) -> bool:
-    """True when an answered reply no longer stands for the task: it was asked under another prompt than `sha`, or it was cut off ("length") at a smaller budget than the task's `budget` now (`max_tokens` of the
-    reply, `old_budget` for a reply that does not say: an older kernel had one budget for all). A reply without a fingerprint is not compared. Without `sha` and `budget` nothing is stale."""
+def assumed(cfg: dict, task: dict):
+    """What a run told to trust a file without fingerprints (`trust_unfingerprinted`) takes for an earlier reply that has none: the task's prompt now and the config's `max_tokens` (the one budget the kernels
+    that wrote no `max_tokens` had). None for any other run."""
+    return {"prompt_sha": prompt_sha(task["messages"]), "max_tokens": cfg["max_tokens"]} if cfg.get("trust_unfingerprinted") else None
+
+
+def is_stale(out, sha: str = None, budget: int = None) -> bool:
+    """True when an answered reply no longer stands for the task. With `sha` (the task's prompt now; the kit always knows it): it answered another prompt, or it has NO fingerprint (what it answered is not known).
+    With `budget` (the task's now): it was cut off ("length") at a smaller budget, or at one it does not say (`max_tokens` missing or not a budget). Without `sha` and `budget` nothing is stale."""
     if not isinstance(out, dict):
         return False
-    if sha and out.get("prompt_sha") and out["prompt_sha"] != sha:
+    if sha and out.get("prompt_sha") != sha:
         return True
     asked = out.get("max_tokens")
-    if not isinstance(asked, int) or isinstance(asked, bool) or asked < 1:        # not a budget (a hand-edited file): the old one
-        asked = old_budget
-    return bool(budget and asked and out.get("finish") == "length" and asked < budget)
+    return bool(budget and out.get("finish") == "length" and (not valid_budget(asked) or asked < budget))
 
 
-def samples_to_ask(have: list, k: int, sha: str = None, budget: int = None, old_budget: int = None) -> list:
+def samples_to_ask(have: list, k: int, sha: str = None, budget: int = None) -> list:
     """The sample indices to ask for a task whose earlier replies are `have` (outs in sample order, each with its own `prompt_sha`: `with_own_sha`): every index the list does not reach, every one whose reply is a
-    failed request, and every STALE one (`is_stale`: another prompt than `sha`, or cut off at a smaller budget than `budget`). A cut-off reply that was asked with the budget it has now is an answer and is not
-    asked again (it is rejected downstream, and asking again with the same seed and budget gives the same cut); with a longer budget it is a different reply, so it is asked."""
-    return [i for i in range(k) if i >= len(have) or is_failed(have[i]) or is_stale(have[i], sha, budget, old_budget)]
+    failed request, and every STALE one (`is_stale`: another prompt than `sha` or none known, or cut off at a smaller budget than `budget` or at an unknown one). A cut-off reply that was asked with the budget it has
+    now is an answer and is not asked again (it is rejected downstream, and asking again with the same seed and budget gives the same cut); with a longer budget it is a different reply, so it is asked."""
+    return [i for i in range(k) if i >= len(have) or is_failed(have[i]) or is_stale(have[i], sha, budget)]
 
 
 def pending(cfg: dict, task: dict, rec) -> list:
     """The sample indices of `task` still to ask, given its earlier line `rec` (None when it has none): what the session does for it, and what it counts as complete."""
-    return samples_to_ask(with_own_sha(rec or {}), cfg["k"], prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"]), cfg["max_tokens"])
+    return samples_to_ask(with_own_sha(rec or {}, assumed(cfg, task)), cfg["k"], prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"]))
 
 
 def can_start(now: float, deadline: float, mean_secs: float) -> bool:
@@ -240,12 +263,12 @@ class Session:
 
 
 def ask_task(cfg: dict, task: dict, have: list, deadline: float, session: Session, base_url: str = URL, urlopen=None):
-    """The line to checkpoint for a task: its earlier replies `have` (each with its own `prompt_sha`: `with_own_sha`), with the missing, failed and stale samples asked again, one after the other (a task occupies one
+    """The line to checkpoint for a task: its earlier replies `have` (each with its own `prompt_sha`: `with_own_sha`; the ones with none are asked again), with the missing, failed and stale samples asked again, one after the other (a task occupies one
     slot). The deadline is checked before every request; when it comes, the samples answered so far are kept and the rest left for the next session (the list simply ends: `samples_to_ask`). A reply that is kept
     keeps its own fingerprint and budget, so the line's `prompt_sha` (the task's prompt now) never speaks for a reply of another session. None when nothing was asked and nothing is known."""
     sha, budget = prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"])
     outs = list(have) + [None] * (cfg["k"] - len(have))
-    for i in samples_to_ask(have, cfg["k"], sha, budget, cfg["max_tokens"]):
+    for i in samples_to_ask(have, cfg["k"], sha, budget):
         if not can_start(time.time(), deadline, session.mean_secs()):
             session.stopped_by_deadline = True
             break
@@ -289,16 +312,16 @@ def find_previous(root: pathlib.Path = INPUT) -> list:
 
 def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path, deadline: float, base_url: str = URL, urlopen=None, log_fn=print) -> dict:
     """Ask what is left. `previous` = {id: record} from earlier sessions: they are copied to `checkpoint` first (so a session that asks nothing loses nothing), a task with every sample answered is skipped,
-    a task with missing, failed or stale samples (`samples_to_ask`: another prompt, or cut off at a smaller budget than the task's now) is asked for those only, and each of them replaces the earlier reply. A task
-    whose prompt and own budget (`task_max_tokens`) do not fit a slot is not asked (`skipped_too_long`). Each finished task is appended and flushed. Returns the counters for run.json (`stale`: the earlier replies
-    that were asked again for being stale)."""
+    a task with missing, failed or stale samples (`samples_to_ask`: another prompt or none known, or cut off at a smaller budget than the task's now or an unknown one) is asked for those only, and each of them
+    replaces the earlier reply. A task whose prompt and own budget (`task_max_tokens`) do not fit a slot is not asked (`skipped_too_long`). Each finished task is appended and flushed. Returns the counters for
+    run.json (`stale`: the earlier replies that were asked again for being stale; `unfingerprinted`: how many of those had no fingerprint, `trust_unfingerprinted` keeps them)."""
     session = Session()
     checkpoint = pathlib.Path(checkpoint)
     checkpoint.write_text("".join(json.dumps(r) + "\n" for r in previous.values()))
-    todo, too_long, complete, stale = [], [], 0, 0
+    todo, too_long, complete, stale, unfingerprinted = [], [], 0, 0, 0
     for t in tasks:
         rec = previous.get(t["id"])
-        have = with_own_sha(rec or {})
+        have = with_own_sha(rec or {}, assumed(cfg, t))
         ask = pending(cfg, t, rec)
         if not ask:
             complete += 1
@@ -306,13 +329,19 @@ def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path
         if prompt_tokens(t["messages"], base_url, urlopen) + task_max_tokens(cfg, t["kind"]) > cfg["ctx_per_slot"]:
             too_long.append(t["id"])
             continue
-        stale += sum(i < len(have) and not is_failed(have[i]) for i in ask)
+        answered = [i for i in ask if i < len(have) and not is_failed(have[i])]
+        stale += len(answered)
+        unfingerprinted += sum(not have[i].get("prompt_sha") for i in answered if isinstance(have[i], dict))
         todo.append((t, have))
     own = " or its family's" if cfg.get("max_tokens_by_family") else ""
     log_fn(f"{len(tasks)} tasks, {complete} complete already, {len(todo)} to ask, "
            f"{len(too_long)} skipped (prompt + the task's max_tokens, {cfg['max_tokens']}{own}, over {cfg['ctx_per_slot']} tokens)")
     if stale:
-        log_fn(f"{stale} earlier reply(ies) are asked again: they answered another prompt than the task's now, or were cut off at a smaller budget than its own")
+        log_fn(f"{stale} earlier reply(ies) are asked again: they answered another prompt than the task's now, carry no fingerprint (the prompt they answered is not known), or were cut off at a smaller "
+               f"budget than its own or at one they do not say")
+    if unfingerprinted:
+        log_fn(f"{unfingerprinted} of them carry no fingerprint at all (a file of an older kernel): kept only with \"trust_unfingerprinted\": true in config.json (build_tasks --trust-unfingerprinted), "
+               f"the owner's word that it was asked under this prompt and max_tokens {cfg['max_tokens']}")
     start = time.time()
     with ThreadPoolExecutor(cfg["slots"]) as ex, open(checkpoint, "a") as ck:
         for rec in ex.map(lambda item: ask_task(cfg, item[0], item[1], deadline, session, base_url, urlopen), todo):
@@ -326,7 +355,7 @@ def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path
                 log_fn(f"{session.tasks_done}/{len(todo)} tasks, {session.completion_tokens} tokens out, {session.completion_tokens / max(el, 1):.1f} tok/s aggregate, "
                        f"{session.cut_off} cut off, {session.failed} failed")
     el = time.time() - start
-    return {"tasks": len(tasks), "asked": len(todo), "stale": stale, "tasks_written": session.tasks_done, "skipped_too_long": too_long, "requests": session.requests, "completion_tokens": session.completion_tokens,
+    return {"tasks": len(tasks), "asked": len(todo), "stale": stale, "unfingerprinted": unfingerprinted, "tasks_written": session.tasks_done, "skipped_too_long": too_long, "requests": session.requests, "completion_tokens": session.completion_tokens,
             "cut_off": session.cut_off, "failed": session.failed, "seconds": round(el), "tok_per_s": round(session.completion_tokens / max(el, 1e-9), 1),
             "deadline_hit": session.stopped_by_deadline}
 

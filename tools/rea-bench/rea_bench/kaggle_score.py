@@ -4,7 +4,7 @@ The scorer of the replies of a Kaggle sampling run moved to `distill/score_repli
 keeps the REA command line and the old names working: `score`, `run` and `main` call it with REA, `default_out` and `add_arguments` know REA's file names (`decompiled-<tag>.jsonl`, the default tasks file).
 
     python3 tools/rea-bench kaggle-score --replies replies.jsonl --model codeforge-27b-heretic-q4 \\
-        [--tasks results/phase6/rea-data/decompiled-seed7-all.jsonl] [--max-traces 3] [--thinking] [--out sft-....jsonl] [--force]
+        [--tasks results/phase6/rea-data/decompiled-seed7-all.jsonl] [--max-traces 3] [--thinking] [--keep-unchecked] [--out sft-....jsonl] [--force]
 """
 from __future__ import annotations
 
@@ -20,9 +20,9 @@ from distill.traces import DEFAULT_MAX_TRACES
 DEFAULT_TASKS = pathlib.Path("results/phase6/rea-data/decompiled-seed7-all.jsonl")
 
 
-def score(replies_path, tasks_path, model: str, max_traces: int = DEFAULT_MAX_TRACES, thinking: bool = False, run_info: dict = None) -> tuple:
+def score(replies_path, tasks_path, model: str, max_traces: int = DEFAULT_MAX_TRACES, thinking: bool = False, run_info: dict = None, keep_unchecked: bool = False) -> tuple:
     """(SFT records, stats dict) of a Kaggle replies.jsonl against the decompiled tasks: `distill.score_replies.score` with REA."""
-    return _generic.score(replies_path, tasks_path, model, max_traces, thinking, run_info, domain=DOMAIN)
+    return _generic.score(replies_path, tasks_path, model, max_traces, thinking, run_info, keep_unchecked, domain=DOMAIN)
 
 
 def default_out(tasks_path, model: str, thinking: bool) -> pathlib.Path:

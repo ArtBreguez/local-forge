@@ -2,7 +2,7 @@
 which is now the REA wrapper (REA bound, the commands of the README unchanged); this one takes `--domain` (a package of `distill/domains`) and `--teacher` (a name of `distill/teachers.py`).
 
     python3 tools/kaggle/build_tasks.py --tasks results/phase6/rea-data/decompiled-seed9-all.jsonl --owner <kaggle-user> --out ~/work/kaggle-rea \\
-        --quota structs=220,crc=220,antidebug=220,bounds=220,fsm=220,pktsum=80,encoding=80 [--k 4] [--max-tokens 4096] [--max-tokens-by-family cipher=8192,magic=8192] [--no-thinking] [--force]
+        --quota structs=220,crc=220,antidebug=220,bounds=220,fsm=220,pktsum=80,encoding=80 [--k 4] [--max-tokens 4096] [--max-tokens-by-family cipher=8192,magic=8192] [--no-thinking] [--trust-unfingerprinted] [--force]
     python3 tools/kaggle/build_tasks.py --run-config distill/configs/rea-thinking.json --tasks ... --owner ... --out ...        (k, quota, teacher, sampling and token budgets of a run config)
     python3 -m distill.backends.kaggle.build_tasks --domain rea --tasks ...        (the same, any subject)
 
@@ -10,7 +10,8 @@ Writes under --out:
     data/tasks.jsonl             {"id", "kind", "messages"} per task: `domain.messages(task, mode)` (for REA SYSTEM_REASONING + the user message), nothing else of the task (the truth stays here)
     data/config.json             the run: model, k, thinking, sampling (Qwen3's thinking settings with --thinking, never greedy), max_tokens, `max_tokens_by_family` (only when a family has a budget of
                                  its own), slots, ctx_per_slot (prompt + max_tokens fit one slot: the BASE; `run_teacher.server_geometry` makes the slot longer and the slots fewer when a family has a
-                                 longer budget), deadline, seed base, where the tasks came from
+                                 longer budget), deadline, seed base, where the tasks came from, `trust_unfingerprinted: true` (only with --trust-unfingerprinted: a resume keeps the earlier
+                                 replies that carry no fingerprint, the owner's word that they were asked under this prompt and max_tokens; without it they are asked again)
     data/dataset-metadata.json   for `kaggle datasets create -p <out>/data`
     kernel/run.py                tools/kaggle/run_teacher.py
     kernel/kernel-metadata.json  for `kaggle kernels push -p <out>/kernel` (private, GPU, internet on, the dataset attached; --resume-from also attaches a previous kernel's output)
@@ -69,10 +70,11 @@ def pick_tasks(files, quota: str = "", *, domain) -> list:
     return tasks
 
 
-def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_tokens, sampling_overrides: dict, deadline_h: float, model_repo, model_file, *, domain, max_tokens_by_family: dict = None) -> dict:
+def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_tokens, sampling_overrides: dict, deadline_h: float, model_repo, model_file, *, domain, max_tokens_by_family: dict = None,
+                trust_unfingerprinted: bool = False) -> dict:
     """The config.json of a run. Sampling and `max_tokens` follow `thinking` (`config.sampling_for`, `config.default_max_tokens`); `ctx_per_slot` is `config.slot_context(max_tokens)`: the prompt
     and the reply fit one slot. `max_tokens_by_family`: {family: tokens} (`config.check_family_tokens`: the families must be the domain's), written only when there is one; the kernel gives those tasks that
-    budget and sizes its server for it (`run_teacher.server_geometry`)."""
+    budget and sizes its server for it (`run_teacher.server_geometry`). `trust_unfingerprinted`: written (as true) only when given, see the module docstring."""
     if k < 1:
         raise SystemExit(f"--k {k}: at least one reply per task")
     max_tokens = max_tokens or config.default_max_tokens(True, thinking)
@@ -81,17 +83,17 @@ def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_toke
     by_family = config.check_family_tokens(max_tokens_by_family or {}, domain.kinds())
     return {"model_repo": model_repo or run_teacher.DEFAULTS["model_repo"], "model_file": model_file or run_teacher.DEFAULTS["model_file"], "k": k, "thinking": thinking,
             "sampling": config.sampling_for(thinking, **sampling_overrides), "max_tokens": max_tokens, **({"max_tokens_by_family": by_family} if by_family else {}),
-            "slots": run_teacher.DEFAULTS["slots"], "ctx_per_slot": config.slot_context(max_tokens),
+            "slots": run_teacher.DEFAULTS["slots"], "ctx_per_slot": config.slot_context(max_tokens), **({"trust_unfingerprinted": True} if trust_unfingerprinted else {}),
             "deadline_h": deadline_h, "seed_base": run_teacher.DEFAULTS["seed_base"], "reasoning_format": run_teacher.DEFAULTS["reasoning_format"],
             "tasks": {"files": [pathlib.Path(f).name for f in files], "quota": quota, "n": len(tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in tasks).items())),
                       "system_sha": outputs.prompt_sha([domain.messages(tasks[0], "thinking" if thinking else "reasoning")[0]])}}
 
 
 def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = True, max_tokens=None, sampling_overrides=None, deadline_h: float = None,
-          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, llama_dataset: str = "", *, domain) -> dict:
+          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, llama_dataset: str = "", trust_unfingerprinted: bool = False, *, domain) -> dict:
     """Write the files described above under `out`; returns the config. Refuses to overwrite a file that exists, unless `force`. `teacher`: a name of `distill/teachers.py` whose repo and file are the model
     (`model_repo` and `model_file` still override); the slugs default to `<domain>-reasoning-tasks` and `<domain>-teacher`. `max_tokens_by_family`: see `make_config`. `llama_dataset`: owner/slug of a dataset that holds a built llama-server (`llama-bin/`, see distill/backends/kaggle/README.md): attached to the
-    kernel next to the tasks, so the kernel skips the 30-minute build."""
+    kernel next to the tasks, so the kernel skips the 30-minute build. `trust_unfingerprinted`: see `make_config`."""
     base = domain.name.replace("_", "-")
     owner, dataset_slug, kernel_slug = _slug("--owner", owner), _slug("--dataset-slug", dataset_slug or f"{base}-reasoning-tasks"), _slug("--kernel-slug", kernel_slug or f"{base}-teacher")
     if resume_from and not re.fullmatch(r"[a-z0-9-]+/[a-z0-9-]+", resume_from):
@@ -109,7 +111,7 @@ def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = 
     outputs.refuse_overwrite(list(paths.values()), force)
     tasks = pick_tasks(files, quota, domain=domain)
     cfg = make_config(tasks, files, quota, k, thinking, max_tokens, sampling_overrides or {}, deadline_h or run_teacher.DEFAULTS["deadline_h"], model_repo, model_file, domain=domain,
-                      max_tokens_by_family=max_tokens_by_family)
+                      max_tokens_by_family=max_tokens_by_family, trust_unfingerprinted=trust_unfingerprinted)
     for p in paths.values():
         p.parent.mkdir(parents=True, exist_ok=True)
     mode = "thinking" if thinking else "reasoning"
@@ -148,20 +150,22 @@ def add_arguments(ap: argparse.ArgumentParser, tasks_help: str) -> None:
     ap.add_argument("--teacher", default=None, help="a teacher of distill/teachers.py (its GGUF repo and file); default: the kernel's own default, CodeForge 27B heretic Q4")
     ap.add_argument("--model-repo", default=None, help=f"Hugging Face repo of the GGUF (default {run_teacher.DEFAULTS['model_repo']})")
     ap.add_argument("--model-file", default=None, help=f"the GGUF file (default {run_teacher.DEFAULTS['model_file']})")
+    ap.add_argument("--trust-unfingerprinted", action=argparse.BooleanOptionalAction, default=None, help="a resume keeps the earlier replies that carry no fingerprint (a replies.jsonl of an older kernel, like the thinking "
+                    "pilot's) instead of asking them again: your word that they were asked under this prompt and --max-tokens (default: they are asked again)")
     ap.add_argument("--force", action="store_true", help="overwrite the files of an earlier build (default: refuse)")
 
 
 DEFAULT_K = 4
-RUN_CONFIG_FLAGS = ("teacher", "k", "quota", "thinking", "max_tokens", "max_tokens_by_family", "temperature", "top_p", "top_k", "min_p")      # what `--run-config` sets
+RUN_CONFIG_FLAGS = ("teacher", "k", "quota", "thinking", "max_tokens", "max_tokens_by_family", "temperature", "top_p", "top_k", "min_p", "trust_unfingerprinted")      # what `--run-config` sets
 
 
 def settings(a: argparse.Namespace, domain) -> dict:
     """The run's settings from the flags, or from `--run-config` (then none of RUN_CONFIG_FLAGS may be given: two sources of one setting is a mistake). {teacher, k, quota, thinking, max_tokens,
-    sampling_overrides, max_tokens_by_family}. The kit asks a reasoning or a thinking run: a plain config is refused."""
+    sampling_overrides, max_tokens_by_family, trust_unfingerprinted}. The kit asks a reasoning or a thinking run: a plain config is refused."""
     if a.run_config is None:
         return {"teacher": a.teacher, "k": DEFAULT_K if a.k is None else a.k, "quota": a.quota, "thinking": True if a.thinking is None else a.thinking, "max_tokens": a.max_tokens,
                 "sampling_overrides": {"temperature": a.temperature, "top_p": a.top_p, "top_k": a.top_k, "min_p": a.min_p},
-                "max_tokens_by_family": config.parse_family_tokens(a.max_tokens_by_family or "", domain.kinds())}
+                "max_tokens_by_family": config.parse_family_tokens(a.max_tokens_by_family or "", domain.kinds()), "trust_unfingerprinted": bool(a.trust_unfingerprinted)}
     cfg = config.RunConfig.load(a.run_config)
     if cfg.domain != domain.name:
         raise SystemExit(f"--run-config {a.run_config} is for domain {cfg.domain!r}, this kit is {domain.name!r}'s")
@@ -172,13 +176,13 @@ def settings(a: argparse.Namespace, domain) -> dict:
         raise SystemExit(f"--run-config {a.run_config} is a plain run (mode {cfg.mode!r}): the Kaggle kit asks a reasoning or thinking run")
     sampling = cfg.sampling or {}
     return {"teacher": cfg.teacher, "k": cfg.k, "quota": cfg.quota, "thinking": cfg.thinking, "max_tokens": cfg.max_tokens or None, "sampling_overrides": {key: sampling.get(key) for key in config.SAMPLING_KEYS},
-            "max_tokens_by_family": dict(cfg.max_tokens_by_family)}
+            "max_tokens_by_family": dict(cfg.max_tokens_by_family), "trust_unfingerprinted": cfg.trust_unfingerprinted}
 
 
 def run(a: argparse.Namespace, domain) -> None:
     st = settings(a, domain)
     cfg = build(a.tasks, a.out, a.owner, st["quota"], st["k"], st["thinking"], st["max_tokens"], st["sampling_overrides"], a.deadline_h,
-                a.dataset_slug, a.kernel_slug, a.resume_from, a.model_repo, a.model_file, a.force, st["teacher"], st["max_tokens_by_family"], a.llama_dataset, domain=domain)
+                a.dataset_slug, a.kernel_slug, a.resume_from, a.model_repo, a.model_file, a.force, st["teacher"], st["max_tokens_by_family"], a.llama_dataset, st["trust_unfingerprinted"], domain=domain)
     t = cfg["tasks"]
     slots, ctx = run_teacher.server_geometry({**cfg, "slots": cfg["slots"], "ctx_per_slot": cfg["ctx_per_slot"]}, [{"kind": kind} for kind in t["by_kind"]])
     print(f"{t['n']} tasks {t['by_kind']}, k={cfg['k']}, {'thinking' if cfg['thinking'] else 'visible reasoning'}, sampling {cfg['sampling']}, max_tokens {cfg['max_tokens']}"

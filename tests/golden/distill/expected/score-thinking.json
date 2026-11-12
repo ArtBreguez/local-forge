@@ -1816,11 +1816,38 @@
    }
   },
   "prompts": {
+   "lines": 22,
    "checked": 1,
    "mismatch": 1,
    "mismatched_ids": [
     "lcg-7-0003"
-   ]
+   ],
+   "unchecked": 21,
+   "unchecked_replies": 63,
+   "unchecked_ids": [
+    "alphabet-7-0007",
+    "antidebug-7-0002",
+    "bounds-7-0001",
+    "cipher-7-0004",
+    "crc-7-0001",
+    "encoding-7-0000",
+    "hash-7-0004",
+    "keycount-7-0006",
+    "magic-7-0002",
+    "multi-7-0002",
+    "password-7-0001",
+    "password-7-0011",
+    "pktsum-7-0000",
+    "rotate-7-0008",
+    "skip-7-0005",
+    "strobf-7-0000",
+    "structs-7-0000",
+    "structs-7-0005",
+    "threshold-7-0009",
+    "xor-key-7-0000",
+    "xor-key-7-0010"
+   ],
+   "kept_unchecked": true
   },
   "projected_fit": {
    "windows": {
@@ -2382,9 +2409,9 @@
    "tasks_file": "decompiled-seed7-all.jsonl"
   }
  },
- "cli_stdout": "m sft-m-seed7-all-reasoning-think.jsonl: 21 tasks, 63 replies, 21 kept tasks, 59 records (38 teacher-reasoning) -> <tmp>/sft-m-seed7-all-reasoning-think.jsonl; stats -> <tmp>/sft-m-seed7-all-reasoning-think.stats.json\nprompts: 1 of 1 lines answered another prompt and were skipped\nthinking replies: 63: accepted 53, answer rejected 4, no final `Answer:` line (or text after it) 3, cut off at max_tokens 3, failed requests 0; 38 teacher-reasoning records (up to 2 per kept task)\naccepted replies not stored: no_think 0, mixed_language 4, repetition 3, unreadable 0, contradiction 0, duplicate 6, over_cap 2; in tasks that were not kept 0; 0 kept tasks have no trace (their truth record stays)\nsampling: thinking True, temperature 0.6, top_p 0.95, top_k 20, min_p 0.0, max_tokens 900, seed_base 1234, slot_context 8192, parallel 4\nprojected fit of the teacher-reasoning records to a training window (prompt + reasoning + answer, the server's token counts): 4096 tokens: 38 of 38 (100%), 8192 tokens: 38 of 38 (100%)\n  family     tasks answers accepted  kept traces  cut off  tokens mean/median  drops\n  ALL           21      63       53    21     38     4.8%             18.0/18  truncated 3, no_answer_line 3, wrong 4, mixed_language 4, repetition 3, duplicate 6, over_cap 2\n  alphabet       1       3        2     1      2     0.0%             18.0/18  wrong 1\n  antidebug      1       3        2     1      2     0.0%             18.0/18  wrong 1\n  bounds         1       3        2     1      2     0.0%             18.0/18  no_answer_line 1\n  cipher         1       3        3     1      1     0.0%             18.0/18  repetition 1, duplicate 1\n  crc            1       3        2     1      2    33.3%             18.0/18  truncated 1\n  encoding       1       3        3     1      2     0.0%             18.0/18  over_cap 1\n  hash           1       3        3     1      1     0.0%             18.0/18  repetition 1, duplicate 1\n  keycount       1       3        3     1      2     0.0%             18.0/18  over_cap 1\n  magic          1       3        3     1      2     0.0%             18.0/18  mixed_language 1\n  multi          1       3        3     1      1     0.0%             18.0/18  mixed_language 1, duplicate 1\n  password       2       6        4     2      4     0.0%           18.0/18.0  no_answer_line 1, wrong 1\n  pktsum         1       3        3     1      2     0.0%             18.0/18  mixed_language 1\n  rotate         1       3        3     1      1     0.0%             18.0/18  mixed_language 1, duplicate 1\n  skip           1       3        2     1      2     0.0%             18.0/18  no_answer_line 1\n  strobf         1       3        2     1      2    33.3%             18.0/18  truncated 1\n  structs        2       6        5     2      4     0.0%           18.0/18.0  wrong 1, duplicate 1\n  threshold      1       3        2     1      2    33.3%             18.0/18  truncated 1\n  xor-key        2       6        6     2      4     0.0%           18.0/18.0  repetition 1, duplicate 1\n",
+ "cli_stdout": "m sft-m-seed7-all-reasoning-think.jsonl: 21 tasks, 63 replies, 21 kept tasks, 59 records (38 teacher-reasoning) -> <tmp>/sft-m-seed7-all-reasoning-think.jsonl; stats -> <tmp>/sft-m-seed7-all-reasoning-think.stats.json\nprompts: 1 of 1 lines answered another prompt and were skipped\nprompts: 21 of 22 lines hold 63 replies with no fingerprint (an older notebook), so unchecked: kept (--keep-unchecked), on your word that they answered this prompt\nthinking replies: 63: accepted 53, answer rejected 4, no final `Answer:` line (or text after it) 3, cut off at max_tokens 3, failed requests 0; 38 teacher-reasoning records (up to 2 per kept task)\naccepted replies not stored: no_think 0, mixed_language 4, repetition 3, unreadable 0, contradiction 0, duplicate 6, over_cap 2; in tasks that were not kept 0; 0 kept tasks have no trace (their truth record stays)\nsampling: thinking True, temperature 0.6, top_p 0.95, top_k 20, min_p 0.0, max_tokens 900, seed_base 1234, slot_context 8192, parallel 4\nprojected fit of the teacher-reasoning records to a training window (prompt + reasoning + answer, the server's token counts): 4096 tokens: 38 of 38 (100%), 8192 tokens: 38 of 38 (100%)\n  family     tasks answers accepted  kept traces  cut off  tokens mean/median  drops\n  ALL           21      63       53    21     38     4.8%             18.0/18  truncated 3, no_answer_line 3, wrong 4, mixed_language 4, repetition 3, duplicate 6, over_cap 2\n  alphabet       1       3        2     1      2     0.0%             18.0/18  wrong 1\n  antidebug      1       3        2     1      2     0.0%             18.0/18  wrong 1\n  bounds         1       3        2     1      2     0.0%             18.0/18  no_answer_line 1\n  cipher         1       3        3     1      1     0.0%             18.0/18  repetition 1, duplicate 1\n  crc            1       3        2     1      2    33.3%             18.0/18  truncated 1\n  encoding       1       3        3     1      2     0.0%             18.0/18  over_cap 1\n  hash           1       3        3     1      1     0.0%             18.0/18  repetition 1, duplicate 1\n  keycount       1       3        3     1      2     0.0%             18.0/18  over_cap 1\n  magic          1       3        3     1      2     0.0%             18.0/18  mixed_language 1\n  multi          1       3        3     1      1     0.0%             18.0/18  mixed_language 1, duplicate 1\n  password       2       6        4     2      4     0.0%           18.0/18.0  no_answer_line 1, wrong 1\n  pktsum         1       3        3     1      2     0.0%             18.0/18  mixed_language 1\n  rotate         1       3        3     1      1     0.0%             18.0/18  mixed_language 1, duplicate 1\n  skip           1       3        2     1      2     0.0%             18.0/18  no_answer_line 1\n  strobf         1       3        2     1      2    33.3%             18.0/18  truncated 1\n  structs        2       6        5     2      4     0.0%           18.0/18.0  wrong 1, duplicate 1\n  threshold      1       3        2     1      2    33.3%             18.0/18  truncated 1\n  xor-key        2       6        6     2      4     0.0%           18.0/18.0  repetition 1, duplicate 1\n",
  "cli_files": {
   "sft-m-seed7-all-reasoning-think.jsonl": "e243c78d3af65232d9b3433fe4abba557fb94206693e5b6c9906fd3eb776a449",
-  "sft-m-seed7-all-reasoning-think.stats.json": "0842d0639f8906c4b6fc7a8692a03e8ce16d7dc723d7f473952c0f89e467642b"
+  "sft-m-seed7-all-reasoning-think.stats.json": "69fcb784bd7a58865bc3671d56e78fc99683614f8550d1e5fc1639798d2e6e2b"
  }
 }

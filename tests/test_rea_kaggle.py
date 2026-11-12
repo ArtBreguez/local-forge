@@ -49,6 +49,19 @@ def write_replies(dirpath, lines, name="replies.jsonl"):
     return p
 
 
+def stamp(lines, tasks):
+    """The lines as the current notebook writes them (`run_teacher.ask_task`): the fingerprint of the prompt it asked (the messages of the task as `write_tasks` writes it) on the line and on each reply, for the
+    lines whose id is one of `tasks`; any other line is returned as it is. A file of an older notebook has none of these, and `kaggle-score` skips it unless told to keep it (tests/test_rea_thinking_resume.py)."""
+    by_id = {t["id"]: {**t, "pseudocode": t.get("pseudocode", f"/* {t['id']} */ void f(void) {{}}")} for t in tasks}
+    out = []
+    for line in lines:
+        if isinstance(line, dict) and line.get("id") in by_id and isinstance(line.get("outs"), list):
+            sha = rsn.prompt_sha(rsn.messages(by_id[line["id"]]))
+            line = {**line, "prompt_sha": sha, "outs": [{**o, "prompt_sha": sha} if isinstance(o, dict) else o for o in line["outs"]]}
+        out.append(line)
+    return out
+
+
 class SameAsTheStage(StubbedSampleStage):
     """The stubbed Modal stage and the standalone scorer, on the same answers of the same fake server."""
 
@@ -95,7 +108,7 @@ class SameAsTheStage(StubbedSampleStage):
         run_info = {"thinking": thinking, "sampling": rsn.sampling_for(thinking), "max_tokens": 900 if thinking else rsn.DEFAULT_MAX_TOKENS, "seed_base": 1234, "ctx_per_slot": 8192, "slots": 4}
         with tempfile.TemporaryDirectory() as d:
             tasks = write_tasks(d, list(self.tasks.values()))
-            replies = write_replies(d, self.kaggle_lines(thinking))
+            replies = write_replies(d, stamp(self.kaggle_lines(thinking), self.tasks.values()))
             records, stats = kaggle_score.score(replies, tasks, "m", thinking=thinking, run_info=run_info)
         self.assertEqual(records, res["sft"], "the same records, in the same order")
         skip = ("over_length", "perf", "families", "kaggle", "thinking", "slot", "prompts", "projected_fit", "run")          # the Modal stage's own measurements, and what only the Kaggle scorer reads
@@ -138,7 +151,7 @@ class Table(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.tasks = write_tasks(self.tmp.name, [self.a, self.b, self.h])
-        self.replies = write_replies(self.tmp.name, self.lines)
+        self.replies = write_replies(self.tmp.name, stamp(self.lines, [self.a, self.b, self.h]))
         self.records, self.stats = kaggle_score.score(self.replies, self.tasks, "teacher-x")
 
     def test_the_family_rows(self):
@@ -206,7 +219,7 @@ class Files(unittest.TestCase):
     def score(self, lines, **kw):
         err = io.StringIO()
         with contextlib.redirect_stderr(err):
-            kept, stats = kaggle_score.score(write_replies(self.d, lines), self.tasks, "m", **kw)
+            kept, stats = kaggle_score.score(write_replies(self.d, stamp(lines, [self.t, self.u])), self.tasks, "m", **kw)
         return kept, stats, err.getvalue()
 
     def test_a_cut_line_a_repeated_id_and_an_unknown_id_are_counted_not_fatal(self):
@@ -260,20 +273,20 @@ class Files(unittest.TestCase):
     def test_the_held_out_seed_is_refused(self):
         held = write_tasks(self.d, [self.t], "decompiled-seed1001-all.jsonl")
         with self.assertRaisesRegex(SystemExit, "held-out"):
-            kaggle_score.score(write_replies(self.d, [self.good(self.t)]), held, "m")
+            kaggle_score.score(write_replies(self.d, stamp([self.good(self.t)], [self.t])), held, "m")
         renamed = write_tasks(self.d, [{**self.t, "id": "structs-1001-0001"}], "tasks.jsonl")
         with self.assertRaisesRegex(SystemExit, "held-out"):
-            kaggle_score.score(write_replies(self.d, [{**self.good(self.t), "id": "structs-1001-0001"}]), renamed, "m")
+            kaggle_score.score(write_replies(self.d, stamp([{**self.good(self.t), "id": "structs-1001-0001"}], [{**self.t, "id": "structs-1001-0001"}])), renamed, "m")
 
     def test_a_task_without_a_truth_template_stops_the_run_like_the_sample_stage(self):
         """Before anything is scored: the stage checks every task before it asks, so a task whose replies are all wrong (nothing would ask for its truth record) stops the run too."""
         broken = write_tasks(self.d, [{**self.t, "variant": "bogus"}], "decompiled-seed7-x.jsonl")
         wrong = {"id": self.t["id"], "kind": "structs", "outs": [out(reply(self.t, answer=WRONG))]}
         with self.assertRaisesRegex(ValueError, "no truth template"):
-            kaggle_score.score(write_replies(self.d, [wrong]), broken, "m")
+            kaggle_score.score(write_replies(self.d, stamp([wrong], [self.t])), broken, "m")
         unknown_mode = write_tasks(self.d, [{**self.t, "score": "nonsense"}], "decompiled-seed7-y.jsonl")
         with self.assertRaisesRegex(ValueError, "unknown score mode"):
-            kaggle_score.score(write_replies(self.d, [wrong]), unknown_mode, "m")
+            kaggle_score.score(write_replies(self.d, stamp([wrong], [self.t])), unknown_mode, "m")
 
 
 class Command(unittest.TestCase):
@@ -283,7 +296,7 @@ class Command(unittest.TestCase):
         self.addCleanup(self.tmp.cleanup)
         self.d = pathlib.Path(self.tmp.name)
         self.tasks = write_tasks(self.d, [self.t])
-        self.replies = write_replies(self.d, [{"id": self.t["id"], "kind": "structs", "outs": [out(r) for r in distinct(self.t, 3)]}])
+        self.replies = write_replies(self.d, stamp([{"id": self.t["id"], "kind": "structs", "outs": [out(r) for r in distinct(self.t, 3)]}], [self.t]))
 
     def run_cli(self, *args):
         buf = io.StringIO()
@@ -305,7 +318,7 @@ class Command(unittest.TestCase):
         self.assertEqual(outputs.sft_stem("teacher-x", "seed7-all-reasoning"), out_path.stem)
 
     def test_thinking_output_says_thinking_and_an_existing_output_is_not_overwritten(self):
-        self.replies = write_replies(self.d, [{"id": self.t["id"], "kind": "structs", "outs": [out(f"<think>\nThe node has a next pointer.\n</think>\n\n{reply(self.t)}")]}])
+        self.replies = write_replies(self.d, stamp([{"id": self.t["id"], "kind": "structs", "outs": [out(f"<think>\nThe node has a next pointer.\n</think>\n\n{reply(self.t)}")]}], [self.t]))
         self.run_cli("--replies", self.replies, "--tasks", self.tasks, "--model", "teacher-x", "--thinking")
         self.assertTrue((self.d / "sft-teacher-x-seed7-all-reasoning-think.jsonl").exists())
         self.assertFalse((self.d / "sft-teacher-x-seed7-all-reasoning.jsonl").exists())

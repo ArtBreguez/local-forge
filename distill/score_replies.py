@@ -7,7 +7,7 @@ acceptance is `traces.score_reasoning` (the last `Answer:` line, the domain's `v
 differ from one the Modal stage would have made from the same replies.
 
     python3 -m distill.score_replies --domain rea --replies replies.jsonl --tasks tasks.jsonl --model codeforge-27b-heretic-q4 \\
-        [--max-traces 3] [--thinking] [--out sft-....jsonl] [--force]        (REA: `python3 tools/rea-bench kaggle-score`, the same code)
+        [--max-traces 3] [--thinking] [--keep-unchecked] [--out sft-....jsonl] [--force]        (REA: `python3 tools/rea-bench kaggle-score`, the same code)
 
 Inputs. `replies.jsonl`: one line per task, `{"id", "kind", "outs": [{"text", "finish", "tokens", "secs"}, ...]}`; `finish` "length" is a reply cut off at max_tokens (rejected), "error" or a text that starts with
 `[error` is a failed request (never scored, counted); the last line of an id wins (a resumed run). The tasks (`--tasks`, whatever `domain.load_tasks` reads) carry the question and the truth; a replies line whose id is
@@ -18,7 +18,9 @@ be stored under a prompt it never saw.
 `--thinking` expects), the server's `tokens` and `prompt_tokens` per reply, a `prompt_sha` per line and per reply (`outputs.prompt_sha` of the messages it sent) and a `run.json` next to the replies with the settings it
 used. `--run-info run.json` (default: the `run.json` beside `--replies`, when there is one): its sampling settings go into the stats (`sampling`, the block the Modal stage writes), and `--thinking` must
 agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A reply whose `prompt_sha` (its own, else its line's: `reply_fingerprints`)
-is not the one of the messages rebuilt here is skipped and counted (`prompts`: lines that lost every reply in `mismatch`, a resumed line that lost some in `partial`, {id: replies}): a reply is never stored under a prompt it did not answer. `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
+is not the one of the messages rebuilt here is skipped and counted (`prompts`: lines that lost every reply in `mismatch`, a resumed line that lost some in `partial`, {id: replies}): a reply is never stored under a prompt it did not answer.
+A reply with NO fingerprint (neither its own nor its line's: a file of an older notebook, the thinking pilot's `out2`) cannot be shown to have answered it: it is counted (`prompts.unchecked` lines, `unchecked_replies`,
+`unchecked_ids`) and, by default, skipped like a mismatch; `--keep-unchecked` keeps them (the owner's word that the file was asked under this prompt), still counted, and the stats say so (`prompts.kept_unchecked`). `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
 training window of 4096 and 8192 tokens (a thinking run; 2048, 3072, 4096 otherwise), counted as the prompt tokens plus the completion tokens the server reported for the reply that became the record.
 
 Outputs: the SFT records (`sft-<model>-<tag>-reasoning[-think].jsonl` next to the tasks file, or `--out`) and `<out>.stats.json`: the stats of `records.assemble` (`reasoning` block with the drops by reason,
@@ -148,10 +150,11 @@ def family_table(stats: dict, tokens: dict) -> dict:
     return out
 
 
-def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX_TRACES, thinking: bool = False, run_info: dict = None, *, domain) -> tuple:
+def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX_TRACES, thinking: bool = False, run_info: dict = None, keep_unchecked: bool = False, *, domain) -> tuple:
     """(SFT records, stats dict) of a replies.jsonl against the tasks of `domain.load_tasks(tasks_path)`. Records and stats are `records.assemble`'s, the same call as the Modal sample stage (`reasoning=True`); the stats
-    also hold `families` (family_table), `kaggle` (what was read: lines, malformed, duplicate ids, unknown ids, tasks without replies), `prompts` (lines whose prompt fingerprint is not the rebuilt messages'),
-    `projected_fit` and `thinking`, `max_traces`; with `run_info` (the notebook's run.json) also `sampling` and `run`."""
+    also hold `families` (family_table), `kaggle` (what was read: lines, malformed, duplicate ids, unknown ids, tasks without replies), `prompts` (lines whose prompt fingerprint is not the rebuilt messages', and
+    the ones that have none to compare: `keep_unchecked` keeps the replies of the latter, else they are skipped), `projected_fit` and `thinking`, `max_traces`; with `run_info` (the notebook's run.json) also `sampling`
+    and `run`."""
     if max_traces < 1:
         raise SystemExit(f"--max-traces {max_traces}: at least 1 teacher record per kept task")
     check_run_info(run_info, thinking)
@@ -168,33 +171,44 @@ def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX
     tasks = [t for t in tasks if t["id"] in replies]
     if not tasks:
         raise SystemExit(f"none of the {len(replies)} task ids of {replies_path} is in {tasks_path}: is it the file of the task stage run the notebook read?")
-    prompts = {"checked": 0, "mismatch": 0, "mismatched_ids": []}
+    prompts = {"lines": len(tasks), "checked": 0, "mismatch": 0, "mismatched_ids": [], "unchecked": 0, "unchecked_replies": 0, "unchecked_ids": [], "kept_unchecked": bool(keep_unchecked)}
     own_outs = {}                                                 # id -> the replies of a line that answered the prompt rebuilt here, for a line that lost only some
     for t in list(tasks):
         rec = replies[t["id"]]
         fingerprints = reply_fingerprints(rec)
-        if all(sha is None for sha in fingerprints):              # an older notebook: nothing to compare
-            continue
-        prompts["checked"] += 1
         want = outputs.prompt_sha(messages_for(t))
         wrong = [i for i, sha in enumerate(fingerprints) if sha is not None and sha != want]
-        if not wrong:
+        no_sha = [i for i, sha in enumerate(fingerprints) if sha is None]       # no fingerprint of their own, none on the line: nothing to compare
+        prompts["checked"] += len(no_sha) < len(fingerprints)
+        if no_sha:
+            prompts["unchecked"] += 1
+            prompts["unchecked_replies"] += len(no_sha)
+            prompts["unchecked_ids"].append(t["id"])
+        skipped = {*wrong, *([] if keep_unchecked else no_sha)}
+        if not skipped:
             continue
-        if len(wrong) == len(fingerprints):                       # every reply of the line (or the line, when it has none) answered another prompt
-            prompts["mismatch"] += 1
-            prompts["mismatched_ids"].append(t["id"])
+        if len(skipped) == len(fingerprints):                     # every reply of the line (or the line, when it has none) answered another prompt or cannot be checked
+            if wrong:
+                prompts["mismatch"] += 1
+                prompts["mismatched_ids"].append(t["id"])
             tasks.remove(t)
-        else:                                                     # a resumed line mixes replies of several sessions: only the ones that answered another prompt go
-            own_outs[t["id"]] = [o for i, o in enumerate(rec["outs"]) if i not in wrong]
-            prompts.setdefault("partial", {})[t["id"]] = len(wrong)
+        else:                                                     # a resumed line mixes replies of several sessions: only the ones that answered another prompt, or cannot be checked, go
+            own_outs[t["id"]] = [o for i, o in enumerate(rec["outs"]) if i not in skipped]
+            if wrong:
+                prompts.setdefault("partial", {})[t["id"]] = len(wrong)
     if prompts["mismatch"]:
         sys.stderr.write(f"warning: {prompts['mismatch']} replies line(s) answered a prompt other than the one rebuilt here (domain.messages) and were skipped: {', '.join(prompts['mismatched_ids'][:5])}"
                          f"{' ...' if prompts['mismatch'] > 5 else ''}\n")
     if prompts.get("partial"):
         sys.stderr.write(f"warning: {sum(prompts['partial'].values())} repl(ies) of {len(prompts['partial'])} replies line(s) answered a prompt other than the one rebuilt here and were skipped, the line's other replies were kept: "
                          f"{', '.join(list(prompts['partial'])[:5])}{' ...' if len(prompts['partial']) > 5 else ''}\n")
+    if prompts["unchecked"] and not keep_unchecked:
+        sys.stderr.write(f"warning: {prompts['unchecked']} replies line(s) hold {prompts['unchecked_replies']} repl(ies) with no prompt fingerprint (an older notebook): they cannot be shown to have answered the prompt rebuilt "
+                         f"here and were skipped; --keep-unchecked keeps them\n")
     if not tasks:
-        raise SystemExit(f"no replies line of {replies_path} answered the prompt this version of the code asks: the notebook and score_replies disagree on reasoning.messages (domain.messages of {domain.name!r})")
+        hint = (f" ({prompts['unchecked']} line(s) have no fingerprint at all, a file of an older notebook: --keep-unchecked scores them as they are, on your word that the notebook asked this prompt)"
+                if prompts["unchecked"] and not keep_unchecked else "")
+        raise SystemExit(f"no replies line of {replies_path} answered the prompt this version of the code asks: the notebook and score_replies disagree on reasoning.messages (domain.messages of {domain.name!r}){hint}")
     heldout = domain.heldout_ids()
     if any(t["id"] in heldout for t in tasks):
         raise SystemExit(f"held-out tasks of domain {domain.name!r} are never turned into SFT records: {', '.join(t['id'] for t in tasks if t['id'] in heldout)[:200]}")
@@ -257,6 +271,8 @@ def add_arguments(ap: argparse.ArgumentParser, default_tasks=None) -> None:
     ap.add_argument("--thinking", action="store_true", help="the replies hold the model's reasoning (<think>...</think>, or `reasoning_content`): keep it as the trace; files say -reasoning-think")
     ap.add_argument("--out", type=pathlib.Path, default=None, help="the SFT records (default: sft-<model>-<tag>-reasoning[-think].jsonl next to --tasks); the stats go to <out>.stats.json")
     ap.add_argument("--run-info", type=pathlib.Path, default=None, help="the notebook's run.json (default: the one beside --replies, if there is one): its sampling settings go into the stats, and it must agree with --thinking")
+    ap.add_argument("--keep-unchecked", action="store_true", help="keep the replies that carry no prompt fingerprint (a replies.jsonl of an older notebook, like the thinking pilot's out2): your word that they were asked "
+                    "under this prompt. Default: they cannot be shown to have answered it, so they are skipped and counted (prompts.unchecked)")
     ap.add_argument("--force", action="store_true", help="overwrite an existing output (default: refuse)")
 
 
@@ -267,7 +283,7 @@ def run(a: argparse.Namespace, domain) -> None:
     info_path = a.run_info or a.replies.with_name("run.json")
     if a.run_info and not a.run_info.exists():
         raise SystemExit(f"--run-info {a.run_info}: no such file")
-    kept, stats = score(a.replies, a.tasks, a.model, a.max_traces, a.thinking, read_run_info(info_path), domain=domain)
+    kept, stats = score(a.replies, a.tasks, a.model, a.max_traces, a.thinking, read_run_info(info_path), a.keep_unchecked, domain=domain)
     outputs.write_atomic(out, (json.dumps(r) for r in kept))
     stats_path.write_text(json.dumps(stats, indent=1))
     s = stats
@@ -281,6 +297,10 @@ def run(a: argparse.Namespace, domain) -> None:
         print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
     if s["prompts"]["mismatch"]:
         print(f"prompts: {s['prompts']['mismatch']} of {s['prompts']['checked']} lines answered another prompt and were skipped")
+    if s["prompts"]["unchecked"]:
+        p = s["prompts"]
+        print(f"prompts: {p['unchecked']} of {p['lines']} lines hold {p['unchecked_replies']} replies with no fingerprint (an older notebook), so unchecked: "
+              + ("kept (--keep-unchecked), on your word that they answered this prompt" if p["kept_unchecked"] else "skipped (--keep-unchecked keeps them)"))
     if s["prompts"].get("partial"):
         print(f"prompts: {sum(s['prompts']['partial'].values())} replies of {len(s['prompts']['partial'])} lines answered another prompt and were skipped (the rest of those lines was kept)")
     for line in records.reasoning_report(s):

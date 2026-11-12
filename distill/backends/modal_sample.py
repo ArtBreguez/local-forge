@@ -77,13 +77,15 @@ SEED_BASE = 1234            # the seed of sample i is SEED_BASE + i
 
 
 def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None, max_tokens_by_family: dict = None) -> dict:
+                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None, max_tokens_by_family: dict = None,
+                   trust_unfingerprinted: bool = False) -> dict:
     """The sample stage, for any subject: `domain` supplies the tasks (`domain.load_tasks(tasks_source)`: for REA the directory of the volume the decompile stage wrote), the messages, the verdict and the truth; `data_vol` is the Modal
     Volume mounted at /data (`reload` and `commit` are called on it); the model is read from /models. The wrapper of a subject (tools/modal/modal_rea_data.py for REA) registers this function with Modal and gives it its own.
     K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
     with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those; in a reasoning run also the STALE ones: a reply carries
     the fingerprint of the prompt it answered and the budget it was asked with (`outputs.out_meta`), and one that answered another prompt than the task's now, or was cut off at a smaller budget than
-    the task's now (`max_tokens_by_family` grew), is asked again; a reply of an older checkpoint has no fingerprint (it is kept) and counts as asked with `max_tokens`. The SFT
+    the task's now (`max_tokens_by_family` grew) or at a budget it does not say, is asked again; so is a reply of an older checkpoint, which has no fingerprint (the prompt it answered is not known), unless
+    `trust_unfingerprinted` (the run config's, the owner's word that such a checkpoint was asked under this prompt and `max_tokens`: its replies take both and stay). The SFT
     records are built at the end from all replies (`distill.records`: the teacher's answer is a filter, the stored text is rendered from the truth, a
     task that `domain.needs_agreement` needs two right samples); the stats come per family.
     `reasoning` (round 11, `distill.traces`): the teacher is asked for the steps and a last `Answer:` line, `max_tokens` defaults to 768 (300 otherwise), the final answer is the filter and a kept
@@ -97,6 +99,8 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
     from huggingface_hub import hf_hub_download
     import urllib.request
     _check_thinking(reasoning, thinking, max_tokens, max_traces)
+    if trust_unfingerprinted and not reasoning:
+        raise SystemExit("trust_unfingerprinted is for a reasoning or thinking run (a default run's checkpoint carries no fingerprint and needs none)")
     if reasoning:           # the reply is stored verbatim: a teacher of the catalogue that may only filter is refused here too, whoever called (the wrapper has looked the name up already)
         teachers.require_reasoning(name, repo, fname, why="--thinking" if thinking else "--reasoning")
     window = _window(reasoning, max_len)
@@ -126,17 +130,21 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         domain.check_task(t)    # a task the domain cannot score, or whose truth its own verify rejects, must stop the run before the model download and the server start
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, run_tag)}.partial.jsonl")
     results = outputs.load_partial(partial, resume)
-    # a reasoning run's replies carry the prompt they answered and the budget they were asked with: a resume asks again what is stale (another prompt, or cut off at a smaller budget than the task's now); a default run's
-    # checkpoint keeps its two-element replies (its record is rendered from the truth, the teacher's text is not stored)
+    # a reasoning run's replies carry the prompt they answered and the budget they were asked with: a resume asks again what is stale (another prompt or none known, or cut off at a smaller budget than the task's
+    # now or an unknown one); a default run's checkpoint keeps its two-element replies (its record is rendered from the truth, the teacher's text is not stored)
     prompt_of = lambda t: outputs.prompt_sha(domain.messages(t, mode))
-    stale_args = lambda t: (prompt_of(t), budget(t), max_tokens) if reasoning else ()
+    stale_args = lambda t: (prompt_of(t), budget(t)) if reasoning else ()
+    by_id = {t["id"]: t for t in tasks}
+    if trust_unfingerprinted:       # the owner's word: a reply with no fingerprint was asked under this prompt and `max_tokens`; it takes both (`outputs.assume_meta`)
+        results = {tid: outputs.assume_meta(rec, prompt_of(by_id[tid]), max_tokens) if tid in by_id else rec for tid, rec in results.items()}
     todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k, *stale_args(t))) for t in tasks]
     todo = [(t, ask) for t, ask in todo if ask]
     if results:
         redo = sum(len(ask) for t, ask in todo if t["id"] in results)
         stale = sum(1 for t, ask in todo if t["id"] in results for i in ask if i < len(results[t["id"]]["outs"]) and not is_error_reply(results[t["id"]]["outs"][i][0]))
         print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask (" + (f"{redo} failed or missing samples of checkpointed tasks)" if not stale else
-              f"{redo - stale} failed or missing and {stale} stale samples of checkpointed tasks: a stale one answered another prompt than the task's now, or was cut off at a smaller budget than its own)"))
+              f"{redo - stale} failed or missing and {stale} stale samples of checkpointed tasks: a stale one answered another prompt than the task's now, carries no fingerprint (an older checkpoint: "
+              f"run config `trust_unfingerprinted` keeps it), or was cut off at a smaller budget than its own or at one it does not say)"))
     path = hf_hub_download(repo, fname, cache_dir="/models")
     server_log = open("/tmp/server.log", "w")
     srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(slots * slot_ctx),
@@ -194,7 +202,6 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
             outs[i] = (txt, ok, meta) if reasoning else (txt, ok)
         return t, outs
 
-    by_id = {t["id"]: t for t in tasks}
     t_start = time.time()
     try:
         with ThreadPoolExecutor(slots) as ex, open(partial, "a") as ck:
@@ -206,7 +213,7 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
                 if i % 20 == 0:
                     data_vol.commit()
         wall = max(time.time() - t_start, 1e-9)
-        if reasoning:           # a reply to another prompt that could not be asked again (its task does not fit the slot now) is not stored under the task's prompt
+        if reasoning:           # a reply to another prompt, or with no fingerprint, that could not be asked again (its task does not fit the slot now) is not stored under the task's prompt
             results = {tid: {**rec, "outs": outputs.current_outs(rec["outs"], prompt_of(by_id[tid]))} if tid in by_id else rec for tid, rec in results.items()}
         kept, stats = records.assemble(tasks, results, name, lambda t: domain.messages(t, mode), reasoning, thinking, max_traces, domain=domain)
         if reasoning:           # this call's own throughput, next to the cost line's assumption (a resumed run reports only the replies it asked)

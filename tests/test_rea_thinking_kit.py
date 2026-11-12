@@ -20,7 +20,7 @@ import unittest
 from unittest import mock
 
 from . import distill_fixtures as fx
-from .test_rea_kaggle import write_replies, write_tasks
+from .test_rea_kaggle import stamp, write_replies, write_tasks
 from .test_rea_kaggle_kit import StubServer, make_tasks, teacher_reply
 from .thinking_pilot import build_tasks, run_teacher
 
@@ -253,7 +253,7 @@ class ScorerReports(unittest.TestCase):
         run_info = {"thinking": True, "sampling": config.THINKING_SAMPLING, "max_tokens": 4096, "max_tokens_by_family": by, "seed_base": 1234, "ctx_per_slot": 12288, "slots": 2}
         with tempfile.TemporaryDirectory() as d:
             tp = write_tasks(d, tasks)
-            rp = write_replies(d, fx.kaggle_lines(tasks, "thinking"))
+            rp = write_replies(d, stamp(fx.kaggle_lines(tasks, "thinking"), tasks))
             _kept, stats = kaggle_score.score(rp, tp, "m", thinking=True, run_info=run_info)
             _kept, plain = kaggle_score.score(rp, tp, "m", thinking=True, run_info={k: v for k, v in run_info.items() if k != "max_tokens_by_family"})
         self.assertEqual(stats["sampling"]["max_tokens_by_family"], by)

@@ -13,13 +13,17 @@ same procedures run on the new layout and the output must be the same text, in t
   Training   `run_tag`, `batch_plan` and the record parser of the training script on a grid
   Kit        the files the Kaggle kit writes for the same tasks
 
-TWO DELIBERATE CHANGES since phase A, both in the thinking-pilot fix round (#33):
+THREE DELIBERATE CHANGES since phase A, the first two in the thinking-pilot fix round (#33), the third in its review round 12:
   1. `SYSTEM_REASONING` now tells the model that the last line gives every part of a multi-part question (the thinking pilot's antidebug replies had the number and not the technique: 6 of 6 rejected). It moved
      kit, score-reasoning, score-thinking, traces and the three stage files: with the phase-A prompt put back, every test below passes byte for byte (plain mode, whose prompt is `SYSTEM_RECIPE`, did not move at all:
      `stage-plain.json`, `plan.json` and `lora.json` are the phase-A files).
   2. A reasoning or thinking run's checkpoint carries `{prompt_sha, max_tokens}` with each reply (round 15, M1: a resume asks again a reply to another prompt, or cut off at a smaller budget). It moved the two
      `partial_sha256` of `stage-reasoning`, `stage-reasoning-quota` and `stage-thinking` and nothing else: the stats, the records, the requests and what was printed are the same, and the checkpoint with the third
      element of every reply removed has the digest it had before (checked when the change was made). `stage-plain.json` did not move: a default run keeps its two-element replies.
+  3. `kaggle-score` skips the replies that carry no prompt fingerprint unless it is told `--keep-unchecked` (round 12, M1: nothing shows which prompt they answered), and counts them: `prompts` of the stats
+     gained `lines`, `unchecked`, `unchecked_replies`, `unchecked_ids` and `kept_unchecked`, and the command prints a line about them. It moved `score-reasoning` and `score-thinking` and nothing else: the lines of
+     their fixture are those of an older notebook, which the new code scores with `keep_unchecked` (`fx.score_artifacts(..., keep_unchecked=True)`; the baseline's call is the one without it); the records and
+     the per-family tables are the same text.
 After a deliberate change, `DISTILL_GOLDEN_UPDATE=1 python3 -m unittest tests.test_distill_golden` rewrites the expected files; read `git diff --stat tests/golden` before committing them.
 """
 from __future__ import annotations
@@ -76,10 +80,10 @@ del Stage.runTest
 
 class Scorer(Same):
     def test_reasoning(self):
-        self.same("score-reasoning.json", fx.score_artifacts(kaggle_score, "reasoning"))
+        self.same("score-reasoning.json", fx.score_artifacts(kaggle_score, "reasoning", keep_unchecked=True))
 
     def test_thinking(self):
-        self.same("score-thinking.json", fx.score_artifacts(kaggle_score, "thinking"))
+        self.same("score-thinking.json", fx.score_artifacts(kaggle_score, "thinking", keep_unchecked=True))
 
 
 class Traces(Same):

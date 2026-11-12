@@ -21,14 +21,14 @@
    "changed": null
   },
   "score-reasoning.json": {
-   "sha256": "4a1e534923ced5704db2f57ff0c9f8e9d06620a7d0e8ef8435c5cb948cdd5364",
+   "sha256": "53f13fb3b5924daf1849a69a3b55cb2887dc4bf5def17da16615ac08746d7a42",
    "phase_a_sha256": "4246e9460693a693f13644a375793dad7b4064dc4268a5ae36e93d274a4fde1c",
-   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file"
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; kaggle-score counts the lines with no prompt fingerprint and skips them unless `keep_unchecked` (review r12, M1): `prompts` gains lines, unchecked, unchecked_replies, unchecked_ids and kept_unchecked, and the command prints a line about them (the lines of this fixture are an older notebook's, so the new code's test scores them with `keep_unchecked`; nothing else of the file moved)"
   },
   "score-thinking.json": {
-   "sha256": "03be99b7109004b3e438dee2bc290e1f6df414db9b72f332af86135d8c6afe62",
+   "sha256": "e2a48a77ead8fb1c576a8a842ea211e9d8a6b72560f522b17327bb40175e3414",
    "phase_a_sha256": "a2121c1573f197b374bd98771b572951a6fb275d87c7af6d418e86d139d198e5",
-   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file"
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; kaggle-score counts the lines with no prompt fingerprint and skips them unless `keep_unchecked` (review r12, M1): `prompts` gains lines, unchecked, unchecked_replies, unchecked_ids and kept_unchecked, and the command prints a line about them (the lines of this fixture are an older notebook's, so the new code's test scores them with `keep_unchecked`; nothing else of the file moved)"
   },
   "stage-plain.json": {
    "sha256": "8f309c6ea7642aa6919e8f3ba67f97708769b9cd54433384f4cbb2191d05317d",

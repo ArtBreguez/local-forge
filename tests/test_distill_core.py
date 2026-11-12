@@ -177,7 +177,7 @@ class Pipeline(unittest.TestCase):
                                            lambda t: ARITH.messages(t, mode), True, mode == "thinking", domain=ARITH)
                 self.assertEqual(kept, want, mode)
                 self.assertEqual(stats["reasoning"]["mode"], mode)
-                self.assertEqual(stats["prompts"], {"checked": 12, "mismatch": 0, "mismatched_ids": []})
+                self.assertEqual(stats["prompts"], {"lines": 12, "checked": 12, "mismatch": 0, "mismatched_ids": [], "unchecked": 0, "unchecked_replies": 0, "unchecked_ids": [], "kept_unchecked": False})
                 self.assertEqual(stats["families"]["ALL"]["tasks"], 12)
                 self.assertEqual(list(stats["projected_fit"]["windows"]), ["4096", "8192"] if mode == "thinking" else ["2048", "3072", "4096"])
 
@@ -196,7 +196,7 @@ class Pipeline(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             held = make_tasks(HELDOUT_SEED, 3)
             tasks = self.write(d, held, "tasks.jsonl")
-            replies = self.write(d, [{"id": t["id"], "kind": t["kind"], "outs": [{"text": reasoning_reply(t), "finish": "stop", "tokens": 5}]} for t in held])
+            replies = self.write(d, [{"id": t["id"], "kind": t["kind"], "prompt_sha": outputs.prompt_sha(ARITH.messages(t, "reasoning")), "outs": [{"text": reasoning_reply(t), "finish": "stop", "tokens": 5}]} for t in held])
             with self.assertRaisesRegex(SystemExit, "held-out"):
                 score_replies.score(replies, tasks, "m", domain=ARITH)
             tasks = self.write(d, TASKS, "tasks2.jsonl")

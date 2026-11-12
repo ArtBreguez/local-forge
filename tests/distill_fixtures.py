@@ -153,8 +153,9 @@ def stage_artifacts(case, mode: str) -> dict:
     return out
 
 
-def score_artifacts(kaggle_score, mode: str) -> dict:
-    """`kaggle_score.score` on the frozen tasks and the replies of the same fake server, and the CLI's own output and files."""
+def score_artifacts(kaggle_score, mode: str, keep_unchecked: bool = False) -> dict:
+    """`kaggle_score.score` on the frozen tasks and the replies of the same fake server, and the CLI's own output and files. The lines are those of an older notebook (no fingerprint, but for one that is another
+    prompt's): the baseline's scorer takes them as they are; since round 12 (M1) the current one skips them unless it is told `keep_unchecked` (its flag `--keep-unchecked`), which the new code's test says."""
     tasks = load_tasks()
     thinking = mode == "thinking"
     run_info = {"thinking": thinking, "sampling": {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0} if thinking else {"temperature": 0.7}, "max_tokens": 900 if thinking else 768,
@@ -168,12 +169,12 @@ def score_artifacts(kaggle_score, mode: str) -> dict:
         for ln in lines:                       # a notebook's fingerprint of the prompt it asked is checked against the rebuilt one: one line is for another prompt
             ln["prompt_sha"] = "0" * 16 if ln["id"] == tasks[3]["id"] else None
         rp.write_text("".join(json.dumps({k: v for k, v in ln.items() if v is not None}) + "\n" for ln in lines))
-        records, stats = kaggle_score.score(rp, tp, "m", thinking=thinking, run_info=run_info)
+        records, stats = kaggle_score.score(rp, tp, "m", thinking=thinking, run_info=run_info, **({"keep_unchecked": True} if keep_unchecked else {}))
         (d / "run.json").write_text(json.dumps(run_info))
         printed = io.StringIO()
         from rea_bench import cli
         with contextlib.redirect_stdout(printed), contextlib.redirect_stderr(io.StringIO()):
-            cli.main(["kaggle-score", "--replies", str(rp), "--tasks", str(tp), "--model", "m", *(["--thinking"] if thinking else []), "--max-traces", "2"])
+            cli.main(["kaggle-score", "--replies", str(rp), "--tasks", str(tp), "--model", "m", *(["--thinking"] if thinking else []), "--max-traces", "2", *(["--keep-unchecked"] if keep_unchecked else [])])
         written = {p.name: sha(p.read_text()) for p in sorted(d.glob("sft-*"))}
         return {"records": records, "stats": stats, "cli_stdout": printed.getvalue().replace(str(d), "<tmp>"), "cli_files": written}
 
