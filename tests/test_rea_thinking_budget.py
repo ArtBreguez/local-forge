@@ -279,6 +279,20 @@ class ModalWrapper(ModalCase):
         f = config.merge_train_flags(THINKING_CONFIG, dict(config.TRAIN_FLAG_DEFAULTS))
         self.assertEqual(f["max_len"], 12288)
 
+    def test_the_batch_plan_says_what_it_keeps_up_to_8192_and_what_it_does_not_above(self):
+        """Round 12, m3: the docstring said a longer window keeps the tokens per micro-batch at 4 x 2048, "the same by construction". True up to 8192; at 12288 it is 1 x 16, one 12288-token sequence: 1.5 times."""
+        import sys
+        sys.modules.pop("distill.backends.modal_train", None)
+        import distill.backends.modal_train as modal_train
+        tokens = lambda w: modal_train.batch_plan(w)[0] * w
+        self.assertEqual([tokens(w) for w in (2048, 4096, 8192)], [8192, 8192, 8192], "up to 8192 the tokens per micro-batch are 4 x 2048")
+        self.assertEqual((tokens(12288), tokens(12288) / tokens(8192), modal_train.batch_plan(16384)), (12288, 1.5, (1, 16)), "above it the batch cannot shrink: more tokens, not the same")
+        doc = " ".join(modal_train.batch_plan.__doc__.split())
+        for part in ("up to 8192 keeps the tokens per micro-batch", "is the same by construction", "ABOVE 8192 that no longer holds", "GROW with the window", "at 12288", "1.5 times the 4 x 2048",
+                     "nothing says it fits", "`--max-len 8192` is the fallback", "NOT measured on a GPU for a window above 2048"):
+            self.assertIn(part, doc)
+        self.assertIn("1.5 times the tokens of the 4 x 2048", (ROOT / "tools" / "modal" / "README.md").read_text(), "the README says the same")
+
     def test_the_shipped_thinking_config_reaches_the_call_with_its_map(self):
         with tempfile.TemporaryDirectory() as d:
             remote, _run = self.run_main(pathlib.Path(d), stage="sample", seed=7, family="legacy", run_config=str(THINKING_CONFIG))
