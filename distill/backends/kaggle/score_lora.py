@@ -7,9 +7,11 @@ A reply is judged by the code `kaggle-score` runs: `score_replies.reply_of` (a c
 own `domain.verify` (REA: `scoring.score_strict`, the whitelist grammar on the text after the last `Answer:` line). A reply that answered another prompt than the task's now (its `prompt_sha`) is refused, as
 `kaggle-score` refuses it. For the generated families `scoring.score` (the evaluation scorer of rea-bench's held-out arm) and `score_strict` are the same function; they differ only for the legacy templates.
 
-Per family and arm: replies, accepted (accuracy, with its 95% Wilson interval), wrong, no `Answer:` line, truncated, errors, the share cut off at the budget (`finish == "length"`) and the mean completion tokens.
-Per family and overall, the two arms PAIRED on the same replies: both right, base only, adapter only, both wrong, and the two-sided exact sign test on the discordant pairs. With ten tasks of a family an
-interval is wide (10 of 10 against 6 of 10 is not a significant difference by itself): read the overall paired line first, the families second. Stdlib only.
+Per family and arm: replies, accepted (accuracy, with its 95% Wilson interval), wrong, no `Answer:` line, truncated, errors, the share cut off at the budget (`finish == "length"`) and the mean completion tokens,
+over the replies BOTH arms have (a reply only one arm has, after a hard kill between the two arms of a batch, is counted apart as unpaired and enters no figure).
+Per family and overall, the two arms PAIRED on the same replies: both right, base only, adapter only, both wrong, and the two-sided exact sign test over TASKS: a task goes to the arm that has more accepted replies
+of it (with k=1 that is the discordant pairs; the k replies of a task are not independent draws, so they are never counted one by one). With ten tasks of a family an interval is wide (10 of 10 against 6 of
+10 is not a significant difference by itself): read the overall paired line first, the families second. Stdlib only.
 """
 from __future__ import annotations
 
@@ -88,27 +90,35 @@ def summarize(rows: dict) -> dict:
 
 
 def pair(base: dict, lora: dict) -> dict:
-    """The two arms on the replies both have: {"overall": counts, "by_kind": {kind: counts}} with counts = both, base_only, lora_only, neither, n, sign_p, and `unpaired` = replies only one arm has."""
+    """The two arms on the replies both have: {"overall": counts, "by_kind": {kind: counts}} with counts = both, base_only, lora_only, neither (replies), n (replies), tasks, tasks_base_better, tasks_lora_better,
+    per_task (the most paired replies one task has) and sign_p (the exact sign test over the TASKS: a task is the base's when the base has more accepted replies of it, the adapter's when it has, a tie is dropped),
+    and `unpaired` = replies only one arm has (`unpaired_by_arm` per arm)."""
     common = sorted(set(base) & set(lora))
-    groups = collections.defaultdict(collections.Counter)
+    groups, wins = collections.defaultdict(collections.Counter), collections.defaultdict(lambda: collections.defaultdict(lambda: [0, 0, 0]))
     for key in common:
         a, b = base[key]["verdict"] == "accepted", lora[key]["verdict"] == "accepted"
         name = "both" if a and b else "base_only" if a else "lora_only" if b else "neither"
         for g in ("*", base[key]["kind"]):
             groups[g][name] += 1
+            tally = wins[g][key[0]]
+            tally[0], tally[1], tally[2] = tally[0] + 1, tally[1] + a, tally[2] + b
 
-    def counts(c: collections.Counter) -> dict:
+    def counts(c: collections.Counter, per_task: dict) -> dict:
         d = {k: c[k] for k in ("both", "base_only", "lora_only", "neither")}
-        return {**d, "n": sum(d.values()), "sign_p": round(sign_test_p(d["base_only"], d["lora_only"]), 4)}
-    return {"overall": counts(groups.pop("*", collections.Counter())), "by_kind": {k: counts(v) for k, v in sorted(groups.items())}, "unpaired": len(set(base) ^ set(lora))}
+        won_base, won_lora = (sum(1 for n, x, y in per_task.values() if (x > y if arm == "base" else y > x)) for arm in ("base", "lora"))
+        return {**d, "n": sum(d.values()), "tasks": len(per_task), "tasks_base_better": won_base, "tasks_lora_better": won_lora, "per_task": max((n for n, _, _ in per_task.values()), default=0),
+                "sign_p": round(sign_test_p(won_base, won_lora), 4)}
+    return {"overall": counts(groups.pop("*", collections.Counter()), wins.pop("*", {})), "by_kind": {k: counts(v, wins[k]) for k, v in sorted(groups.items())}, "unpaired": len(set(base) ^ set(lora)),
+            "unpaired_by_arm": {"base": len(set(base) - set(lora)), "lora": len(set(lora) - set(base))}}
 
 
 def score(base_path, lora_path, heldout_files, *, domain) -> dict:
-    """The report: per arm `summarize` and the read counts, the `pair`, and how many tasks the held-out files have against how many were answered."""
+    """The report: per arm `summarize` of the replies BOTH arms have and the read counts, the `pair`, and how many tasks the held-out files have against how many were answered."""
     tasks = {t["id"]: t for t in domain.load_heldout([pathlib.Path(f) for f in heldout_files])}
     arms = {"base": read_arm(base_path, tasks, domain=domain), "lora": read_arm(lora_path, tasks, domain=domain)}
-    return {"arms": {a: {**summarize(v["rows"]), "read": v["info"]} for a, v in arms.items()}, "paired": pair(arms["base"]["rows"], arms["lora"]["rows"]),
-            "tasks_answered": len({tid for v in arms.values() for tid, _ in v["rows"]}), "tasks_in_files": len(tasks)}
+    common = set(arms["base"]["rows"]) & set(arms["lora"]["rows"])
+    return {"arms": {a: {**summarize({k: r for k, r in v["rows"].items() if k in common}), "read": v["info"], "unpaired": len(v["rows"]) - len(common)} for a, v in arms.items()},
+            "paired": pair(arms["base"]["rows"], arms["lora"]["rows"]), "tasks_answered": len({tid for v in arms.values() for tid, _ in v["rows"]}), "tasks_in_files": len(tasks)}
 
 
 def lines_of(report: dict, run_info: dict = None) -> list:
@@ -117,8 +127,10 @@ def lines_of(report: dict, run_info: dict = None) -> list:
     if run_info:
         t = run_info.get("train") or {}
         if run_info.get("smoke"):
-            out.append("WARNING: this is a SMOKE run (4 steps, two replies): its numbers say nothing about the adapter")
-        out.append(f"adapter: {t.get('status', '?')}, {t.get('steps_done', '?')} of {t.get('steps_planned', '?')} steps, loss {t.get('loss_first')} -> {t.get('loss_last')}, {t.get('records')}" + (" (stopped by the deadline)" if t.get("deadline_hit") else ""))
+            out.append("WARNING: this is a SMOKE run (4 steps, one batch of replies): its numbers say nothing about the adapter")
+        lr_last, lr_peak = t.get("lr_last"), t.get("lr_peak")
+        stopped = " (stopped by the deadline" + (f", at a learning rate of {lr_last:.1e}, {100 * lr_last / lr_peak:.0f}% of the peak: the cosine had not finished, a weaker and noisier adapter than the planned one)" if lr_last is not None and lr_peak else ")") if t.get("deadline_hit") else ""
+        out.append(f"adapter: {t.get('status', '?')}, {t.get('steps_done', '?')} of {t.get('steps_planned', '?')} steps, loss {t.get('loss_first')} -> {t.get('loss_last')}, {t.get('records')}" + stopped)
     pct = lambda s: "  -  " if s["accuracy"] is None else f"{100 * s['accuracy']:4.0f}%"
     out.append(f"{'family':<12}{'n':>4}  {'base acc [95% CI]':<22}{'lora acc [95% CI]':<22}{'only base':>10}{'only lora':>10}{'sign p':>8}   cut off b/l   mean tokens b/l")
     rows = [("OVERALL", "overall")] + [(k, k) for k in report["arms"]["base"]["by_kind"]]
@@ -132,7 +144,10 @@ def lines_of(report: dict, run_info: dict = None) -> list:
         cut = lambda s: "-" if s["cut_off"] is None else f"{100 * s['cut_off']:.0f}%"
         out.append(f"{label:<12}{pr['n']:>4}  {ci(b):<22}{ci(l):<22}{pr['base_only']:>10}{pr['lora_only']:>10}{pr['sign_p']:>8}   {cut(b)}/{cut(l)}".ljust(104) + f"{b['mean_tokens']}/{l['mean_tokens']}")
     p = report["paired"]
-    out.append(f"paired replies {p['overall']['n']}, unpaired {p['unpaired']}; tasks answered {report['tasks_answered']} of {report['tasks_in_files']} in the held-out files")
+    by_arm = p.get("unpaired_by_arm", {})
+    out.append(f"paired replies {p['overall']['n']}, unpaired {p['unpaired']}" + (f" (base only {by_arm['base']}, adapter only {by_arm['lora']}: in no figure above)" if p["unpaired"] else "") + f"; tasks answered {report['tasks_answered']} of {report['tasks_in_files']} in the held-out files")
+    if p["overall"].get("per_task", 0) > 1:
+        out.append(f"k > 1 (up to {p['overall']['per_task']} replies per task): the sign p is over TASKS, the arm with more accepted replies of a task wins it, ties are dropped; the replies of a task are not independent draws")
     return out
 
 

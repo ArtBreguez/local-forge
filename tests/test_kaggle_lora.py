@@ -829,7 +829,57 @@ class Scoring(unittest.TestCase):
         base, lora = self.files()
         short = write_jsonl(self.dir / "short.jsonl", [json.loads(line) for line in lora.read_text().splitlines()][:6])
         r = score_lora.score(base, short, [self.heldout], domain=ARITH)
-        self.assertEqual((r["paired"]["overall"]["n"], r["paired"]["unpaired"], r["arms"]["base"]["overall"]["replies"], r["arms"]["lora"]["overall"]["replies"]), (6, 6, 12, 6))
+        self.assertEqual((r["paired"]["overall"]["n"], r["paired"]["unpaired"], r["arms"]["base"]["overall"]["replies"], r["arms"]["lora"]["overall"]["replies"]), (6, 6, 6, 6), "both arms are summarised over the replies both have")
+        self.assertEqual((r["arms"]["base"]["unpaired"], r["arms"]["lora"]["unpaired"], r["paired"]["unpaired_by_arm"]), (6, 0, {"base": 6, "lora": 0}))
+
+    def rows(self, spec):
+        """{(task, sample): row}: `spec` = {task id: [verdict of each sample]}, `a` accepted, `w` wrong."""
+        return {(tid, j): {"kind": "add", "verdict": "accepted" if v == "a" else "wrong", "finish": "stop", "tokens": 10} for tid, vs in spec.items() for j, v in enumerate(vs)}
+
+    def test_with_k_samples_the_sign_test_counts_tasks_and_not_the_replies_of_a_task(self):
+        """PR 34 review, m3: three samples of one task are not three independent draws."""
+        base = self.rows({"t1": "www", "t2": "www", "t3": "www", "t4": "aaa", "t5": "aaa"})
+        lora = self.rows({"t1": "aaa", "t2": "aaa", "t3": "aaa", "t4": "aaa", "t5": "aaa"})
+        o = score_lora.pair(base, lora)["overall"]
+        self.assertEqual((o["base_only"], o["lora_only"], o["both"], o["n"]), (0, 9, 6, 15), "the replies, as before")
+        self.assertEqual((o["tasks"], o["tasks_base_better"], o["tasks_lora_better"], o["per_task"]), (5, 0, 3, 3))
+        self.assertEqual(o["sign_p"], 0.25, "3 tasks to 0: p = 0.25; counting 9 replies to 0 would say 0.0039")
+
+    def test_a_task_goes_to_the_arm_with_more_accepted_replies_and_a_tie_is_dropped(self):
+        base = self.rows({"t1": "aaw", "t2": "awa", "t3": "waw"})
+        lora = self.rows({"t1": "waw", "t2": "waa", "t3": "waw"})
+        o = score_lora.pair(base, lora)["overall"]
+        self.assertEqual((o["tasks_base_better"], o["tasks_lora_better"]), (1, 0), "t1: 2 against 1; t2 and t3: equal")
+
+    def test_with_one_reply_per_task_the_test_is_what_it_was(self):
+        base = self.rows({"t1": "a", "t2": "w", "t3": "a", "t4": "w"})
+        lora = self.rows({"t1": "w", "t2": "a", "t3": "a", "t4": "a"})
+        o = score_lora.pair(base, lora)["overall"]
+        self.assertEqual((o["base_only"], o["lora_only"], o["tasks_base_better"], o["tasks_lora_better"], o["per_task"]), (1, 2, 1, 2, 1))
+        self.assertEqual(o["sign_p"], score_lora.sign_test_p(1, 2))
+
+    def test_the_table_says_when_the_test_is_over_tasks(self):
+        report = {"arms": {a: {"overall": {"replies": 6, "accepted": 3, "accuracy": 0.5, "ci95": [0.2, 0.8], "cut_off": 0.0, "mean_tokens": 10.0}, "by_kind": {}} for a in ("base", "lora")},
+                  "paired": {"overall": {"both": 1, "base_only": 1, "lora_only": 1, "neither": 3, "n": 6, "sign_p": 1.0, "per_task": 3}, "by_kind": {}, "unpaired": 0}, "tasks_answered": 2, "tasks_in_files": 2}
+        self.assertTrue(any("k > 1 (up to 3 replies per task): the sign p is over TASKS" in line for line in score_lora.lines_of(report)))
+        report["paired"]["overall"]["per_task"] = 1
+        self.assertFalse(any("k > 1" in line for line in score_lora.lines_of(report)))
+
+    def test_the_table_names_the_replies_that_only_one_arm_has(self):
+        base, lora = self.files()
+        short = write_jsonl(self.dir / "short.jsonl", [json.loads(line) for line in lora.read_text().splitlines()][:6])
+        lines = score_lora.lines_of(score_lora.score(base, short, [self.heldout], domain=ARITH))
+        self.assertIn("paired replies 6, unpaired 6 (base only 6, adapter only 0: in no figure above)", lines[-1])
+
+    def test_a_partial_adapter_says_where_the_learning_rate_stopped(self):
+        report = score_lora.score(*self.files(), [self.heldout], domain=ARITH)
+        done = {"train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "deadline_hit": True, "lr_last": 1.2e-4, "lr_peak": 1.5e-4}}
+        text = "\n".join(score_lora.lines_of(report, done))
+        self.assertIn("stopped by the deadline, at a learning rate of 1.2e-04, 80% of the peak: the cosine had not finished", text)
+        self.assertIn("a weaker and noisier adapter", text)
+        old = "\n".join(score_lora.lines_of(report, {"train": {"status": "partial", "deadline_hit": True}}))
+        self.assertIn("(stopped by the deadline)", old, "a train.json of the first version has no learning rate to report")
+        self.assertNotIn("stopped by the deadline", "\n".join(score_lora.lines_of(report, {"train": {"status": "done", "lr_last": 1e-6, "lr_peak": 1e-4}})))
 
     def test_the_table_and_the_command(self):
         base, lora = self.files()
@@ -839,7 +889,7 @@ class Scoring(unittest.TestCase):
         with contextlib.redirect_stdout(buf):
             score_lora.main(["--domain", "example_arith", "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
         text = buf.getvalue()
-        for needle in ("SMOKE run", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0"):
+        for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0"):
             self.assertIn(needle, text)
         self.assertEqual(json.loads((self.dir / "report.json").read_text())["paired"]["overall"]["n"], 12)
         with self.assertRaises(SystemExit):
@@ -934,6 +984,12 @@ class Docs(unittest.TestCase):
             self.assertIn(needle, text, needle)
         self.assertRegex(text, r"(?s)build_lora overlap --train-tasks .*?--heldout", "the overlap command is shown with both its inputs")
 
+    def test_a_resume_is_spelled_out_with_the_dataset_version_and_what_it_is_tied_to(self):
+        text = self.section()
+        for needle in ("kaggle datasets version -p ~/work/kaggle-lora/data", "new version", "config_sha", "same `--sft`"):
+            self.assertIn(needle, text, needle)
+        self.assertLess(text.index("kaggle datasets version"), text.index("kaggle kernels push -p ~/work/kaggle-lora/kernel\n```\n\nThe new kernel"), "the dataset first, then the kernel")
+
     def test_the_estimate_is_an_assumption_and_adds_the_smoke_run(self):
         text = self.section()
         self.assertNotIn("at most", text)
@@ -949,12 +1005,6 @@ class Docs(unittest.TestCase):
         for needle in (f"{p['steps']} of the {p['steps_full']} steps asked: {p['epochs_effective']} epoch", f"| {h(p['eval_upper_s'])} assuming", f"{h(p['eval_typical_s'])} assuming 75%", f"**{h(p['total_upper_s'])}** assuming the budget",
                        f"~{h(p['total_typical_s'])} at 75%", f"+ {h(smoke['total_upper_s'])}", f"**{h(p['total_upper_s'] + smoke['total_upper_s'])} of the 8 h**", f"{math.floor((8 - smoke['total_upper_s'] / 3600 - build_lora.DEADLINE_MARGIN_H) * 100) / 100:g} h"):
             self.assertIn(needle, text, needle)
-
-    def test_a_resume_is_spelled_out_with_the_dataset_version_and_what_it_is_tied_to(self):
-        text = self.section()
-        for needle in ("kaggle datasets version -p ~/work/kaggle-lora/data", "new version", "config_sha", "same `--sft`"):
-            self.assertIn(needle, text, needle)
-        self.assertLess(text.index("kaggle datasets version"), text.index("kaggle kernels push -p ~/work/kaggle-lora/kernel\n```\n\nThe new kernel"), "the dataset first, then the kernel")
 
     def test_the_files_the_readme_names_exist(self):
         for name in re.findall(r"`((?:tests/|distill/)[\w./-]+\.py)`", self.section()):
