@@ -119,9 +119,23 @@ class KitBudgets(unittest.TestCase):
         self.assertEqual((cmd[cmd.index("-c") + 1], cmd[cmd.index("--parallel") + 1]), ("24576", "2"))
 
     def test_the_kernels_geometry_is_the_one_the_modal_stage_uses(self):
-        for slots, ctx, tokens, longest in ((4, 8192, 4096, 4096), (4, 8192, 4096, 8192), (4, 8192, 4096, 6144), (4, 8192, 2048, 8192), (4, 8192, 4096, 16384), (4, 8192, 4096, 2048), (4, 8192, 768, 768)):
+        for slots, ctx, tokens, longest in ((4, 8192, 4096, 4096), (4, 8192, 4096, 8192), (4, 8192, 4096, 6144), (4, 8192, 2048, 8192), (4, 8192, 4096, 16384), (4, 8192, 4096, 2048), (4, 8192, 768, 768),
+                                            (4, 8192, 4096, 6000), (4, 8192, 4096, 4097), (4, 8192, 1000, 5000)):          # the last three: a budget that is not a multiple of 1024
             cfg = {"slots": slots, "ctx_per_slot": ctx, "max_tokens": tokens, "max_tokens_by_family": {"long": longest}}
             self.assertEqual(run_teacher.server_geometry(cfg, [{"kind": "long"}, {"kind": "x"}]), config.server_plan(tokens, longest, slots), (tokens, longest))
+
+    def test_the_slot_is_rounded_up_to_a_multiple_of_1024_never_down(self):
+        """A slot that is rounded down is shorter than the prompt room + the budget: a task that fits is skipped as too long (6000 gave 3 x 9216 where 3 x 10240 is needed). Both functions, with literals."""
+        geometry = lambda ctx, tokens, longest: run_teacher.server_geometry({"slots": 4, "ctx_per_slot": ctx, "max_tokens": tokens, "max_tokens_by_family": {"x": longest}}, [{"kind": "x"}])
+        self.assertEqual(geometry(8192, 4096, 6000), (3, 10240))
+        self.assertEqual(config.server_plan(4096, 6000, 4), (3, 10240))
+        self.assertEqual(geometry(8192, 4096, 4097), (3, 9216), "one token over a multiple needs the next multiple")
+        self.assertEqual(geometry(7168, 4096, 6000), (3, 9216), "a hand-made 4 x 7168 keeps its 3072 of prompt room: 3072 + 6000 = 9072, up to 9216")
+        for n in (4097, 5000, 6000, 7777, 12000):
+            slots, ctx = geometry(8192, 4096, n)
+            self.assertEqual(ctx % 1024, 0)
+            self.assertGreaterEqual(ctx - (8192 - 4096), n, "the slot holds the prompt room of the config and the budget")
+            self.assertLessEqual(slots * ctx, 4 * 8192, "and never more total context than the config allowed")
 
     def test_a_hand_made_config_keeps_its_prompt_room(self):
         """The pilot ran 4 x 7168 (4096 + 3072 for the prompt): with an 8192-token family that is 2 x 11264, the same 3072, and never more total context than 4 x 7168."""
