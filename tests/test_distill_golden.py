@@ -1,6 +1,8 @@
 """The REA runs across the `distill/` refactor, byte for byte.
 
-`tests/golden/distill/expected/*.json` was written by the code of origin/dataset/phase-a, before anything moved (the procedures are those of tests/distill_fixtures.py, run in a scratch worktree of that commit). Here the
+`tests/golden/distill/expected/*.json` was written by the code of origin/dataset/phase-a (commit 9afd8aebd97fb6c80941c5db232720e009752491), before anything moved: the procedures are those of tests/distill_fixtures.py,
+run by tests/golden_baseline.py in a scratch worktree of that commit (its docstring has the commands). `provenance.json` records the sha256 of every expected file and of what the baseline writes, and `Frozen` checks
+them, so an expected file cannot be regenerated with the new code unnoticed. Here the
 same procedures run on the new layout and the output must be the same text, in the same key order:
 
   Stage      the Modal sample stage on a scripted fake llama-server, plain / reasoning / thinking / quota, first against a server that fails a fifth of the second samples, then with --resume: the requests it
@@ -22,10 +24,13 @@ After a deliberate change, `DISTILL_GOLDEN_UPDATE=1 python3 -m unittest tests.te
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
+import pathlib
 import sys
 import unittest
+from unittest import mock
 
 from . import distill_fixtures as fx
 from .helpers import ROOT
@@ -149,13 +154,85 @@ class Kit(Same):
         self.same("kit.json", fx.kit_artifacts(build_tasks))
 
 
+def provenance_problems(prov: dict, expected_dir) -> list:
+    """What is wrong between provenance.json and the expected files of `expected_dir` (a list of sentences, empty when all is as recorded): the files, their sha256, and for each one that it is either the
+    baseline's (`changed` null: same sha256 as what tests/golden_baseline.py writes against the old code) or changed on purpose with a reason."""
+    expected_dir, files, bad = pathlib.Path(expected_dir), prov["files"], []
+    present = sorted(p.name for p in expected_dir.iterdir())
+    for name in sorted(set(present) - set(files)):
+        bad.append(f"{name} is in expected/ and not in provenance.json")
+    for name in sorted(set(files) - set(present)):
+        bad.append(f"{name} is in provenance.json and not in expected/")
+    for name, row in sorted(files.items()):
+        if name not in present:
+            continue
+        now = hashlib.sha256((expected_dir / name).read_bytes()).hexdigest()
+        if now != row["sha256"]:
+            bad.append(f"{name} is not the recorded file: regenerated? Record the new hash and the reason in provenance.json, in the same commit")
+        elif row["changed"] is None and row["sha256"] != row["phase_a_sha256"]:
+            bad.append(f"{name} says it is unchanged since the baseline, and it is not")
+        elif row["changed"] is not None and (row["sha256"] == row["phase_a_sha256"] or len(row["changed"]) <= 60):
+            bad.append(f"{name} says it was changed on purpose, and it equals the baseline's, or does not say why (say why it changed)")
+    return bad
+
+
 class Frozen(unittest.TestCase):
+    PROVENANCE = fx.GOLDEN / "provenance.json"
+
     def test_the_expected_files_come_from_the_code_before_the_refactor(self):
         """The inputs are frozen in the repository: the generator is not what the expected files are compared against."""
         tasks = fx.load_tasks()
         self.assertEqual((len(tasks), len({t["id"] for t in tasks})), (22, 22))
         self.assertEqual(sorted(p.name for p in (fx.GOLDEN / "expected").iterdir()),
                          ["kit.json", "lora.json", "plan.json", "score-reasoning.json", "score-thinking.json", "stage-plain.json", "stage-reasoning-quota.json", "stage-reasoning.json", "stage-thinking.json", "traces.json"])
+
+    def test_the_expected_files_are_the_recorded_ones_and_the_unchanged_ones_are_the_baseline_s(self):
+        """Round 15, m6: `DISTILL_GOLDEN_UPDATE=1` rewrites an expected file with the CURRENT code, so a test that compares the code with files it can regenerate proves nothing. provenance.json records, per file,
+        its sha256 and the sha256 of what tests/golden_baseline.py writes when run against the code of the commit before the refactor. A file is either the baseline's (`changed` null) or changed on
+        purpose, with the reason; regenerating one means editing that list in the same commit, where the diff shows it."""
+        from . import golden_baseline
+        prov = json.loads(self.PROVENANCE.read_text())
+        self.assertRegex(prov["baseline"]["commit"], r"^[0-9a-f]{40}$")
+        self.assertEqual(prov["baseline"]["commit"], golden_baseline.COMMIT)
+        self.assertEqual(hashlib.sha256((fx.GOLDEN / "tasks.jsonl").read_bytes()).hexdigest(), prov["tasks_sha256"], "the frozen tasks are the ones the baseline ran on")
+        self.assertEqual(provenance_problems(prov, fx.GOLDEN / "expected"), [])
+        self.assertEqual(sorted(prov["files"]), sorted(golden_baseline.FILES), "the baseline writes every expected file, and nothing else")
+
+    def test_a_regenerated_expected_file_is_caught(self):
+        """What the check is for: a file rewritten with the new code, with or without its record being edited to match, and a changed file that claims to be the baseline's."""
+        import shutil
+        import tempfile
+        prov = json.loads(self.PROVENANCE.read_text())
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            shutil.copytree(fx.GOLDEN / "expected", root / "expected")
+            self.assertEqual(provenance_problems(prov, root / "expected"), [])
+            (root / "expected" / "stage-plain.json").write_text((root / "expected" / "stage-plain.json").read_text().replace("m", "n", 1))      # `DISTILL_GOLDEN_UPDATE=1` after a change of the code
+            got = provenance_problems(prov, root / "expected")
+            self.assertEqual(len(got), 1)
+            self.assertIn("stage-plain.json is not the recorded file", got[0])
+            edited = json.loads(json.dumps(prov))
+            edited["files"]["stage-plain.json"]["sha256"] = hashlib.sha256((root / "expected" / "stage-plain.json").read_bytes()).hexdigest()       # and the record edited to match, but not the claim
+            got = provenance_problems(edited, root / "expected")
+            self.assertEqual(len(got), 1)
+            self.assertIn("stage-plain.json says it is unchanged since the baseline, and it is not", got[0])
+            edited["files"]["stage-plain.json"]["changed"] = "I regenerated it"
+            self.assertIn("say why it changed", provenance_problems(edited, root / "expected")[0], "a reason is a sentence, not a flag")
+            (root / "expected" / "extra.json").write_text("{}")
+            self.assertTrue(any("extra.json" in x for x in provenance_problems(prov, root / "expected")), "a file nobody recorded")
+            (root / "expected" / "extra.json").unlink()
+            (root / "expected" / "plan.json").unlink()
+            self.assertTrue(any("plan.json" in x for x in provenance_problems(prov, root / "expected")), "a recorded file that is gone")
+
+    def test_the_baseline_driver_and_the_fixtures_are_the_ones_the_docs_name(self):
+        from . import golden_baseline
+        src = (ROOT / "tests" / "golden_baseline.py").read_text()
+        for part in (golden_baseline.COMMIT, "git worktree add --detach", "REGEN_OUT", "provenance.json", "tests/distill_fixtures.py"):
+            self.assertIn(part, src)
+        self.assertIn("golden_baseline.py", (ROOT / "tests" / "distill_fixtures.py").read_text())
+        with self.assertRaisesRegex(SystemExit, "REGEN_OUT must name an existing directory"):
+            with mock.patch.dict(os.environ, {"REGEN_OUT": "/nonexistent-golden-dir"}):
+                golden_baseline.out_dir()
 
 
 if __name__ == "__main__":

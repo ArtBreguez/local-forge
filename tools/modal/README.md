@@ -32,6 +32,8 @@ Volumes are created on first use: `lf-models` (downloaded GGUFs, checked against
 | 8 | `modal_censor.py` | Refusals check on base and trained (the model must stay uncensored) | stdout, `results/phase6/censor.log` | < US$ 0.5 |
 | 9 | `modal_hf_upload.py` | Upload merged weights + LoRA adapter, and the Q4_K_M GGUF, to private repos | Hugging Face | CPU only |
 
+`modal_rea.py` is not byte for byte as before the `distill/` split: its image mounts `distill` (`.add_local_python_source("modal_qbench", "distill")`, commented in the file), because `modal_qbench` now imports the teacher list from `distill`. Nothing else of it moved; the new mount has not been run on Modal.
+
 Run each with `modal run tools/modal/<script>.py [options]`; `--help` lists the options. Long runs are best started detached from the shell (e.g. `systemd-run --user --unit=modal-x ...`) so a dropped session does not kill them.
 
 ## REA task generator (`tools/rea-bench`)

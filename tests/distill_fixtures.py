@@ -1,6 +1,7 @@
 """Inputs and procedures of the byte-for-byte check of the REA runs across the `distill/` refactor (tests/test_distill_golden.py).
 
-`tests/golden/distill/expected/*` was written by the code of origin/dataset/phase-a (before the refactor) with `golden_baseline.py`'s procedures, which are the ones in this
+`tests/golden/distill/expected/*` was written by the code of origin/dataset/phase-a (commit 9afd8ae, before the refactor) by `tests/golden_baseline.py` (it runs the procedures of this file in a worktree of that
+commit; `tests/golden/distill/provenance.json` records the sha256 of what it writes and of every expected file, and test_distill_golden.Frozen checks them). The procedures are the ones in this
 file: every function here takes the module or the test case it needs as an argument, so the same procedure runs against the old modules (`rea_bench.reasoning`, `rea_bench.sft`,
 `modal_rea_data`, `tools/kaggle/build_tasks.py`) and the new ones, and nothing here imports either of them. The tasks are frozen in `tests/golden/distill/tasks.jsonl` (made once by
 `write_tasks`), the replies are built from them by plain string code below, so the only thing that can move an expected file is a change in what the pipeline does.

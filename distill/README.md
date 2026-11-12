@@ -103,7 +103,7 @@ The output is `/out/<tag>/` on the `lf-lora` volume and `results/phase6/lora/<ta
 
 ## What is not generalized, on purpose
 
-- **Evaluation.** `tools/modal/modal_rea.py` (the held-out arm, the 10 fixed questions, the agent arm, the frozen substring scorer) stays REA's. Its held-out arm reads REA's decompiled files and its scorer, and the 34/60 -> 50/60 numbers are comparable only while it does not change. A second subject writes its own evaluation against its `heldout_ids()` and its `verify`.
+- **Evaluation.** `tools/modal/modal_rea.py` (the held-out arm, the 10 fixed questions, the agent arm, the frozen substring scorer) stays REA's. Its held-out arm reads REA's decompiled files and its scorer, and the 34/60 -> 50/60 numbers are comparable only while it does not change. A second subject writes its own evaluation against its `heldout_ids()` and its `verify`. One thing of it did move with the split: its image mounts `distill` (`add_local_python_source("modal_qbench", "distill")`), because `modal_qbench` imports the teacher list from `distill`; that mount has not been run on Modal.
 - **The task stage.** Generating tasks and computing their truth is the subject's (REA: the families, the compile and fact gates, Ghidra). `Domain.load_tasks` only reads what it wrote.
 - **The cost line.** `modal_sample.project` scales the one measurement there is (REA's phase A on one L40S) by reply length. It is a budget guard, not a forecast, and another subject's replies have another length.
 - **The Modal images.** A subject's wrapper brings its own image (REA's has Ghidra, gcc and clang); `modal_sample.sample_answers` is the body that runs in it.

@@ -53,6 +53,14 @@ class Names(unittest.TestCase):
         for part in ("warns when more than 5% were cut off", "the run warns above 5%", "The window of the shipped thinking config is 12288", "`max_len: 12288`", "not** the same by construction", "start with `--smoke`"):
             self.assertIn(part, text)
 
+    def test_modal_rea_s_new_mount_is_said(self):
+        """PR #32's body said modal_rea.py was left as is; it gained `distill` in its image (round 15, m6)."""
+        self.assertIn('add_local_python_source("modal_qbench", "distill")', (ROOT / "tools" / "modal" / "modal_rea.py").read_text())
+        for readme in ("tools/modal/README.md", "distill/README.md"):
+            text = (ROOT / readme).read_text()
+            self.assertIn("mounts `distill`", text, readme)
+            self.assertIn("has not been run on Modal", text, readme)
+
     def test_the_filter_table_and_the_cost_bullet_say_what_the_run_does(self):
         text = (ROOT / "tools" / "modal" / "README.md").read_text()
         row = next(l for l in text.splitlines() if l.startswith("| `repetition` |"))
