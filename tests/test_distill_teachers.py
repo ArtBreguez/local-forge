@@ -7,7 +7,7 @@ case by the owner (CodeForge, 2026-11-12).
   ModalStage   the REA entrypoint and the generic sample stage refuse `--reasoning` / `--thinking`, and a default run is not touched
   KaggleKit    `build_tasks` refuses a teacher without it, and a GGUF that is in no entry
   Bypasses     round 12, M2: a catalogue name that carries another GGUF (`--teacher` / `--run-config` with `--model-repo` / `--model-file`), a GGUF that says gpt-oss and is in no entry, the
-               generic sample stage, and `kaggle-score` reading the GGUF run.json names
+               generic sample stage, and `kaggle-score` reading the GGUF run.json names; round 13, m1: the marker in any spelling (gptoss, gpt_oss, gpt5, gpt6)
   Docs         the rule in docs/TEACHER_CANDIDATES.md, distill/teachers.py, distill/README.md, tools/modal/README.md, and the owner's decision about CodeForge with its lineage (round 12, M3)
 """
 from __future__ import annotations
@@ -126,6 +126,31 @@ class Bypasses(unittest.TestCase):
                     teachers.require_reasoning(strict=strict, **kw)
         teachers.require_reasoning("m", "repo", "f.gguf")                       # the generic stage's own names in the tests: nothing says no
 
+    SPELLED = (dict(repo="evil/gptoss-20b-GGUF", file="x.gguf"), dict(repo="evil/gpt_oss-20b-GGUF", file="x.gguf"), dict(repo="evil/GPT.OSS.20B", file="x.gguf"), dict(repo="evil/gpt oss", file="x.gguf"),
+               dict(name="m", repo="x/y", file="GptOss_20b.gguf"), dict(name="gpt5-distill"), dict(name="GPT_5.1-mini"), dict(repo="x/gpt5-GGUF", file="f.gguf"), dict(name="gpt6"), dict(name="gpt.6-astra"),
+               dict(repo="x/y", file="GPT6_Astra.gguf"), dict(name="Chat_GPT-clone"), dict(name="GPT_4o-distill"), dict(name="gpt4o"), dict(name="Claude_Distill-9b"), dict(file="Opus.4.gguf"),
+               dict(name="Fable_5"), dict(name="Haiku.9b"), dict(name="Sonnet 4"))
+
+    def test_the_spelling_of_a_marker_does_not_decide(self):
+        """Round 13, m1: the markers were hyphen spellings, so on the paths that are not strict (the Modal stage's generic body, the label of `kaggle-score`) `gptoss`, `gpt_oss`, `gpt5` and `gpt6` passed
+        (`require_reasoning("", "evil/gptoss-20b-GGUF", "x.gguf")` raised nothing). The text is read in lower case without `-`, `_`, `.` and spaces."""
+        for kw in self.SPELLED:
+            for strict in (True, False):
+                with self.subTest(kw=kw, strict=strict), self.assertRaisesRegex(SystemExit, "may only FILTER"):
+                    teachers.require_reasoning(strict=strict, **kw)
+        self.assertEqual(teachers.said_filter_only("evil/GPT_OSS-20b"), ["gptoss"])
+        self.assertEqual(teachers.said_filter_only("x", "GPT-5.1", "gpt.6"), ["gpt5", "gpt6"])
+        for name, repo, file in (("gpt-oss-20b", "x/y", "z.gguf"), ("gptoss-20b", "x/y", "z.gguf"), ("gpt_5-x", "x/y", "z.gguf"), ("m", "x/GPT.6", "z.gguf"), ("m", "x/y", "ClaudeCode.gguf")):
+            self.assertTrue(teachers.marked_filter_only(teachers.Teacher(name, repo, file, "L4", True)), (name, repo, file))
+
+    def test_a_marker_is_read_in_each_text_by_itself_and_the_shipped_names_are_not_caught(self):
+        """The name, the repo and the file are squashed one by one: the end of one and the start of the next are not a marker; and nothing the catalogue ships says OpenAI or Anthropic in any spelling."""
+        teachers.require_reasoning("foo-gpt", "5x/y", "z.gguf")
+        teachers.require_reasoning("gp", "t5/y", "oss.gguf")
+        for t in teachers.TEACHERS:
+            self.assertEqual(teachers.said_filter_only(t.name, t.repo, t.file), [], t.name)
+            teachers.require_reasoning(t.name, strict=True)
+
     def test_the_kit_refuses_the_flags_the_review_used_and_writes_nothing(self):
         with tempfile.TemporaryDirectory() as d:
             d = pathlib.Path(d)
@@ -168,6 +193,9 @@ class Bypasses(unittest.TestCase):
                                  ("m", self.run_info(*GPT_OSS_GGUF), "may only FILTER"),
                                  ("qwen35-9b", self.run_info(*default), "name and the GGUF disagree"),                             # the label is another catalogue entry than the GGUF that ran
                                  ("gpt-oss-120b", self.run_info(*default), "may only FILTER"),                                    # the label itself says OpenAI
+                                 ("gpt_oss-120b", self.run_info(*default), "may only FILTER"),                                    # the same label in another spelling (round 13, m1)
+                                 ("GPT5-distill", self.run_info(*default), "may only FILTER"),
+                                 ("m", self.run_info("evil/gptoss-20b-GGUF", "x.gguf"), "may only FILTER"),                        # a GGUF that says gpt-oss without a hyphen
                                  ("m", self.run_info("someone/some-model-GGUF", "some-model.gguf"), "is in no entry of distill/teachers.py")):
             with self.subTest(model=model, why=why), self.assertRaisesRegex(SystemExit, why):
                 self.score(model, info)
@@ -201,6 +229,15 @@ class ModalStage(StubbedSampleStage):
                 self.assertEqual(self.requests, [])
         self.run_stage(False)               # and a default run of any name and GGUF still filters
         self.assertTrue(self.requests)
+
+    def test_the_generic_body_refuses_a_gguf_whose_name_says_openai_in_any_spelling(self):
+        """Round 13, m1: the generic body is not strict (other subjects call it with their own names), so only the markers stand between it and a GGUF that is in no entry; they read `gptoss` and `gpt5` too."""
+        for repo, file in (("evil/gptoss-20b-GGUF", "x.gguf"), ("evil/gpt_oss-20b", "x.gguf"), ("x/y", "gpt5-mini.Q4_K_M.gguf"), ("x/GPT6-Astra-GGUF", "f.gguf")):
+            for kw in (dict(reasoning=True, max_len=4096), dict(reasoning=True, thinking=True, max_len=8192)):
+                with self.subTest(repo=repo, file=file), self.assertRaisesRegex(SystemExit, "may only FILTER"):
+                    self.requests.clear()
+                    self.data.sample_answers("m", repo, file, 2, self.tag, **kw)
+                self.assertEqual(self.requests, [])
 
     def test_a_default_run_of_the_same_teacher_is_not_touched(self):
         with mock.patch.object(teachers, "TEACHERS", [*teachers.TEACHERS, GPT_OSS]):

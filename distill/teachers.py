@@ -11,6 +11,7 @@ which re-exports it under that name; entries are tuples (name, repo, file, gpu, 
 """
 from __future__ import annotations
 
+import re
 from typing import NamedTuple
 
 
@@ -46,7 +47,20 @@ TEACHERS = [
 ]
 
 # Names, repos and files that say the model is OpenAI's or Anthropic's, or a distill of one: whatever its flag says, a catalogue entry with one of these in it is filter-only (a test pins it).
-FILTER_ONLY_MARKERS = ("gpt-oss", "gpt-4", "gpt4", "gpt-5", "gpt-6", "chatgpt", "claude", "opus", "sonnet", "haiku", "fable")
+# The markers are matched against the text with its separators dropped (`squashed`: lower case, no `-`, `_`, `.` or space), so each one is written without them: "gptoss" is gpt-oss, gpt_oss, GPT.OSS and
+# gptoss; "gpt5" is gpt-5, gpt5 and gpt-5.1 (round 13, m1: the hyphen spellings alone let `gptoss`, `gpt_oss`, `gpt5` and `gpt6` through).
+FILTER_ONLY_MARKERS = ("gptoss", "gpt4", "gpt5", "gpt6", "chatgpt", "claude", "opus", "sonnet", "haiku", "fable")
+
+
+def squashed(text: str) -> str:
+    """`text` in lower case without `-`, `_`, `.` and spaces: what the markers are looked for in, so that the spelling of a name (gpt-oss, gpt_oss, GPT.OSS, gptoss) does not decide."""
+    return re.sub(r"[-_. ]", "", text.lower())
+
+
+def said_filter_only(*texts: str) -> list:
+    """The FILTER_ONLY_MARKERS that any of `texts` (the name, the repo, the file) says. Each text is read by itself: a marker is not made of the end of one and the start of the next."""
+    flat = [squashed(t) for t in texts]
+    return [m for m in FILTER_ONLY_MARKERS if any(m in t for t in flat)]
 
 
 def find(name: str) -> Teacher:
@@ -59,8 +73,7 @@ def find(name: str) -> Teacher:
 
 def marked_filter_only(t: Teacher) -> bool:
     """True when the name, repo or file of the entry names an OpenAI or Anthropic model (FILTER_ONLY_MARKERS): the flag cannot be True for it."""
-    text = f"{t.name} {t.repo} {t.file}".lower()
-    return any(m in text for m in FILTER_ONLY_MARKERS)
+    return bool(said_filter_only(t.name, t.repo, t.file))
 
 
 def matching(name: str = "", repo: str = "", file: str = "") -> list:
@@ -73,7 +86,8 @@ def require_reasoning(name: str = "", repo: str = "", file: str = "", strict: bo
     disagree and a caller can pass any of them (round 12, M2: `--teacher qwen35-9b --model-repo unsloth/gpt-oss-120b-GGUF --model-file ...` used to pass on the name alone):
       - `name` is an entry and `repo` and `file` are both given: they must be that entry's own GGUF, else "name and GGUF disagree" (a catalogue name that may store text does not carry another GGUF);
       - an entry that matches by name or by repo and file and lacks `reasoning_ok` refuses, and so does one whose text names an OpenAI or Anthropic model (FILTER_ONLY_MARKERS);
-      - the text given (name, repo, file) is read for those markers too, so a GGUF that is in no entry but is called gpt-oss-... is refused, with a name or without one;
+      - the text given (name, repo, file) is read for those markers too, whatever the spelling (`squashed`: gpt-oss, gpt_oss, GPT.OSS, gptoss), so a GGUF that is in no entry but is called gpt-oss-... is refused, with a name or
+        without one;
       - a model that is in no entry is refused only with `strict` (the Kaggle kit, where `--model-repo` can name any GGUF: add it to distill/teachers.py, with its provenance, first); the Modal stage looks the
         name up before it gets here, and its generic body, which other subjects call with their own names, refuses what the catalogue says is filter-only."""
     named = [t for t in TEACHERS if name and t.name == name]
@@ -82,7 +96,7 @@ def require_reasoning(name: str = "", repo: str = "", file: str = "", strict: bo
                          f"distill/teachers.py under its own name, with `reasoning_ok` set by the rule (docs/TEACHER_CANDIDATES.md)")
     found = matching(name, repo, file)
     refused = [t for t in found if not t.reasoning_ok or marked_filter_only(t)]
-    said = [m for m in FILTER_ONLY_MARKERS if m in f"{name} {repo} {file}".lower()]
+    said = said_filter_only(name, repo, file)
     if refused or said:
         who = ", ".join(t.name for t in refused) or name or f"{repo}/{file}"
         raise SystemExit(f"{why} stores the teacher's reply verbatim, and {who} may only FILTER (default mode: its text is not stored): it is an OpenAI or Anthropic model or a distill of one "
