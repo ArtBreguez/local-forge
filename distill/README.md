@@ -88,7 +88,7 @@ The output is `/out/<tag>/` on the `lf-lora` volume and `results/phase6/lora/<ta
 
 ## The rules
 
-- No output of an OpenAI or Anthropic model enters a dataset; every teacher is open-weight (`teachers.py`).
+- Every teacher is open-weight (`teachers.py`). Any of them may FILTER in the default mode, whatever its origin (its text is not stored); in the reasoning and thinking modes, where the teacher's reply is stored verbatim, only a teacher not trained by or distilled from an OpenAI or Anthropic model may be used (`Teacher.reasoning_ok`; gpt-oss-* and the GPT-4o distill are filter-only). The Modal sample stage and the Kaggle kit refuse `--reasoning` / `--thinking` for a teacher without it. CodeForge's own lineage is an open question for the owner: `docs/TEACHER_CANDIDATES.md`, last section.
 - The answer is verified by code against a truth the generator computed; a model never judges a model.
 - Held-out tasks never enter training, as ids and as problems.
 - The record format is closed: `check_records` refuses any other key, so nothing of a teacher leaks into a file by accident.

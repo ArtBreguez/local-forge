@@ -7,7 +7,8 @@ answer, the truth record. What is here is the same for every subject: the llama-
   sample_answers   the body of the stage. A subject's wrapper registers it with Modal (`@app.function(gpu=..., volumes={"/models": ..., "/data": data_vol})`) and calls it with its domain and the volume.
   project, cost_line, ...   the projected GPU hours and dollars of a run (`thinking_cost_line` for a thinking run, which has no expected figure), from the one measurement there is: REA's phase A on one L40S.
 
-The teacher is open-weight (see `distill/teachers.py`); no output of an OpenAI or Anthropic model enters a dataset.
+The teacher is open-weight (see `distill/teachers.py`). Any open-weight teacher may FILTER in the default mode whatever its origin (its text is not stored); a reasoning or thinking run stores the teacher's reply, so it
+refuses a teacher without `reasoning_ok` (trained by or distilled from an OpenAI or Anthropic model: gpt-oss-*, the GPT-4o distill).
 """
 from __future__ import annotations
 
@@ -19,7 +20,7 @@ import re
 import subprocess
 import time
 
-from .. import config, outputs, records, traces
+from .. import config, outputs, records, teachers, traces
 from ..config import MAX_LEN  # noqa: F401  (the training window: one number for the length rule of the sample stage and of the training run)
 from ..domain import mode_of
 from ..traces import DEFAULT_MAX_TRACES, is_error_reply
@@ -96,6 +97,8 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
     from huggingface_hub import hf_hub_download
     import urllib.request
     _check_thinking(reasoning, thinking, max_tokens, max_traces)
+    if reasoning:           # the reply is stored verbatim: a teacher of the catalogue that may only filter is refused here too, whoever called (the wrapper has looked the name up already)
+        teachers.require_reasoning(name, repo, fname, why="--thinking" if thinking else "--reasoning")
     window = _window(reasoning, max_len)
     max_tokens = max_tokens or config.default_max_tokens(reasoning, thinking)
     sampling = config.sampling_for(thinking, **(sampling or {}))                    # validated again where it is used: a thinking run is never greedy, whoever called

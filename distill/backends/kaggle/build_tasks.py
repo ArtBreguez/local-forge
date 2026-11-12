@@ -101,6 +101,8 @@ def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = 
     if teacher:
         found = teachers.find(teacher)
         model_repo, model_file = model_repo or found.repo, model_file or found.file
+    # the kit asks a reasoning or thinking run, which stores the teacher's reply: only a teacher of the catalogue with `reasoning_ok` (the kernel's default is CodeForge, whose entry says so)
+    teachers.require_reasoning(teacher or "", model_repo or run_teacher.DEFAULTS["model_repo"], model_file or run_teacher.DEFAULTS["model_file"], strict=True, why="the Kaggle kit (a reasoning or thinking run)")
     out = pathlib.Path(out)
     paths = {"tasks": out / "data" / "tasks.jsonl", "config": out / "data" / "config.json", "dataset": out / "data" / "dataset-metadata.json", "run": out / "kernel" / "run.py",
              "kernel": out / "kernel" / "kernel-metadata.json"}

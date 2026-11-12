@@ -238,7 +238,7 @@ def main(only: str = ""):
                          f"`--seed {dedupe.HELDOUT_SEED} --n <= {dedupe.HELDOUT_N}` per family")
     for t in json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"] + heldout:
         check_mode(t)       # ValueError on an unknown score mode now, not half way through a paid run
-    calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu in todo]
+    calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu, *_ in todo]
     for call, name in calls:
         try:
             res = call.get()

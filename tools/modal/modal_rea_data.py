@@ -67,7 +67,7 @@ if (ROOT / "distill").is_dir() and str(ROOT) not in sys.path:      # the pipelin
     sys.path.insert(0, str(ROOT))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
-from distill import config, records  # noqa: E402  (stdlib-only)
+from distill import config, records, teachers  # noqa: E402  (stdlib-only)
 from distill.backends import modal_sample  # noqa: E402  (the sample stage: no Modal import in it)
 from distill.backends.modal_sample import MAX_LEN, SAMPLER_SLOTS, SAMPLER_TIMEOUT_H, SEED_BASE, THINKING_SERVER_ARGS, _apply_length_rule, _check_thinking, _window  # noqa: E402,F401  (the stage's names, as they were here)
 from distill.domains.rea import AGREE_CHANCE, DOMAIN  # noqa: E402  (REA as a subject: the adapter of rea_bench)
@@ -291,8 +291,10 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         if k < records.AGREE_MIN:
             print(f"warning: k={k}: no task with a chance level of {AGREE_CHANCE} or more (CRC init/xorout, pktsum, fsm, TEA/XTEA, ...) can have "
                   f"{records.AGREE_MIN} right samples, so none of them is kept")
-        name, repo, fname, _ = m[0]
+        name, repo, fname = m[0][:3]
         _check_thinking(reasoning, thinking, max_tokens, max_traces)      # --thinking without --reasoning stops here, before anything is rented
+        if reasoning:
+            teachers.require_reasoning(name, repo, fname, why="--thinking" if thinking else "--reasoning")      # a teacher that may only filter (OpenAI/Anthropic origin) stops here, before anything is rented
         window = _window(reasoning, max_len)                 # a reasoning run without --max-len stops here, before anything else is checked or rented
         given = lambda v: None if v < 0 else v               # a negative value is "not given": the default of the mode
         sampling = config.sampling_for(thinking, temperature=given(temperature), top_p=given(top_p), top_k=given(top_k), min_p=given(min_p))      # a thinking run that is greedy stops here too
