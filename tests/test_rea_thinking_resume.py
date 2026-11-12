@@ -21,6 +21,7 @@ import json
 import os
 import pathlib
 import tempfile
+import threading
 import time
 import unittest
 from unittest import mock
@@ -108,6 +109,46 @@ class KernelResume(unittest.TestCase):
         self.assertEqual(lines[-1]["prompt_sha"], SHA["new"])
         self.assertEqual([o["prompt_sha"] for o in lines[-1]["outs"]], [SHA["old"]], "the reply says which prompt it answered")
         self.assertEqual(lines[-1]["outs"][0]["text"], "OLD-PROMPT REPLY\nAnswer: 1")
+
+    def test_a_reply_with_no_fingerprint_that_could_not_be_asked_again_is_written_as_unfingerprinted_not_under_the_new_prompt(self):
+        """Round 13, M1 (the reviewer's `repro_deadline.py`, deadline already passed): the replies of `out2` have no fingerprint, the line has none, and the session cannot ask. The line is written with the
+        task's prompt now, and that fingerprint must not speak for a reply of another session: the reply says, in a field of its own, that it has none."""
+        previous = {"a-1": {"id": "a-1", "kind": "crc", "outs": [out("OLD out2 0\nAnswer: 1"), out("OLD out2 1\nAnswer: 1")]}}
+        summary, lines = self.session(previous, deadline=time.time() - 1)
+        self.assertEqual((self.server.asked, summary["requests"], summary["deadline_hit"]), ([], 0, True))
+        last = lines[-1]
+        self.assertEqual(last["prompt_sha"], SHA["new"])
+        self.assertEqual([("prompt_sha" in o, o["prompt_sha"]) for o in last["outs"]], [(True, None)] * 2, "each reply says it has no fingerprint")
+        self.assertEqual([o["text"] for o in last["outs"]], ["OLD out2 0\nAnswer: 1", "OLD out2 1\nAnswer: 1"])
+        self.assertEqual(score_replies.reply_fingerprints(last), [None, None], "so no reader takes the line's fingerprint for them")
+
+    def test_a_deadline_part_way_stamps_the_replies_asked_and_leaves_the_old_ones_unfingerprinted(self):
+        """The reviewer's `repro_deadline.py`, the deadline passing after the first request: the new reply carries the task's prompt, the old one none, the line's fingerprint speaks for neither."""
+        previous = {"a-1": {"id": "a-1", "kind": "crc", "outs": [out("OLD out2 0\nAnswer: 1"), out("OLD out2 1\nAnswer: 1")]}}
+        with mock.patch.object(run_teacher, "can_start", side_effect=[True, False]):
+            summary, lines = self.session(previous)
+        self.assertEqual((len(self.server.asked), summary["deadline_hit"]), (1, True))
+        last = lines[-1]
+        self.assertEqual([o["text"].splitlines()[0] for o in last["outs"]], ["NEW-SESSION REPLY", "OLD out2 1"])
+        self.assertEqual([o["prompt_sha"] for o in last["outs"]], [SHA["new"], None])
+        self.assertEqual(score_replies.reply_fingerprints(last), [SHA["new"], None], "the line says the new prompt, and only the reply that was asked says it too")
+
+    def test_a_reply_with_the_marker_does_not_take_the_fingerprint_of_the_line_that_holds_it_on_the_next_resume(self):
+        """The line written above carries the new prompt's fingerprint, so the marker has to be read as 'none', not as 'absent': a second session finds the old reply stale and asks it."""
+        marked = {**out("OLD out2 1\nAnswer: 1"), "prompt_sha": None}
+        line = {"id": "a-1", "kind": "crc", "prompt_sha": SHA["new"], "outs": [out(sha=SHA["new"], max_tokens=4096), marked]}
+        self.assertEqual(run_teacher.with_own_sha(line)[1], marked, "not stamped with the line's fingerprint")
+        self.assertEqual(run_teacher.pending(run_teacher.resolve_config({"k": 2, "thinking": False}), self.task, line), [1])
+        summary, lines = self.session({"a-1": line})
+        self.assertEqual(([b["seed"] for b in self.server.asked], summary["stale"], summary["unfingerprinted"]), ([1235], 1, 1))
+        self.assertEqual([o["prompt_sha"] for o in lines[-1]["outs"]], [SHA["new"]] * 2)
+        assume = {"prompt_sha": SHA["new"], "max_tokens": 4096}
+        self.assertEqual(run_teacher.with_own_sha(line, assume)[1], {**marked, "prompt_sha": SHA["new"], "max_tokens": 4096}, "the owner's word (trust_unfingerprinted) takes it, as for any reply with none")
+
+    def test_the_fingerprint_of_a_reply_is_its_own_and_the_lines_only_for_a_reply_that_says_nothing(self):
+        rec = {"prompt_sha": "x", "outs": [{"prompt_sha": "y"}, {}, {"prompt_sha": None}, {"prompt_sha": ""}, "not a reply"]}
+        self.assertEqual(score_replies.reply_fingerprints(rec), ["y", "x", None, None, "x"], "an older kernel's reply has no key: its line's; the marker has one: none")
+        self.assertEqual(score_replies.reply_fingerprints({"outs": [{"prompt_sha": None}]}), [None])
 
     def test_a_reply_cut_off_at_a_smaller_budget_than_its_familys_now_is_asked_again(self):
         """The reviewer's second repro: a family whose budget grew 4096 -> 8192, both replies cut off at 4096: nothing was asked."""
@@ -218,23 +259,37 @@ OUT2 = pathlib.Path(os.environ.get("OUT2_REPLIES", pathlib.Path.home() / "work" 
 SEED7 = ROOT / "results" / "phase6" / "rea-data" / "decompiled-seed7-all.jsonl"
 
 
-class Out2Shape(unittest.TestCase):
-    """Round 12, M1: the one real file the resume was written for. `out2` has no fingerprint anywhere, so a resume under the new prompt could not tell which of its replies answered which prompt: it kept 52 of
-    57 tasks and stamped them with the new one. Now none is kept (the reviewer's `out2_resume.py`, as a test)."""
+class Resumer:
+    """A resume of the kernel against a stub server, for the tests of `out2`'s shape."""
 
     GREW = {"cipher": 8192, "magic": 8192, "password": 8192}        # the shipped thinking config's map
 
-    def resume(self, previous, tasks, **kw):
+    def resume(self, previous, tasks, deadline=3600, allow=None, **kw):
+        """The session against a stub server. `deadline`: seconds from now (negative: already passed); `allow`: only that many requests may start, then the deadline comes (`can_start`). `self.written`: the
+        checkpoint, as the file kaggle-score reads."""
         cfg = run_teacher.resolve_config({"thinking": True, "k": 2, "max_tokens": 4096, "max_tokens_by_family": self.GREW, **kw})
         jobs = [{"id": t["id"], "kind": t["kind"], "messages": DOMAIN.messages(t, "thinking")} for t in tasks]
         cfg["slots"], cfg["ctx_per_slot"] = run_teacher.server_geometry(cfg, jobs)           # what the kernel starts the server with: 2 x 12288
-        server = Server()
+        server, left, lock = Server(), [allow], threading.Lock()
+
+        def can_start(now, dl, mean):          # the slots ask from several threads: the first `allow` requests start, the next ones do not
+            with lock:
+                left[0] -= 1
+                return left[0] >= 0
+
         with tempfile.TemporaryDirectory() as d:
             ck = pathlib.Path(d) / "replies.jsonl"
             logged = []
-            summary = run_teacher.run_session(cfg, jobs, previous, ck, time.time() + 3600, urlopen=server.urlopen, log_fn=logged.append)
-            lines = [json.loads(line) for line in ck.read_text().splitlines()]
+            with mock.patch.object(run_teacher, "can_start", can_start) if allow is not None else contextlib.nullcontext():
+                summary = run_teacher.run_session(cfg, jobs, previous, ck, time.time() + deadline, urlopen=server.urlopen, log_fn=logged.append)
+            self.written = ck.read_text()
+            lines = [json.loads(line) for line in self.written.splitlines()]
         return cfg, jobs, server, summary, {r["id"]: r for r in lines}, logged
+
+
+class Out2Shape(Resumer, unittest.TestCase):
+    """Round 12, M1: the one real file the resume was written for. `out2` has no fingerprint anywhere, so a resume under the new prompt could not tell which of its replies answered which prompt: it kept 52 of
+    57 tasks and stamped them with the new one. Now none is kept (the reviewer's `out2_resume.py`, as a test)."""
 
     def check_all_asked_again(self, previous, tasks):
         n, replies = len(tasks), sum(len(r["outs"]) for r in previous.values())
@@ -295,6 +350,55 @@ class Out2Shape(unittest.TestCase):
         self.assertEqual({k: stats["prompts"][k] for k in ("lines", "checked", "mismatch", "unchecked", "unchecked_replies", "kept_unchecked")}, {"lines": n, "checked": 0, "mismatch": 0, "unchecked": n, "unchecked_replies": 24, "kept_unchecked": True})
         self.assertEqual(sorted(stats["prompts"]["unchecked_ids"]), sorted(previous))
         self.assertEqual((stats["tasks"], stats["answers"]), (n, 24), "kept on request: scored as they are")
+
+
+class Out2Deadline(Resumer, unittest.TestCase):
+    """Round 13, M1 (the reviewer's `repro_deadline_all.py`): a resume of `out2` that reaches the deadline, or finds a task it cannot ask, keeps replies that nothing fingerprints. The line is written with the
+    task's prompt now; `kaggle-score` used to read that fingerprint for the old replies as well, store them as checked and make records of them (87 of 87 teacher records on the real file, 26 of 26 part-way).
+    Now each reply of the line carries its own fingerprint, or says it has none, and only the replies that were asked are checked."""
+
+    def scored(self, tasks, **kw):
+        with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(io.StringIO()):
+            return kaggle_score.score(write_replies(d, self.written.splitlines()), write_tasks(d, tasks, "decompiled-seed7-all.jsonl"), "m", thinking=True, **kw)
+
+    def check(self, previous, tasks):
+        replies = sum(len(r["outs"]) for r in previous.values())
+        # the deadline has already passed: nothing is asked, so nothing of the line is checked
+        cfg, jobs, server, summary, last, _ = self.resume(previous, tasks, deadline=-1)
+        self.assertEqual((summary["requests"], summary["deadline_hit"], server.asked), (0, True, []))
+        for job in jobs:
+            self.assertEqual([(o["text"], o["prompt_sha"]) for o in last[job["id"]]["outs"]], [(o["text"], None) for o in previous[job["id"]]["outs"]], "the old replies, each saying it has no fingerprint")
+            self.assertEqual(last[job["id"]]["prompt_sha"], run_teacher.prompt_sha(job["messages"]), "the line does say the prompt now: it speaks for no reply")
+        with self.assertRaisesRegex(SystemExit, f"{len(previous)} line.s. have no fingerprint at all.*--keep-unchecked"):
+            self.scored(tasks)
+        _, stats = self.scored(tasks, keep_unchecked=True)
+        self.assertEqual({k: stats["prompts"][k] for k in ("lines", "checked", "mismatch", "unchecked", "unchecked_replies")}, {"lines": len(previous), "checked": 0, "mismatch": 0, "unchecked": len(previous), "unchecked_replies": replies})
+        # the deadline comes after `asked` requests: only those replies are checked, the old ones are skipped and counted
+        asked = max(1, len(previous) // 3)
+        cfg, jobs, server, summary, last, _ = self.resume(previous, tasks, allow=asked)
+        self.assertEqual((summary["requests"], summary["deadline_hit"]), (asked, True))
+        new = [(job, o) for job in jobs for o in last[job["id"]]["outs"] if o["text"].startswith("NEW-SESSION REPLY")]
+        old = [(job, o) for job in jobs for o in last[job["id"]]["outs"] if not o["text"].startswith("NEW-SESSION REPLY")]
+        before = {o["text"] for r in previous.values() for o in r["outs"]}
+        self.assertEqual(len(new), asked)
+        self.assertTrue(old and all(o["text"] in before for _, o in old), "what is left of the old replies is old replies")
+        self.assertTrue(all(o["prompt_sha"] == run_teacher.prompt_sha(job["messages"]) for job, o in new), "a reply that was asked carries the prompt it was asked")
+        self.assertTrue(all("prompt_sha" in o and o["prompt_sha"] is None for _, o in old), "every other reply says it has none, the line's fingerprint is not theirs")
+        kept, stats = self.scored(tasks)
+        p = stats["prompts"]
+        self.assertEqual((p["mismatch"], p["unchecked_replies"], stats["answers"]), (0, len(old), asked), "the replies that were asked are scored, the old ones are skipped")
+        self.assertEqual(p["checked"], len({job["id"] for job, _ in new}), "a line is checked by the replies that were asked")
+        self.assertFalse([r for r in kept if any(o["text"].split("</think>")[0][:60] in json.dumps(r) for _, o in old)], "no record is made of an old reply")
+
+    def test_the_pilots_replies_in_their_real_shape(self):
+        previous = out2_lines()
+        self.check(previous, [PILOT_TASKS[tid] for tid in previous])
+
+    @unittest.skipUnless(OUT2.exists() and SEED7.exists(), "the pilot's real out2 and the seed-7 tasks are not on this machine (OUT2_REPLIES names the file)")
+    def test_the_real_out2(self):
+        by_id = {t["id"]: t for t in map(json.loads, SEED7.read_text().splitlines())}
+        previous = {r["id"]: r for r in map(json.loads, OUT2.read_text().splitlines())}
+        self.check(previous, [by_id[tid] for tid in previous])
 
 
 class TrustFlag(unittest.TestCase):

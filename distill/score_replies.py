@@ -17,9 +17,9 @@ be stored under a prompt it never saw.
 `tools/kaggle/run_teacher.py` (`distill/backends/kaggle/`) is the notebook that writes `replies.jsonl` (README of `tools/kaggle`). It stores a thinking reply as `<think>\\nreasoning\\n</think>\\n\\nvisible` (what
 `--thinking` expects), the server's `tokens` and `prompt_tokens` per reply, a `prompt_sha` per line and per reply (`outputs.prompt_sha` of the messages it sent) and a `run.json` next to the replies with the settings it
 used. `--run-info run.json` (default: the `run.json` beside `--replies`, when there is one): its sampling settings go into the stats (`sampling`, the block the Modal stage writes), and `--thinking` must
-agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A reply whose `prompt_sha` (its own, else its line's: `reply_fingerprints`)
+agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A reply whose `prompt_sha` (its own, else its line's for a reply with no `prompt_sha` key: `reply_fingerprints`)
 is not the one of the messages rebuilt here is skipped and counted (`prompts`: lines that lost every reply in `mismatch`, a resumed line that lost some in `partial`, {id: replies}): a reply is never stored under a prompt it did not answer.
-A reply with NO fingerprint (neither its own nor its line's: a file of an older notebook, the thinking pilot's `out2`) cannot be shown to have answered it: it is counted (`prompts.unchecked` lines, `unchecked_replies`,
+A reply with NO fingerprint (neither its own nor its line's: a file of an older notebook, the thinking pilot's `out2`, or a reply the kernel kept from such a file and wrote with `"prompt_sha": null`) cannot be shown to have answered it: it is counted (`prompts.unchecked` lines, `unchecked_replies`,
 `unchecked_ids`) and, by default, skipped like a mismatch; `--keep-unchecked` keeps them (the owner's word that the file was asked under this prompt), still counted, and the stats say so (`prompts.kept_unchecked`). `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
 training window of 4096 and 8192 tokens (a thinking run; 2048, 3072, 4096 otherwise), counted as the prompt tokens plus the completion tokens the server reported for the reply that became the record.
 
@@ -83,8 +83,9 @@ def reply_of(out, thinking: bool = False) -> str:
 
 def reply_fingerprints(rec: dict) -> list:
     """One prompt fingerprint per reply of a replies line, None where there is none to compare: a reply's own `prompt_sha` (the kernel writes one with every reply, because a resumed line holds replies of several
-    sessions), else the line's (an older kernel wrote only that one). A line without replies has its own fingerprint as the only one."""
-    own = [(o.get("prompt_sha") if isinstance(o, dict) else None) or rec.get("prompt_sha") for o in rec["outs"]]
+    sessions; a reply it kept from a file with no fingerprints is written with `"prompt_sha": null`, which is None here: the line's fingerprint is the prompt of the session that wrote the line, not of that reply),
+    else, for a reply that has no `prompt_sha` key at all, the line's (an older kernel wrote only that one). A line without replies has its own fingerprint as the only one."""
+    own = [(o.get("prompt_sha") or None) if isinstance(o, dict) and "prompt_sha" in o else rec.get("prompt_sha") for o in rec["outs"]]
     return own or [rec.get("prompt_sha")]
 
 

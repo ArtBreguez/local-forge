@@ -23,8 +23,10 @@ What it does, in order:
 A line of `replies.jsonl`: {"id", "kind", "prompt_sha", "outs": [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha", "max_tokens"}]}. In a thinking run `text` is `<think>\\nreasoning\\n</think>\\n\\nvisible reply`
 (the server's `reasoning_content` and `content`: `stored_text`, the form `kaggle-score --thinking` reads); `finish` is the server's finish_reason ("length" = cut off at max_tokens, which is rejected
 downstream), or "error" with `[error ...]` as the text for a request that failed (never scored). A reply carries its own `prompt_sha` (the fingerprint of the messages that were sent) and the `max_tokens` it was asked
-with, because a line can hold replies of several sessions; the line's `prompt_sha` is the task's prompt of the session that wrote it. `kaggle-score` refuses each reply to another prompt. A reply of an older
-kernel has no such fields: it takes its line's `prompt_sha` when the line has one; a reply with no fingerprint at all, and a cut-off reply with no budget, are asked again (unless `trust_unfingerprinted`).
+with, because a line can hold replies of several sessions; the line's `prompt_sha` is the task's prompt of the session that wrote it, and speaks for no reply that has a `prompt_sha` key of its own. A reply kept out
+of a file with no fingerprint (the pilot's `out2`) that the session could not ask again is written with `"prompt_sha": null`: `kaggle-score` counts it as unchecked. `kaggle-score` refuses each reply to
+another prompt. A reply of an older kernel has no such fields: it takes its line's `prompt_sha` when the line has one; a reply with no fingerprint at all, and a cut-off reply with no budget, are asked again
+(unless `trust_unfingerprinted`).
 Nothing is scored here: the truth is not in the dataset.
 """
 from __future__ import annotations
@@ -155,15 +157,16 @@ def valid_budget(n) -> bool:
 
 
 def with_own_sha(rec: dict, assume: dict = None) -> list:
-    """The outs of an earlier line, each carrying its own `prompt_sha`: a reply of an older kernel takes the line's (that is the prompt it was asked under, as far as the file says). A new line gets the CURRENT
-    prompt's fingerprint whatever its replies are, so the fingerprint has to travel with each reply that is kept. A reply that has none, on a line that has none (a file with no fingerprints at all, the thinking
-    pilot's `out2`), stays without: `is_stale` asks it again. `assume`: {"prompt_sha", "max_tokens"} (`assumed`), the owner's word (`trust_unfingerprinted`) that such a file was asked under the task's prompt
-    now and the config's `max_tokens`: a reply takes the one it lacks, which is written with it from then on."""
+    """The outs of an earlier line, each carrying its own `prompt_sha`: a reply of an older kernel, which has no `prompt_sha` key, takes the line's (that is the prompt it was asked under, as far as the file says).
+    A new line gets the CURRENT prompt's fingerprint whatever its replies are, so the fingerprint travels with each reply that is kept, and a reply that has none is written with `"prompt_sha": null` (`ask_task`):
+    the key says "no fingerprint", and the line's never speaks for it. A reply that has none, on a line that has none (a file with no fingerprints at all, the thinking pilot's `out2`), stays without:
+    `is_stale` asks it again. `assume`: {"prompt_sha", "max_tokens"} (`assumed`), the owner's word (`trust_unfingerprinted`) that such a file was asked under the task's prompt now and the config's `max_tokens`:
+    a reply takes the one it lacks (a null `prompt_sha` too), which is written with it from then on."""
     sha, assume = rec.get("prompt_sha"), assume or {}
     outs = []
     for o in rec.get("outs", []):
         if isinstance(o, dict):
-            own_sha = o.get("prompt_sha") or sha or assume.get("prompt_sha")
+            own_sha = o.get("prompt_sha") or (None if "prompt_sha" in o else sha) or assume.get("prompt_sha")
             budget = o["max_tokens"] if valid_budget(o.get("max_tokens")) else assume.get("max_tokens")
             o = {**o, **({"prompt_sha": own_sha} if own_sha else {}), **({"max_tokens": budget} if budget else {})}
         outs.append(o)
@@ -264,10 +267,11 @@ class Session:
 
 def ask_task(cfg: dict, task: dict, have: list, deadline: float, session: Session, base_url: str = URL, urlopen=None):
     """The line to checkpoint for a task: its earlier replies `have` (each with its own `prompt_sha`: `with_own_sha`; the ones with none are asked again), with the missing, failed and stale samples asked again, one after the other (a task occupies one
-    slot). The deadline is checked before every request; when it comes, the samples answered so far are kept and the rest left for the next session (the list simply ends: `samples_to_ask`). A reply that is kept
-    keeps its own fingerprint and budget, so the line's `prompt_sha` (the task's prompt now) never speaks for a reply of another session. None when nothing was asked and nothing is known."""
+    slot). The deadline is checked before every request; when it comes, the samples answered so far are kept and the rest left for the next session (the list simply ends: `samples_to_ask`). Every reply of the line
+    carries its own `prompt_sha`: a reply asked now has the task's prompt now (`ask_one`), a kept one keeps the one it has, and a kept one that has none is written with `"prompt_sha": null`, so the line's `prompt_sha`
+    (the task's prompt now) never speaks for a reply of another session (round 13, M1: `kaggle-score` reads such a reply as unchecked). None when nothing was asked and nothing is known."""
     sha, budget = prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"])
-    outs = list(have) + [None] * (cfg["k"] - len(have))
+    outs = [{"prompt_sha": None, **o} if isinstance(o, dict) else o for o in have] + [None] * (cfg["k"] - len(have))
     for i in samples_to_ask(have, cfg["k"], sha, budget):
         if not can_start(time.time(), deadline, session.mean_secs()):
             session.stopped_by_deadline = True
