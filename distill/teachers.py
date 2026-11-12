@@ -2,9 +2,10 @@
 
 A teacher is an open-weight GGUF served by llama.cpp. THE RULE (the owner's), by what the run stores:
   - default mode: any open-weight teacher may FILTER, whatever its origin. The teacher's answer only decides whether a task is kept; the record is rendered from the truth, and none of the teacher's text is stored.
-  - reasoning and thinking modes: the teacher's reply is stored verbatim (`target_source: "teacher-reasoning"`), so only a teacher that was NOT trained by or distilled from an OpenAI or Anthropic model may
-    be used. gpt-oss-* (OpenAI's own models) and the GPT-4o distill (docs/TEACHER_CANDIDATES.md) are filter-only.
-`Teacher.reasoning_ok` is that rule as data, and it defaults to False: a teacher is added without it until someone has looked at where it comes from. `require_reasoning` is what the Modal sample stage
+  - reasoning and thinking modes: the teacher's reply is stored verbatim (`target_source: "teacher-reasoning"`), and the dataset rule is that no DIRECT OpenAI or Anthropic output is stored: gpt-oss-*
+    (OpenAI's own models) and the GPT-4o distill (docs/TEACHER_CANDIDATES.md) are filter-only. An open-weight model whose lineage includes fine-tunes on such data may be accepted case by case by the
+    owner, with the decision recorded (CodeForge, below, and docs/TEACHER_CANDIDATES.md). A dataset card that publishes teacher-reasoning records must state the teacher's lineage.
+`Teacher.reasoning_ok` is that rule as data, and it defaults to False: a teacher is added without it until someone has looked at where it comes from and the owner has decided. `require_reasoning` is what the Modal sample stage
 (`--reasoning` / `--thinking`) and the Kaggle kit call, and what refuses a teacher without it. `gpu` is the Modal GPU class that holds the teacher. The list was `MODELS` of `tools/modal/modal_qbench.py`,
 which re-exports it under that name; entries are tuples (name, repo, file, gpu, reasoning_ok): code that unpacks four names takes `*_`.
 """
@@ -18,15 +19,15 @@ class Teacher(NamedTuple):
     repo: str       # Hugging Face repo of the GGUF
     file: str
     gpu: str        # Modal GPU class: "L4" or "L40S"
-    reasoning_ok: bool = False      # may its text be STORED (reasoning / thinking modes)? Only if it was not trained by or distilled from an OpenAI or Anthropic model. False = filter only.
+    reasoning_ok: bool = False      # may its text be STORED (reasoning / thinking modes)? Not if it is an OpenAI or Anthropic model or a distill of one; a lineage that includes fine-tunes on such data is the owner's call. False = filter only.
 
 
 # licences: all Apache-2.0 except the heretic merge (see its card)
 # reasoning_ok: the Qwen and unsloth entries are Alibaba's models and their quantizations; heretic-9b is a distill of DeepSeek-V4-Pro onto Qwen3.5-9B; heretic-35b-* abliterate Qwen3.5-35B-A3B.
-# PROVENANCE OPEN, codeforge-*: it is True because the catalogue has always carried it and the owner's rule names only gpt-oss-* and the GPT-4o distill, but the card of its base,
-# xtools-at/Qwen3.8-27B-CodeForge-3xMerge, lists three merged fine-tunes, and the cards of two of them speak of OpenAI/Anthropic-oriented data (nerkyor's Coder390 EfficientThink: "Opus 5.5 and GPT-6
-# Astra ... contributed gold answers and teacher trajectories"; TeichAI's Fable-Distill: "Claude/Fable-oriented coding traces"; read as of 2026-11-12 through a summarizing fetch, not by hand).
-# If the owner reads that as "trained by or distilled from" an OpenAI/Anthropic model, set it to False: every reasoning and thinking run with CodeForge is then refused, and so is the shipped config.
+# ACCEPTED BY THE OWNER on 2026-11-12, codeforge-*: `reasoning_ok=True` is the owner's decision, and this is its record. The card of its base, xtools-at/Qwen3.8-27B-CodeForge-3xMerge, merges three fine-tunes:
+# nerkyor's Coder390 EfficientThink (teacher trajectories of Opus 5.5 and GPT-6 Astra), TeichAI's Fable Distill (claude-fable-5-claude-code and Fable-5-Chat) and Jackrong's Qwopus Coder Flash (Qwen, DeepSeek and
+# NVIDIA teachers). Its lineage includes fine-tunes on Anthropic and OpenAI model output; it is not one of their models and none of their output is stored directly, which is what the dataset rule forbids.
+# A dataset that publishes its replies states this lineage (docs/TEACHER_CANDIDATES.md).
 TEACHERS = [
     Teacher("heretic-9b", "mradermacher/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic-i1-GGUF",
             "DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic.i1-IQ4_XS.gguf", "L4", True),
@@ -89,4 +90,4 @@ def require_reasoning(name: str = "", repo: str = "", file: str = "", strict: bo
                          f"Teachers that may: {[t.name for t in TEACHERS if t.reasoning_ok and not marked_filter_only(t)]}")
     if strict and not found:
         raise SystemExit(f"{why} stores the teacher's reply verbatim, and {name or repo + '/' + file} is in no entry of distill/teachers.py: add it there, and set `reasoning_ok` only when it was not trained by or "
-                         f"distilled from an OpenAI or Anthropic model (docs/TEACHER_CANDIDATES.md)")
+                         f"distilled from an OpenAI or Anthropic model, or after the owner has accepted its lineage case by case (docs/TEACHER_CANDIDATES.md)")

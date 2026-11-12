@@ -1,5 +1,6 @@
-"""Round 15, m8: the owner's rule about teachers, as code. Any open-weight teacher may FILTER in the default mode, whatever its origin; in the reasoning and thinking modes the teacher's reply is stored, so only a
-teacher not trained by or distilled from an OpenAI or Anthropic model may be used (gpt-oss-* and the GPT-4o distill are filter-only).
+"""Round 15, m8 (and round 12, M2 and M3): the owner's rule about teachers, as code. Any open-weight teacher may FILTER in the default mode, whatever its origin; in the reasoning and thinking modes the teacher's
+reply is stored, and the dataset rule is that no DIRECT OpenAI or Anthropic output is stored (gpt-oss-* and the GPT-4o distill are filter-only); a lineage that includes fine-tunes on such data is accepted case by
+case by the owner (CodeForge, 2026-11-12).
 
   Catalogue    `Teacher.reasoning_ok`: the fifth field, False by default, True for the shipped teachers, never True for an entry whose name says OpenAI or Anthropic
   Refusal      `teachers.require_reasoning`: by name, by repo and file, strict for the Kaggle kit
@@ -7,7 +8,7 @@ teacher not trained by or distilled from an OpenAI or Anthropic model may be use
   KaggleKit    `build_tasks` refuses a teacher without it, and a GGUF that is in no entry
   Bypasses     round 12, M2: a catalogue name that carries another GGUF (`--teacher` / `--run-config` with `--model-repo` / `--model-file`), a GGUF that says gpt-oss and is in no entry, the
                generic sample stage, and `kaggle-score` reading the GGUF run.json names
-  Docs         the rule in docs/TEACHER_CANDIDATES.md, distill/teachers.py, distill/README.md, and the open question about CodeForge
+  Docs         the rule in docs/TEACHER_CANDIDATES.md, distill/teachers.py, distill/README.md, tools/modal/README.md, and the owner's decision about CodeForge with its lineage (round 12, M3)
 """
 from __future__ import annotations
 
@@ -45,7 +46,7 @@ class Catalogue(unittest.TestCase):
         self.assertEqual((name, gpu), ("heretic-9b", "L4"))
 
     def test_every_shipped_teacher_says_what_it_may_do_and_none_with_an_openai_or_anthropic_name_may_store_text(self):
-        self.assertEqual([t.name for t in teachers.TEACHERS if not t.reasoning_ok], [], "the shipped teachers are Qwen-based and may store text (CodeForge's lineage is the owner's open question)")
+        self.assertEqual([t.name for t in teachers.TEACHERS if not t.reasoning_ok], [], "the shipped teachers may store text (CodeForge's lineage is accepted by the owner, 2026-11-12)")
         for t in teachers.TEACHERS:
             self.assertFalse(teachers.marked_filter_only(t), f"{t.name} names an OpenAI or Anthropic model: its flag cannot be True")
         for t in (GPT_OSS, GPT4O, teachers.Teacher("claude-distill-9b", "x/y", "z.gguf", "L4", True), teachers.Teacher("a", "unsloth/gpt-oss-20b-GGUF", "f.gguf", "L4", True), teachers.Teacher("a", "r", "Opus-distill.gguf", "L4", True)):
@@ -282,21 +283,50 @@ class KaggleKit(unittest.TestCase):
 class Docs(unittest.TestCase):
     def test_the_rule_is_in_the_catalogue_the_code_and_the_readmes(self):
         cand = (ROOT / "docs" / "TEACHER_CANDIDATES.md").read_text()
-        for part in ("What a teacher may do depends on what the run stores", "any open-weight model may FILTER, whatever its origin", "not trained by or distilled from an OpenAI or Anthropic model",
-                     "gpt-oss-\\* (OpenAI's own models", "the GPT-4o distill are filter-only", "`Teacher.reasoning_ok`", "**Filter only** (an OpenAI model: its text is not stored)",
-                     "**Filter only** (a distill of GPT-4o", "its lineage is not settled", "Opus 5.5 and GPT-6 Astra", "is the owner's call"):
+        for part in ("What a teacher may do depends on what the run stores", "any open-weight model may FILTER, whatever its origin", "no DIRECT OpenAI or Anthropic output is stored", "case by case by the owner, with the decision recorded",
+                     "A dataset card that publishes teacher-reasoning records must state the teacher's lineage", "gpt-oss-\\* (OpenAI's own models", "the GPT-4o distill are filter-only", "`Teacher.reasoning_ok`", "**Filter only** (an OpenAI model: its text is not stored)",
+                     "**Filter only** (a distill of GPT-4o", "The teacher in use: accepted by the owner (2026-11-12), lineage recorded", "Decision (the owner, 2026-11-12): CodeForge is accepted",
+                     "Coder390 EfficientThink", "Opus 5.5 and GPT-6 Astra", "Fable Distill", "claude-fable-5-claude-code", "Fable-5-Chat", "Qwopus Coder Flash", "Qwen, DeepSeek and NVIDIA teachers",
+                     "no dataset-card template"):
             self.assertIn(part, cand)
+        for gone in ("its lineage is not settled", "is the owner's call", "a teacher that was not trained by or distilled from"):
+            self.assertNotIn(gone, cand)
         self.assertNotIn("any open-weight model can be a teacher, whatever its origin", cand)
         code = (ROOT / "distill" / "teachers.py").read_text()
-        for part in ("any open-weight teacher may FILTER, whatever its origin", "NOT trained by or distilled from an OpenAI or Anthropic model", "gpt-oss-*", "the GPT-4o distill", "PROVENANCE OPEN"):
+        for part in ("any open-weight teacher may FILTER, whatever its origin", "no DIRECT OpenAI or Anthropic output is stored", "accepted case by case by the", "gpt-oss-*", "the GPT-4o distill",
+                     "ACCEPTED BY THE OWNER on 2026-11-12", "Coder390", "Opus 5.5 and GPT-6 Astra", "claude-fable-5-claude-code and Fable-5-Chat", "Qwen, DeepSeek and",
+                     "A dataset card that publishes teacher-reasoning records must state the teacher's lineage"):
             self.assertIn(part, code)
+        for gone in ("PROVENANCE OPEN", "NOT trained by or distilled from", "If the owner reads that"):
+            self.assertNotIn(gone, code)
         for name in ("distill/README.md", "tools/modal/README.md"):
             text = (ROOT / name).read_text()
             self.assertIn("reasoning_ok", text, name)
             self.assertIn("gpt-oss-*", text, name)
+            self.assertRegex(text, r"[Nn]o DIRECT (OpenAI or Anthropic output|output of an OpenAI or Anthropic model)", name)
+            self.assertIn("CodeForge was accepted on 2026-11-12", text, name)
+            self.assertIn("a dataset card that publishes teacher-reasoning records must state the teacher's lineage", text, name)
+            self.assertNotIn("open question for the owner", text, name)
+            self.assertNotIn("lineage is not settled", text, name)
             self.assertNotIn("No output of an OpenAI or Anthropic model enters a dataset", text)
             self.assertNotIn("does not forbid it", text)
-        self.assertNotIn("no output of an OpenAI or Anthropic model enters a dataset", (ROOT / "distill" / "backends" / "modal_sample.py").read_text())
+        stage = (ROOT / "distill" / "backends" / "modal_sample.py").read_text()
+        self.assertNotIn("no output of an OpenAI or Anthropic model enters a dataset", stage)
+        self.assertIn("a direct OpenAI or Anthropic model: gpt-oss-*, the GPT-4o distill; a lineage that includes fine-tunes on such data is the owner's call", stage)
+        self.assertNotIn("(trained by or distilled from an OpenAI or Anthropic model: gpt-oss-*", stage)
+        self.assertIn("and it must state the teacher's lineage (CodeForge's: `docs/TEACHER_CANDIDATES.md`, last section)", (ROOT / "tools" / "modal" / "README.md").read_text(), "next to what the dataset card must say about the steps")
+
+    def test_the_decision_about_codeforge_is_in_the_catalogue_and_both_entries_say_true(self):
+        """The owner accepted it (2026-11-12): the flag stays True for both quantizations, the thinking config and the kernel's default are not refused, and the filter-only ones still are."""
+        for name in ("codeforge-27b-heretic-iq3", "codeforge-27b-heretic-q4"):
+            self.assertTrue(teachers.find(name).reasoning_ok, name)
+            teachers.require_reasoning(name, strict=True)
+        import json
+        cfg = json.loads((ROOT / "distill" / "configs" / "rea-thinking.json").read_text())
+        teachers.require_reasoning(cfg["teacher"], strict=True)
+        for t in (GPT_OSS, GPT4O):
+            with mock.patch.object(teachers, "TEACHERS", [*teachers.TEACHERS, t]), self.assertRaisesRegex(SystemExit, "may only FILTER"):
+                teachers.require_reasoning(t.name)
 
     def test_the_gate_is_described_where_the_rule_is(self):
         text = (ROOT / "distill" / "README.md").read_text()

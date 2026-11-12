@@ -8,7 +8,7 @@ answer, the truth record. What is here is the same for every subject: the llama-
   project, cost_line, ...   the projected GPU hours and dollars of a run (`thinking_cost_line` for a thinking run, which has no expected figure), from the one measurement there is: REA's phase A on one L40S.
 
 The teacher is open-weight (see `distill/teachers.py`). Any open-weight teacher may FILTER in the default mode whatever its origin (its text is not stored); a reasoning or thinking run stores the teacher's reply, so it
-refuses a teacher without `reasoning_ok` (trained by or distilled from an OpenAI or Anthropic model: gpt-oss-*, the GPT-4o distill).
+refuses a teacher without `reasoning_ok` (a direct OpenAI or Anthropic model: gpt-oss-*, the GPT-4o distill; a lineage that includes fine-tunes on such data is the owner's call, case by case: distill/teachers.py).
 """
 from __future__ import annotations
 
