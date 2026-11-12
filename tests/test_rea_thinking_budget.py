@@ -72,6 +72,16 @@ class FamilyTokens(unittest.TestCase):
             with self.assertRaisesRegex(SystemExit, why):
                 config.parse_family_tokens(bad, DOMAIN.kinds())
 
+    def test_a_number_that_is_not_ascii_digits_is_a_message_not_a_traceback(self):
+        """`str.isdigit()` accepts '²', '①' and the digits of other scripts; `int()` refuses the first two with a ValueError (round 15, m3). Both flag parsers take ASCII digits only."""
+        for digit in ("\u00b2", "\u00b3", "\u2460", "\u0661\u0662", "\uff11\uff12", "8\u00b2"):
+            with self.assertRaisesRegex(SystemExit, "kind=N", msg=digit):
+                config.parse_family_tokens(f"cipher={digit}", DOMAIN.kinds())
+            with self.assertRaisesRegex(SystemExit, "bad --quota entry", msg=digit):
+                config.parse_quota(f"crc={digit}", DOMAIN.kinds())
+        self.assertEqual(config.parse_family_tokens("cipher= 8192 ", DOMAIN.kinds()), {"cipher": 8192})
+        self.assertEqual(config.parse_quota("crc=250, structs = 100", DOMAIN.kinds()), {"crc": 250, "structs": 100})
+
     def test_a_task_gets_the_budget_of_its_family_and_the_slot_is_sized_for_the_longest_in_the_run(self):
         by = {"cipher": 8192, "magic": 8192}
         self.assertEqual([config.task_max_tokens(k, 4096, by) for k in ("cipher", "crc", "magic")], [8192, 4096, 8192])

@@ -93,7 +93,7 @@ def parse_family_tokens(text: str, known=None) -> dict:
     for part in [p.strip() for p in text.split(",") if p.strip()]:
         kind, eq, count = part.partition("=")
         kind = kind.strip()
-        if not eq or not kind or not count.strip().isdigit():
+        if not eq or not kind or not (count.strip().isascii() and count.strip().isdigit()):        # isdigit() alone takes '²', which int() refuses: a traceback, not this message
             raise SystemExit(f"bad --max-tokens-by-family entry {part!r}: write kind=N with N a number of tokens, e.g. --max-tokens-by-family cipher=8192,magic=8192")
         if kind in out:
             raise SystemExit(f"--max-tokens-by-family names {kind!r} twice")
@@ -138,7 +138,7 @@ def parse_quota(text: str, known=None) -> dict:
     for part in [p.strip() for p in text.split(",") if p.strip()]:
         kind, eq, count = part.partition("=")
         kind = kind.strip()
-        if not eq or not kind or not count.strip().isdigit() or int(count) < 1:
+        if not eq or not kind or not (count.strip().isascii() and count.strip().isdigit()) or int(count) < 1:        # ASCII digits only: isdigit() takes '²', which int() refuses
             raise SystemExit(f"bad --quota entry {part!r}: write kind=N with N a positive integer, e.g. --quota crc=250,structs=100")
         if kind in out:
             raise SystemExit(f"--quota names {kind!r} twice")
