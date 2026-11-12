@@ -47,13 +47,20 @@ class Rea(Domain):
     def load_tasks(self, source) -> list:
         """The decompiled tasks (records with pseudocode) of `source`: a `decompiled-<tag>.jsonl` of the decompile stage, several of them, or a directory with one `<id>.json` per task (the Modal volume).
         Files: sorted by `<id>.json`, the order the sample stage reads the volume in, so that the records come out in its order; a file of the held-out seed 1001 is refused by its name."""
+        return self._read(source, heldout=False)
+
+    def load_heldout(self, source) -> list:
+        """The same records for an evaluation: the files of the held-out seed 1001 (`decompiled-seed1001*.jsonl`) are the ones to read here, and are not refused."""
+        return self._read(source, heldout=True)
+
+    def _read(self, source, heldout: bool) -> list:
         files = [pathlib.Path(f) for f in ([source] if isinstance(source, (str, os.PathLike)) else source)]
         if len(files) == 1 and files[0].is_dir():
             tasks = [json.loads(p.read_text()) for p in sorted(files[0].glob("*.json"))]
             return [t for t in tasks if "pseudocode" in t]
         for f in files:
             seed = re.search(r"seed(\d+)", f.name)
-            if seed:
+            if seed and not heldout:
                 dedupe.check_sample_seed(int(seed.group(1)))             # the held-out split is never turned into SFT pairs
         tasks = sorted(outputs.load_tasks(files), key=lambda t: f"{t['id']}.json")
         if not tasks:

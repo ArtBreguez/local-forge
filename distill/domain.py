@@ -39,6 +39,11 @@ class Domain(abc.ABC):
         """The tasks of `source` (a path to a file or directory the subject's own task stage wrote, a list of such paths, or a seed for a subject that generates them): a list of dicts, each with a unique `id` and a `kind`
         (the family the quota counts by), in a stable order. A task keeps its ground truth next to the question: `verify` and `truth_target` read it."""
 
+    def load_heldout(self, source) -> list:
+        """The held-out tasks of `source`, for an EVALUATION of a student (never for training): the same records `load_tasks` returns. The default is `load_tasks`; a subject whose `load_tasks`
+        refuses the files of its held-out split (so that they are never turned into training data) overrides this to read them."""
+        return self.load_tasks(source)
+
     @abc.abstractmethod
     def messages(self, task: dict, mode: str) -> list:
         """The chat messages a teacher is asked for `task` in `mode` (one of MODES): a system message and a user message. The same messages are stored in the records. They must not contain the
