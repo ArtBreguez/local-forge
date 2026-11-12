@@ -2,6 +2,7 @@
 (tests/test_distill_core.py runs the whole pipeline on it with no `rea_bench` import) and to show the smallest honest `Domain`. A real subject copies the shape, not the content."""
 from __future__ import annotations
 
+import hashlib
 import json
 import pathlib
 import random
@@ -48,6 +49,12 @@ class Arith(Domain):
 
     def truth_target(self, task: dict):
         return str(task["answer"])
+
+    def task_keys(self, task: dict) -> dict:
+        """The problem is its question (a "code" key) and the question with its answer (an "answer" key): two tasks of different seeds that draw the same operands are the same task."""
+        digest = lambda *parts: hashlib.sha256(json.dumps(parts).encode()).hexdigest()[:24]
+        question = self.normalize_prompt(task["question"])
+        return {"code": digest("code", question), "answer": digest("answer", task["kind"], question, task["answer"])}
 
     def heldout_ids(self) -> set:
         return {t["id"] for t in make_tasks(HELDOUT_SEED)}

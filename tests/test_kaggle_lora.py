@@ -34,6 +34,11 @@ import run_teacher  # noqa: E402
 
 THINK = "<think>\n{}\n</think>\n\nAnswer: {}"
 HELDOUT = make_tasks(HELDOUT_SEED)         # 12 tasks, kinds add / sub / mul four times each
+TRAIN = make_tasks(7, 30)                  # the training tasks of the fixture (the SFT records are made from these)
+SHARED = {"arith-9999-003", "arith-9999-004"}      # the two held-out problems that seed 7 draws too (same question, same answer): the fixture's own overlap, found by content, never by id
+KEPT = [t for t in HELDOUT if t["id"] not in SHARED]
+TRAIN_BY_ID = {t["id"]: t for t in TRAIN}
+PAIR = [json.loads(line) for line in (ROOT / "tests" / "golden" / "kaggle_lora" / "structs-pair.jsonl").read_text().splitlines()]       # structs-7-0292 and structs-1001-0028: the same function, question and answer under two seeds
 TEACHER = "codeforge-27b-heretic-q4"
 
 
