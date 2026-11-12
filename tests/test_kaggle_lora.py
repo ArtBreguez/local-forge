@@ -536,6 +536,9 @@ class Generation(unittest.TestCase):
         self.assertEqual(lora_eval.split_generation("first I count\nthen I add\n</think>\n\nAnswer: 7<|im_end|>"), ("first I count\nthen I add", "Answer: 7"))
         self.assertEqual(lora_eval.split_generation("<think>\nit repeated the tag\n</think>\n\nAnswer: 7"), ("it repeated the tag", "Answer: 7"))
 
+    def test_the_first_end_of_the_think_block_is_the_one_that_splits(self):
+        self.assertEqual(lora_eval.split_generation("a</think>b</think>c"), ("a", "b</think>c"), "as the chat template reads a record: the first `</think>`, nothing is split at the last")
+
     def test_a_block_that_never_closed_is_all_reasoning_and_has_no_reply(self):
         self.assertEqual(lora_eval.split_generation("still thinking and thinking"), ("still thinking and thinking", ""))
         self.assertEqual(lora_eval.split_generation(""), ("", ""))
