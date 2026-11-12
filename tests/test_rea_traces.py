@@ -33,7 +33,8 @@ from .test_rea_reasoning import MSGS, STEPS, answer_body, reply, wrong_for
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import outputs, reasoning as rsn, sft, targets  # noqa: E402
+from rea_bench import outputs, targets  # noqa: E402
+from .rea_bound import rsn, sft  # noqa: E402
 
 
 def distinct(t: dict, n: int = 5) -> list:
@@ -649,13 +650,13 @@ class TrainingOutputs(ModalCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        sys.modules.pop("modal_lora", None)
-        import modal_lora
+        sys.modules.pop("distill.backends.modal_train", None)
+        import distill.backends.modal_train as modal_lora
         cls.lora = modal_lora
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def test_the_default_run_writes_where_it_always_did(self):

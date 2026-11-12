@@ -1,0 +1,18 @@
+{
+ "domain": "rea",
+ "teacher": "codeforge-27b-heretic-q4",
+ "student": "xtools-at/DeepSeek-V4-Pro-Qwen3.5-9B-UNCENSORED-heretic",
+ "k": 4,
+ "mode": "thinking",
+ "sampling": {
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 20,
+  "min_p": 0.0
+ },
+ "max_tokens": 4096,
+ "max_traces": 3,
+ "max_len": 8192,
+ "mix": false,
+ "quota": "structs=10,crc=10"
+}

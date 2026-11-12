@@ -1,0 +1,860 @@
+{
+ "first": {
+  "stats": {
+   "tasks": 4,
+   "answers": 12,
+   "errors": 2,
+   "correct": 8,
+   "solved_tasks": 4,
+   "kept_tasks": 3,
+   "kept_records": 9,
+   "no_correct": 0,
+   "agreement": 1,
+   "by_kind": {
+    "crc": {
+     "tasks": 1,
+     "answers": 3,
+     "errors": 1,
+     "correct": 1,
+     "solved_tasks": 1,
+     "kept_tasks": 0,
+     "kept_records": 0,
+     "no_correct": 0,
+     "agreement": 1
+    },
+    "structs": {
+     "tasks": 2,
+     "answers": 6,
+     "errors": 0,
+     "correct": 5,
+     "solved_tasks": 2,
+     "kept_tasks": 2,
+     "kept_records": 6,
+     "no_correct": 0,
+     "agreement": 0
+    },
+    "xor-key": {
+     "tasks": 1,
+     "answers": 3,
+     "errors": 1,
+     "correct": 2,
+     "solved_tasks": 1,
+     "kept_tasks": 1,
+     "kept_records": 3,
+     "no_correct": 0,
+     "agreement": 0
+    }
+   },
+   "reasoning": {
+    "mode": "reasoning",
+    "max_traces": 3,
+    "replies": 12,
+    "accepted": 8,
+    "wrong": 1,
+    "no_answer_line": 0,
+    "truncated": 1,
+    "error": 2,
+    "teacher_records": 6,
+    "dropped": {
+     "no_think": 0,
+     "mixed_language": 0,
+     "repetition": 0,
+     "unreadable": 0,
+     "contradiction": 0,
+     "duplicate": 1,
+     "over_cap": 0
+    },
+    "in_lost_tasks": 1,
+    "tasks_without_trace": 0,
+    "by_kind": {
+     "crc": {
+      "replies": 3,
+      "accepted": 1,
+      "wrong": 0,
+      "no_answer_line": 0,
+      "truncated": 1,
+      "error": 1,
+      "teacher_records": 0,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 0,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 1,
+      "tasks_without_trace": 0
+     },
+     "structs": {
+      "replies": 6,
+      "accepted": 5,
+      "wrong": 1,
+      "no_answer_line": 0,
+      "truncated": 0,
+      "error": 0,
+      "teacher_records": 4,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 1,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 0,
+      "tasks_without_trace": 0
+     },
+     "xor-key": {
+      "replies": 3,
+      "accepted": 2,
+      "wrong": 0,
+      "no_answer_line": 0,
+      "truncated": 0,
+      "error": 1,
+      "teacher_records": 2,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 0,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 0,
+      "tasks_without_trace": 0
+     }
+    }
+   },
+   "sampling": {
+    "thinking": false,
+    "temperature": 0.7,
+    "max_tokens": 768,
+    "seed_base": 1234,
+    "slot_context": 8192,
+    "parallel": 4
+   },
+   "over_length": {
+    "max_len": 4096,
+    "dropped": 0,
+    "near_limit": 0,
+    "longest_tokens": 169,
+    "by_kind": {},
+    "fits": {
+     "teacher-reasoning": {
+      "records": 6,
+      "2048": 6,
+      "3072": 6,
+      "4096": 6
+     },
+     "truth-template": {
+      "records": 3,
+      "2048": 3,
+      "3072": 3,
+      "4096": 3
+     }
+    },
+    "by_source": {}
+   }
+  },
+  "sft": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "52 bytes\nproc reads its input as a sequence of records of 52 bytes."
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52"
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52"
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "jzde8gxd\nThe key is a string of 8 characters that is repeated along the whole buffer."
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd"
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: jzde8gxd"
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "Offset 0x10\nproc follows the pointer at byte offset 0x10 of a node to reach the next node of the list, and stops at a node whose pointer is NULL."
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10"
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x10"
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   }
+  ],
+  "requests": [
+   [
+    "crc-7-0001",
+    0
+   ],
+   [
+    "crc-7-0001",
+    1
+   ],
+   [
+    "crc-7-0001",
+    2
+   ],
+   [
+    "structs-7-0000",
+    0
+   ],
+   [
+    "structs-7-0000",
+    1
+   ],
+   [
+    "structs-7-0000",
+    2
+   ],
+   [
+    "structs-7-0005",
+    0
+   ],
+   [
+    "structs-7-0005",
+    1
+   ],
+   [
+    "structs-7-0005",
+    2
+   ],
+   [
+    "xor-key-7-0000",
+    0
+   ],
+   [
+    "xor-key-7-0000",
+    1
+   ],
+   [
+    "xor-key-7-0000",
+    2
+   ]
+  ],
+  "bodies_sha256": "a529f8f919032e62067ce3b594ea5bb12f26c7f4b80abc4c02f4170bd0f8cf61",
+  "bodies": 12,
+  "first_body": {
+   "model": "local",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+    },
+    {
+     "role": "user",
+     "content": "```c\n/* crc-7-0001 */ void f(void) {}\n```\n\nQuestion: This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?"
+    }
+   ],
+   "temperature": 0.7,
+   "seed": 1234,
+   "max_tokens": 768,
+   "chat_template_kwargs": {
+    "enable_thinking": false
+   },
+   "cache_prompt": false
+  },
+  "partial_sha256": "ef06f4bda5c109da0b59575da4cf33749dc008e9b718a4fca7e948d5feff908a",
+  "printed": "--quota structs=2,crc=1,xor-key=1: 4 tasks to sample: structs 2/2, crc 1/1, xor-key 1/1\n",
+  "tokenized": 27
+ },
+ "resumed": {
+  "stats": {
+   "tasks": 4,
+   "answers": 12,
+   "errors": 0,
+   "correct": 10,
+   "solved_tasks": 4,
+   "kept_tasks": 4,
+   "kept_records": 12,
+   "no_correct": 0,
+   "agreement": 0,
+   "by_kind": {
+    "crc": {
+     "tasks": 1,
+     "answers": 3,
+     "errors": 0,
+     "correct": 2,
+     "solved_tasks": 1,
+     "kept_tasks": 1,
+     "kept_records": 3,
+     "no_correct": 0,
+     "agreement": 0
+    },
+    "structs": {
+     "tasks": 2,
+     "answers": 6,
+     "errors": 0,
+     "correct": 5,
+     "solved_tasks": 2,
+     "kept_tasks": 2,
+     "kept_records": 6,
+     "no_correct": 0,
+     "agreement": 0
+    },
+    "xor-key": {
+     "tasks": 1,
+     "answers": 3,
+     "errors": 0,
+     "correct": 3,
+     "solved_tasks": 1,
+     "kept_tasks": 1,
+     "kept_records": 3,
+     "no_correct": 0,
+     "agreement": 0
+    }
+   },
+   "reasoning": {
+    "mode": "reasoning",
+    "max_traces": 3,
+    "replies": 12,
+    "accepted": 10,
+    "wrong": 1,
+    "no_answer_line": 0,
+    "truncated": 1,
+    "error": 0,
+    "teacher_records": 8,
+    "dropped": {
+     "no_think": 0,
+     "mixed_language": 0,
+     "repetition": 0,
+     "unreadable": 0,
+     "contradiction": 0,
+     "duplicate": 2,
+     "over_cap": 0
+    },
+    "in_lost_tasks": 0,
+    "tasks_without_trace": 0,
+    "by_kind": {
+     "crc": {
+      "replies": 3,
+      "accepted": 2,
+      "wrong": 0,
+      "no_answer_line": 0,
+      "truncated": 1,
+      "error": 0,
+      "teacher_records": 2,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 0,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 0,
+      "tasks_without_trace": 0
+     },
+     "structs": {
+      "replies": 6,
+      "accepted": 5,
+      "wrong": 1,
+      "no_answer_line": 0,
+      "truncated": 0,
+      "error": 0,
+      "teacher_records": 4,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 1,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 0,
+      "tasks_without_trace": 0
+     },
+     "xor-key": {
+      "replies": 3,
+      "accepted": 3,
+      "wrong": 0,
+      "no_answer_line": 0,
+      "truncated": 0,
+      "error": 0,
+      "teacher_records": 2,
+      "dropped": {
+       "no_think": 0,
+       "mixed_language": 0,
+       "repetition": 0,
+       "unreadable": 0,
+       "contradiction": 0,
+       "duplicate": 1,
+       "over_cap": 0
+      },
+      "in_lost_tasks": 0,
+      "tasks_without_trace": 0
+     }
+    }
+   },
+   "sampling": {
+    "thinking": false,
+    "temperature": 0.7,
+    "max_tokens": 768,
+    "seed_base": 1234,
+    "slot_context": 8192,
+    "parallel": 4
+   },
+   "over_length": {
+    "max_len": 4096,
+    "dropped": 0,
+    "near_limit": 0,
+    "longest_tokens": 182,
+    "by_kind": {},
+    "fits": {
+     "teacher-reasoning": {
+      "records": 8,
+      "2048": 8,
+      "3072": 8,
+      "4096": 8
+     },
+     "truth-template": {
+      "records": 4,
+      "2048": 4,
+      "3072": 4,
+      "4096": 4
+     }
+    },
+    "by_source": {}
+   }
+  },
+  "sft": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "52 bytes\nproc reads its input as a sequence of records of 52 bytes."
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 52"
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0000 */ void f(void) {}\n```\n\nData referenced by the function (bytes at those addresses):\n00 01 02 03\n\nQuestion: proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?"
+     },
+     {
+      "role": "assistant",
+      "content": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 52"
+     }
+    ],
+    "task": "structs-7-0000",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* crc-7-0001 */ void f(void) {}\n```\n\nQuestion: This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?"
+     },
+     {
+      "role": "assistant",
+      "content": "It is 0xffff.\nBefore the first byte is processed, the 16-bit CRC register holds 0xffff."
+     }
+    ],
+    "task": "crc-7-0001",
+    "kind": "crc",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* crc-7-0001 */ void f(void) {}\n```\n\nQuestion: This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?"
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0xffff"
+     }
+    ],
+    "task": "crc-7-0001",
+    "kind": "crc",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* crc-7-0001 */ void f(void) {}\n```\n\nQuestion: This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?"
+     },
+     {
+      "role": "assistant",
+      "content": "Following the loop gives the key material directly.\nOnly one value of it is needed here.\nAnswer: 0xffff"
+     }
+    ],
+    "task": "crc-7-0001",
+    "kind": "crc",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "jzde8gxd\nThe key is a string of 8 characters that is repeated along the whole buffer."
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: jzde8gxd"
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* xor-key-7-0000 */ void f(void) { int größe = 0; }\n```\n\nQuestion: Recover the repeating XOR key as an ASCII string."
+     },
+     {
+      "role": "assistant",
+      "content": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: jzde8gxd"
+     }
+    ],
+    "task": "xor-key-7-0000",
+    "kind": "xor-key",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "Offset 0x10\nproc follows the pointer at byte offset 0x10 of a node to reach the next node of the list, and stops at a node whose pointer is NULL."
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "truth-template"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "The function reads a field at a fixed offset from the base.\nThe constant is what the question asks for.\nAnswer: 0x10"
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+     },
+     {
+      "role": "user",
+      "content": "```c\n/* structs-7-0005 */ void f(void) {}\n```\n\nQuestion: At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?"
+     },
+     {
+      "role": "assistant",
+      "content": "Looking at the comparison the literal stands out clearly.\nThat literal answers the question.\nAnswer: 0x10"
+     }
+    ],
+    "task": "structs-7-0005",
+    "kind": "structs",
+    "model": "m",
+    "target_source": "teacher-reasoning"
+   }
+  ],
+  "requests": [
+   [
+    "crc-7-0001",
+    1
+   ],
+   [
+    "xor-key-7-0000",
+    1
+   ]
+  ],
+  "bodies_sha256": "e8c19603ace5f15113813aa2a2262b0abed0fbed3ad035c9a2e31d1bfbe425cc",
+  "bodies": 2,
+  "first_body": {
+   "model": "local",
+   "messages": [
+    {
+     "role": "system",
+     "content": "You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it."
+    },
+    {
+     "role": "user",
+     "content": "```c\n/* crc-7-0001 */ void f(void) {}\n```\n\nQuestion: This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?"
+    }
+   ],
+   "temperature": 0.7,
+   "seed": 1235,
+   "max_tokens": 768,
+   "chat_template_kwargs": {
+    "enable_thinking": false
+   },
+   "cache_prompt": false
+  },
+  "partial_sha256": "b187083eecd85b77ebdca0532d1ae48f44aae29914f9015b22b5eb20000d1727",
+  "printed": "--quota structs=2,crc=1,xor-key=1: 4 tasks to sample: structs 2/2, crc 1/1, xor-key 1/1\nresuming: 2 of 4 tasks complete, 2 to ask (2 failed or missing samples of checkpointed tasks)\n",
+  "tokenized": 63
+ }
+}

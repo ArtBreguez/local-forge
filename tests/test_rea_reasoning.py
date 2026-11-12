@@ -30,7 +30,9 @@ from .test_rea_modal import ModalCase, StubbedSampleStage, failing
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import outputs, reasoning as rsn, scoring, sft, targets  # noqa: E402
+from rea_bench import outputs, scoring, targets  # noqa: E402
+from distill import traces  # noqa: E402
+from .rea_bound import rsn, sft  # noqa: E402
 
 MSGS = lambda task: [{"role": "system", "content": "S"}, {"role": "user", "content": "U"}]
 STEPS = "The function loads the pointer at an offset.\nThe constant added to the base is the offset."
@@ -194,9 +196,9 @@ class ReasoningRecords(unittest.TestCase):
 
     def test_assemble_goes_through_check_records(self):
         """A record with another source never reaches the file: `assemble` ends in `check_records`."""
-        real = rsn.teacher_target
-        bad = lambda o, t, thinking=False: {**real(o, t, thinking), "target_source": "teacher-verified"}
-        with mock.patch.object(rsn, "teacher_target", bad):
+        real = traces.teacher_target
+        bad = lambda o, t, thinking=False, *, domain: {**real(o, t, thinking, domain=domain), "target_source": "teacher-verified"}
+        with mock.patch.object(traces, "teacher_target", bad):
             with self.assertRaisesRegex(ValueError, "target_source"):
                 self.assemble([reply(self.t)])
         self.assertIn("check_records(kept)", inspect.getsource(sft.assemble))
@@ -466,7 +468,7 @@ class ReasoningStage(StubbedSampleStage):
         self.assertEqual(sorted({r["task"] for r in res["sft"]}), ["hash-7-0004", "password-7-0001", "password-7-0011"])
         self.assertEqual(len(res["sft"]), 6, "two records per task")
         self.assertIn("password 2/5", self.printed)
-        with self.assertRaisesRegex(SystemExit, "selects no decompiled task"):
+        with self.assertRaisesRegex(SystemExit, "selects no task"):
             self.run_stage(False, quota="crc=4")
 
     def test_a_quota_run_is_balanced_when_it_stops_early(self):
@@ -647,13 +649,13 @@ class TrainingWindow(ModalCase):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        sys.modules.pop("modal_lora", None)
-        import modal_lora
+        sys.modules.pop("distill.backends.modal_train", None)
+        import distill.backends.modal_train as modal_lora
         cls.lora = modal_lora
 
     @classmethod
     def tearDownClass(cls):
-        sys.modules.pop("modal_lora", None)
+        sys.modules.pop("distill.backends.modal_train", None)
         super().tearDownClass()
 
     def test_the_window_is_an_argument_with_the_old_default(self):

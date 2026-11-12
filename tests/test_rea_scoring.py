@@ -17,7 +17,8 @@ from .rea_tasks import meta as real_task, right
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import core, families, scoring, sft, targets  # noqa: E402
+from rea_bench import core, families, scoring, targets  # noqa: E402
+from .rea_bound import sft  # noqa: E402
 
 
 def wrong_of(k: str) -> str:

@@ -41,6 +41,8 @@ from __future__ import annotations
 import re
 from typing import NamedTuple
 
+from distill.traces import ERROR_PREFIX, is_error_reply  # noqa: F401  (the text of a failed request: the sample stage writes `[error <exception repr>]`; defined once, in the generic half)
+
 from . import grammar
 from .grammar import Spec, headline_ok, is_exact_answer, lex, normalise, num_value  # noqa: F401  (num_value is re-exported)
 
@@ -243,12 +245,6 @@ def headline(answer: str, t: dict = None) -> str:
 
 # ---- scoring -----------------------------------------------------------------------------------------------------------------
 
-ERROR_PREFIX = "[error"       # what modal_rea_data.sample_answers writes for a failed request (`[error <exception repr>]`)
-
-
-def is_error_reply(reply: str) -> bool:
-    """The text of a failed request, not a reply of the model (a dead server, a timeout, a prompt over the slot size). Never scored, never stored."""
-    return reply.lstrip().startswith(ERROR_PREFIX)
 
 
 def check_mode(t: dict) -> None:

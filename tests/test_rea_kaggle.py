@@ -26,7 +26,8 @@ from .test_rea_traces import distinct, think_body
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import cli, kaggle_score, outputs, reasoning as rsn, sft  # noqa: E402
+from rea_bench import cli, kaggle_score, outputs  # noqa: E402
+from .rea_bound import rsn, sft  # noqa: E402
 
 WRONG = "0x0badc0de"          # not the answer of any task, numeric or string
 CJK = "这个函数读取指针并加上偏移量。"

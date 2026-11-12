@@ -1,0 +1,173 @@
+{
+ "run_tag": {
+  "False|rea_sft||False": "full",
+  "False|rea_reasoning||False": "rea_reasoning",
+  "False|rea_thinking||True": "rea_thinking-mix",
+  "False|rea_sft|mine|False": "mine",
+  "False|a b/c||False": "a-b-c",
+  "True|rea_sft||False": "smoke",
+  "True|rea_reasoning||False": "rea_reasoning-smoke",
+  "True|rea_thinking||True": "rea_thinking-mix-smoke",
+  "True|rea_sft|mine|False": "mine-smoke",
+  "True|a b/c||False": "a-b-c-smoke",
+  "reserved full": "SystemExit: output tag 'full' is reserved for the default run on the config 'rea_sft' (/out/full, /out/smoke): pass --tag with another name",
+  "reserved smoke": "SystemExit: output tag 'smoke' is reserved for the default run on the config 'rea_sft' (/out/full, /out/smoke): pass --tag with another name",
+  "reserved -": "SystemExit: output tag '-' (from --tag) is not a plain name: letters, digits, `.`, `_`, `-`; pass --tag",
+  "reserved ": "x"
+ },
+ "batch_plan": {
+  "1024": [
+   4,
+   4
+  ],
+  "2048": [
+   4,
+   4
+  ],
+  "3072": [
+   2,
+   8
+  ],
+  "4096": [
+   2,
+   8
+  ],
+  "6144": [
+   1,
+   16
+  ],
+  "8192": [
+   1,
+   16
+  ]
+ },
+ "parse": {
+  "plain answer": [
+   "plain",
+   null
+  ],
+  "<think>\nwhy\n</think>\n\nanswer": [
+   "think",
+   [
+    "why",
+    "answer"
+   ]
+  ],
+  "<think>\n\n</think>\n\nanswer": [
+   "malformed",
+   "the think block is empty"
+  ],
+  "<think>\nwhy": [
+   "malformed",
+   "needs exactly one <think> at the start and one </think>"
+  ],
+  "<think>a</think>b<think>c</think>d": [
+   "malformed",
+   "needs exactly one <think> at the start and one </think>"
+  ],
+  "x <think>a</think> y": [
+   "malformed",
+   "needs exactly one <think> at the start and one </think>"
+  ],
+  "<think>\nwhy\n</think>": [
+   "malformed",
+   "nothing follows the think block"
+  ]
+ },
+ "fate": {
+  "plain answer": [
+   "plain",
+   "plain",
+   "skipped_plain",
+   "plain"
+  ],
+  "<think>\nwhy\n</think>\n\nanswer": [
+   "think",
+   "think",
+   "think",
+   "think"
+  ],
+  "<think>\n\n</think>\n\nanswer": [
+   "malformed",
+   "malformed",
+   "malformed",
+   "malformed"
+  ],
+  "<think>\nwhy": [
+   "malformed",
+   "malformed",
+   "malformed",
+   "malformed"
+  ],
+  "<think>a</think>b<think>c</think>d": [
+   "malformed",
+   "malformed",
+   "malformed",
+   "malformed"
+  ],
+  "x <think>a</think> y": [
+   "malformed",
+   "malformed",
+   "malformed",
+   "malformed"
+  ],
+  "<think>\nwhy\n</think>": [
+   "malformed",
+   "malformed",
+   "malformed",
+   "malformed"
+  ]
+ },
+ "ids": [
+  null,
+  {
+   "input_ids": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "attention_mask": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "labels": [
+    -100,
+    -100,
+    3,
+    4
+   ]
+  },
+  {
+   "input_ids": [
+    1,
+    2,
+    3,
+    4
+   ],
+   "attention_mask": [
+    1,
+    1,
+    1,
+    1
+   ],
+   "labels": [
+    -100,
+    -100,
+    3,
+    4
+   ]
+  },
+  null
+ ],
+ "fate_counts": {
+  "think": 1,
+  "plain": 1,
+  "skipped_plain": 1,
+  "malformed": 1,
+  "too_long": 2,
+  "too_long_think": 1
+ }
+}

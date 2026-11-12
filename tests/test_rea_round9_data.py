@@ -26,7 +26,9 @@ from .test_rea_modal import ModalCase, StubbedSampleStage
 
 sys.path.insert(0, str(ROOT / "tools" / "rea-bench"))
 
-from rea_bench import families, scoring, sft, survive, targets  # noqa: E402
+from distill.backends import modal_sample  # noqa: E402
+from rea_bench import families, scoring, survive, targets  # noqa: E402
+from .rea_bound import sft  # noqa: E402
 
 
 # ---- m1 -------------------------------------------------------------------------------------------------------------------------------
@@ -110,7 +112,7 @@ class SampleStageLengthRule(StubbedSampleStage):
 
     def test_a_measurement_that_fails_keeps_the_records_and_says_so(self):
         base = len(self.run_stage(resume=False)["sft"])
-        with mock.patch.object(self.data, "_server_token_count", side_effect=OSError("tokenize refused")):
+        with mock.patch.object(modal_sample, "_server_token_count", side_effect=OSError("tokenize refused")):
             res = self.run_stage(resume=False)
         self.assertEqual(len(res["sft"]), base)
         self.assertIn("tokenize refused", res["stats"]["over_length"]["error"])

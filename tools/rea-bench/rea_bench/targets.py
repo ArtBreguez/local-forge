@@ -5,7 +5,7 @@ Rounds 1 to 4 each found free prose that carried a wrong fact past every filter:
 filter was a list of bad words or shapes, and the next review found the word that was not on it. The answer is not a better filter:
 
     The teacher's role is a FILTER. A task enters the dataset only when the teacher's headline is accepted by `score_strict` (with the
-    K-agreement rule of sft.py): that proves the task is answerable from the pseudocode. What is STORED as the assistant message is never
+    K-agreement rule of distill/records.py): that proves the task is answerable from the pseudocode. What is STORED as the assistant message is never
     the teacher's text. It is rendered here from the task's own truth: the canonical headline plus ONE factual justification sentence,
     chosen from a per-variant set of 3-6 phrasings by a seeded RNG (`random.Random("truth-template/<task id>/<variant>")`, so a task is
     always rendered the same way and the set of phrasings is spread over the tasks of a variant). The canonical headline is chosen from its own set of 4 phrasings by a

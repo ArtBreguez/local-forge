@@ -20,6 +20,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 from .helpers import ROOT
 
@@ -234,7 +235,7 @@ class Scorer(unittest.TestCase):
 
     def test_modal_module_uses_the_package_scorer(self):
         data = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
-        self.assertIn("from rea_bench.scoring import check_mode, check_target, score_strict", data)
+        self.assertIn("from rea_bench.scoring import check_mode", data)      # the decompile stage; the sample stage scores through the REA domain (`verify` is score_strict)
         self.assertNotIn("def _score", data)
         self.assertIn("task.get(\"cc\", \"gcc\")", data)
         rea = (ROOT / "tools" / "modal" / "modal_rea.py").read_text()
@@ -243,8 +244,9 @@ class Scorer(unittest.TestCase):
         self.assertRegex(rea, r"(?m)^def sh\(")
         self.assertNotRegex(rea, r"(?m)^def (score|_variants)\(", "modal_rea.py must not keep a private copy of the scorer")
         self.assertIn('"clang"', rea)
-        body = data[data.index("def sample_answers"):data.index("srv = subprocess.Popen")]
-        self.assertLess(body.index("check_mode(t)"), body.index("hf_hub_download(repo"), "validate the tasks before the model download")
+        sample = (ROOT / "distill" / "backends" / "modal_sample.py").read_text()
+        body = sample[sample.index("def sample_answers"):sample.index("srv = subprocess.Popen")]
+        self.assertLess(body.index("domain.check_task(t)"), body.index("hf_hub_download(repo"), "validate the tasks before the model download")
 
 
 class ContentFreeReplies(unittest.TestCase):
@@ -363,7 +365,9 @@ class ModalScripts(unittest.TestCase):
     def test_one_scorer_everywhere(self):
         self.assertIs(self.rea.score, scoring.score)
         self.assertIs(self.rea.score_any_line, scoring.score_any_line)
-        self.assertIs(self.data.score_strict, scoring.score_strict, "round 3: the sample stage scores with the grammar for every family")
+        with mock.patch.object(scoring, "score_strict", return_value=True) as strict:      # round 3: the sample stage scores with the grammar for every family: the REA domain's verdict IS score_strict
+            self.assertTrue(self.data.DOMAIN.verify("x", {"id": "t"}))
+        strict.assert_called_once_with("x", {"id": "t"})
         self.assertFalse(hasattr(self.data, "score"), "the sample stage does not import the evaluation scorer (the frozen substring modes)")
         self.assertIs(self.rea.check_mode, scoring.check_mode)
 

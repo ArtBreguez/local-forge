@@ -19,7 +19,9 @@ from .rea_tasks import meta as real_task, right
 RB = ROOT / "tools" / "rea-bench"
 sys.path.insert(0, str(RB))
 
-from rea_bench import core, dedupe, families, outputs, scoring, sft, targets  # noqa: E402
+from rea_bench import core, dedupe, families, outputs, scoring, targets  # noqa: E402
+from distill.backends import modal_sample  # noqa: E402
+from .rea_bound import sft  # noqa: E402
 
 
 class ModalCase(unittest.TestCase):
@@ -31,14 +33,14 @@ class ModalCase(unittest.TestCase):
         cls.patch = mock.patch.dict(sys.modules, {"modal": fake})
         cls.patch.start()
         sys.path.insert(0, str(ROOT / "tools" / "modal"))
-        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora"):
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora", "distill.backends.modal_train"):
             sys.modules.pop(name, None)
         import modal_rea, modal_rea_data
         cls.rea, cls.data = modal_rea, modal_rea_data
 
     @classmethod
     def tearDownClass(cls):
-        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora"):
+        for name in ("modal_rea", "modal_rea_data", "modal_qbench", "modal_lora", "distill.backends.modal_train"):
             sys.modules.pop(name, None)
         sys.path.remove(str(ROOT / "tools" / "modal"))
         cls.patch.stop()
@@ -149,7 +151,7 @@ class StubbedSampleStage(ModalCase):
                 raise urllib.error.URLError("connection refused")
             return Resp(json.dumps(self.reply(tid, i, body)).encode())
 
-        patches = [mock.patch.object(self.data, "pathlib", shim), mock.patch.object(self.data, "subprocess", popen),
+        patches = [mock.patch.object(self.data, "pathlib", shim), mock.patch.object(modal_sample, "pathlib", shim), mock.patch.object(self.data, "subprocess", popen), mock.patch.object(modal_sample, "subprocess", popen),
                    mock.patch.dict(sys.modules, {"huggingface_hub": types.SimpleNamespace(hf_hub_download=lambda *a, **k: "/tmp/fake.gguf")}),
                    mock.patch.object(urllib.request, "urlopen", urlopen)]
         for p in patches:
@@ -450,7 +452,7 @@ class Round3Pipeline(ModalCase):
         self.assertIsNone(sft.error_warning({"answers": 100, "errors": 5, "by_kind": {"x": {"answers": 100, "errors": 5}}}), "5% exactly is not more")
 
     def test_b1_the_sampler_does_not_score_a_failed_request(self):
-        src = (ROOT / "tools" / "modal" / "modal_rea_data.py").read_text()
+        src = (ROOT / "distill" / "backends" / "modal_sample.py").read_text()
         body = src[src.index("    def work(item):"):src.index("    try:\n        with ThreadPoolExecutor")]
         self.assertIn('txt, ok = f"[error {e!r}]", False', body)
         self.assertNotIn("score(txt, t))", body.split("except Exception")[1], "no scoring of the error text")

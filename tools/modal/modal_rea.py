@@ -65,7 +65,7 @@ image = (
     .pip_install("huggingface_hub[hf_transfer]==0.36.0")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1"})
     .add_local_dir(ROOT / "tools" / "modal" / "rea-bench", "/bench")
-    .add_local_python_source("modal_qbench")
+    .add_local_python_source("modal_qbench", "distill")      # modal_qbench imports the teacher list from distill
 )
 if (RB / "rea_bench").is_dir():
     image = image.add_local_dir(str(RB / "rea_bench"), "/root/rea_bench")   # last layer, like modal_rea_data.py had it
