@@ -235,7 +235,8 @@ def reasoning_report(stats: dict) -> list:
                    f"{sl['slot_context']:,}-token slot of the server ({what})")
     p = stats.get("perf")
     if p and p.get("requests"):
-        out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over the four slots "
+        slots = (s or {}).get("parallel")           # 4, or 2 when a family has a longer budget (config.server_plan)
+        out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over {f'the {slots} slots' if slots else 'the slots'} "
                    f"({p['s_per_request']} s per request): modal_sample.PHASE_A_REPLY_S is 1.04 s per phase-A reply")
     return out
 

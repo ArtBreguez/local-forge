@@ -289,15 +289,22 @@ def budget_warning(p: dict, budget_usd: float):
     return None
 
 
-def thinking_cost_line(p: dict, source: str = "") -> str:
+def thinking_cost_line(p: dict, source: str = "", by_family: dict = None, tokens: int = 0, slots: int = 0) -> str:
     """The line of a THINKING run (printed before the GPU is rented). There is no expected cost: the 5x-8x length of the visible-reasoning mode does not hold when the model reasons first and the
-    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`. The slot of the server holds the prompt and that many tokens (`slot_context`)."""
+    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`. The slot of the server holds the prompt and that many tokens (`slot_context`).
+    A run with a budget per family (`by_family`, `tokens` = `--max-tokens`, `slots` = the requests in flight of `config.server_plan`) has `p["max_tokens"]` = the longest budget: the room for a prompt is
+    that budget's for the families that have it and the base budget's for the others, and the line says that the run has fewer requests in flight than the 4 the phase-A time was measured at."""
     w = p["worst"]
     slot = config.slot_context(p["max_tokens"])
+    if by_family and p["max_tokens"] > tokens:
+        room = (f"The prompt and the reply share one {slot:,}-token slot of the server, {slots} requests in flight (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted for a family with a budget of "
+                f"{p['max_tokens']:,}, over {slot - tokens:,} for the others; the worst case above assumes the longest budget for every reply, and phase A's four requests in flight, not {slots}: what that does to the speed is not measured).")
+    else:
+        room = f"The prompt and the reply share one {slot:,}-token slot of the server (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted)."
     return (f"projected cost (thinking pilot): {p['tasks']:,} tasks x k={p['k']} = {p['replies']:,} replies. No estimate: the 5x-8x length assumption is for visible reasoning, and how long this model "
             f"reasons is not measured. Worst case, every reply runs to max_tokens={p['max_tokens']}: {w['gpu_hours']} GPU-h on one L40S = about US${w['usd']:.2f} at US${p['usd_per_h']:.2f}/h "
-            f"(an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. The prompt and the reply share "
-            f"one {slot:,}-token slot of the server (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted). A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
+            f"(an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. {room} "
+            f"A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
             f"--resume." + (f" Tasks: {source}." if source else ""))
 
 

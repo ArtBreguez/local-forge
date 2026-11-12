@@ -225,6 +225,27 @@ class ModalWrapper(ModalCase):
         self.assertIsNone(self.call().kwargs["max_tokens_by_family"], "no flag, no override")
         self.assertNotIn("slots;", self.printed)
 
+    def test_the_cost_line_of_a_run_with_a_longer_family_says_how_many_requests_are_in_flight_and_each_prompt_room(self):
+        self.call(max_tokens_by_family="cipher=8192")
+        line = next(x for x in self.printed.splitlines() if x.startswith("projected cost (thinking pilot)"))
+        self.assertIn("2 requests in flight", line)
+        self.assertIn("a prompt over 4,096 tokens is not asked and is counted for a family with a budget of 8,192, over 8,192 for the others", line, "4,096 is the room of the 8,192-token families only")
+        self.assertIn("not 2: what that does to the speed is not measured", line)
+        self.call()
+        line = next(x for x in self.printed.splitlines() if x.startswith("projected cost (thinking pilot)"))
+        self.assertIn("(a prompt over 4,096 tokens is not asked and is counted)", line, "a run without a map: the line it always had")
+        self.assertNotIn("in flight", line)
+
+    def test_the_cost_line_function_takes_the_map_and_the_slots(self):
+        p = modal_sample.project(10, 2, 8192)
+        plain = modal_sample.thinking_cost_line(p)
+        self.assertNotIn("in flight", plain)
+        self.assertEqual(modal_sample.thinking_cost_line(p, "", {"cipher": 8192}, 8192, 4), plain, "no family is longer than max_tokens: nothing to add")
+        line = modal_sample.thinking_cost_line(p, "10 tasks", {"cipher": 8192}, 4096, 2)
+        self.assertIn("one 12,288-token slot of the server, 2 requests in flight", line)
+        self.assertIn("over 4,096 tokens is not asked and is counted for a family with a budget of 8,192, over 8,192 for the others", line)
+        self.assertTrue(line.endswith("Tasks: 10 tasks."))
+
     def test_the_shipped_thinking_config_reaches_the_call_with_its_map(self):
         with tempfile.TemporaryDirectory() as d:
             remote, _run = self.run_main(pathlib.Path(d), stage="sample", seed=7, family="legacy", run_config=str(THINKING_CONFIG))
@@ -257,6 +278,17 @@ class StageReports(unittest.TestCase):
         self.assertIn("crc 4/6 at 4096", next(x for x in again if x.startswith("WARNING: families")), "a family without an entry has the run's budget")
         none = records.reasoning_report(self.stats({"cipher": 3, "crc": 0}))
         self.assertFalse(any(x.startswith("WARNING: families") for x in none), "no map: the report is what it was")
+
+    def test_the_throughput_line_names_the_slots_the_run_had(self):
+        perf = {"requests": 40, "completion_tokens": 100000, "wall_s": 5000, "tok_per_s": 20.0, "s_per_request": 125.0}
+        line = lambda st: next(x for x in records.reasoning_report(st) if x.startswith("this call"))
+        two = {**self.stats({"crc": 0}, {"cipher": 8192}), "perf": perf}
+        self.assertIn("tokens/s over the 2 slots", line(two))
+        four = {**two, "sampling": {**two["sampling"], "parallel": 4}}
+        self.assertIn("tokens/s over the 4 slots", line(four))
+        self.assertNotIn("four slots", line(two) + line(four))
+        bare = {**two, "sampling": {k: v for k, v in two["sampling"].items() if k != "parallel"}}
+        self.assertIn("tokens/s over the slots (", line(bare), "an older stats file does not say: no number is claimed")
 
     def test_the_slot_warning_names_each_familys_room(self):
         slot = {"slot_context": 12288, "max_prompt_tokens": 8192, "prompt_too_long": 3, "by_kind": {"cipher": 1, "crc": 2}, "max_prompt_tokens_by_kind": {"cipher": 4096}}

@@ -23,5 +23,21 @@ class Readme(unittest.TestCase):
             self.assertIn("max_tokens_by_family", (ROOT / name).read_text())
 
 
+class Names(unittest.TestCase):
+    def test_every_test_file_a_readme_names_exists(self):
+        """The thinking-pilot docs named `tests/test_rea_thinking_pilot.py`, which was never a file (round 15, m2)."""
+        import re
+        for md in [*(ROOT / "tools").rglob("README.md"), *(ROOT / "distill").rglob("README.md"), *(ROOT / "tests").rglob("README.md"), ROOT / "docs" / "TEACHER_CANDIDATES.md"]:
+            for name in re.findall(r"tests/(?:test_[a-z0-9_]+\.py|thinking_pilot\.py|distill_fixtures\.py)", md.read_text()):
+                self.assertTrue((ROOT / name).exists(), f"{md.relative_to(ROOT)} names {name}")
+
+    def test_the_filter_table_and_the_cost_bullet_say_what_the_run_does(self):
+        text = (ROOT / "tools" / "modal" / "README.md").read_text()
+        row = next(l for l in text.splitlines() if l.startswith("| `repetition` |"))
+        self.assertIn("task's own prompt", row)
+        self.assertIn("2 x 12,288", text)
+        self.assertNotIn("over the four slots", text)
+
+
 if __name__ == "__main__":
     unittest.main()

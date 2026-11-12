@@ -308,12 +308,12 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
             count, source = modal_sample.local_task_count(dest / f"{outputs.decompiled_stem(tag)}.jsonl", want, n)
             longest = config.run_max_tokens(list(want), tokens, by_family) if want else max([tokens, *by_family.values()])      # the longest budget of a family in the run (without a quota: of every family)
             plan = modal_sample.project(count, k, longest, gpu_usd_per_h, SAMPLER_TIMEOUT_H)      # an overestimate when only some families have it: the line is a budget guard
-            print(modal_sample.thinking_cost_line(plan, source) if thinking else modal_sample.cost_line(plan, source))
+            slots, slot_tokens = config.server_plan(tokens, longest, modal_sample.SAMPLER_SLOTS)
+            print(modal_sample.thinking_cost_line(plan, source, by_family, tokens, slots) if thinking else modal_sample.cost_line(plan, source))
             warning = modal_sample.thinking_budget_warning(plan, budget_usd) if thinking else modal_sample.budget_warning(plan, budget_usd)
             if warning:
                 print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
             print(f"window of the length rule: --max-len {window}; max_tokens {tokens}; up to {max_traces} traces per kept task; checkpoint and output tag {rtag}")
-            slots, slot_tokens = config.server_plan(tokens, longest, modal_sample.SAMPLER_SLOTS)
             print(f"sampling: {sampling}; server slot {slot_tokens:,} tokens (prompt + max_tokens)"
                   + (f", {slots} slots; max_tokens per family {config.family_tokens_text(by_family)} (the cost line above assumes the longest, {longest}, for every reply)" if by_family else ""))
             if thinking and window < config.THINKING_WINDOW:
