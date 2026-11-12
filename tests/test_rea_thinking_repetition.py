@@ -9,6 +9,7 @@ tracerpid), and above` 4 to 12 times). What is in the task's own prompt is no lo
 from __future__ import annotations
 
 import unittest
+from unittest import mock
 
 from .rea_bound import rsn
 from .thinking_pilot import TASKS, reply_of, rows
@@ -28,6 +29,19 @@ class QuotedQuestion(unittest.TestCase):
             self.assertTrue(traces.repetition(text), f"{r['id']} s{r['sample']}: the rule without the prompt dropped it")
             self.assertFalse(traces.repetition(text, prompt), f"{r['id']} s{r['sample']}")
             self.assertIsNone(rsn.quality_drop(reply, t, True), f"{r['id']} s{r['sample']}")
+
+    def test_the_limit_for_the_prompts_own_words_is_the_lowest_that_keeps_the_pilots_quotes(self):
+        """Round 15, m4: a window or a line of the prompt is a loop beyond PROMPT_REPEAT_MAX. At 8 four of the 12 replies that only quote the question (9, 10, 11 and 11 times) would be dropped, so it is 12."""
+        got = rows("quotes")
+
+        def dropped(limit):
+            with mock.patch.object(traces, "PROMPT_REPEAT_MAX", limit):
+                return [(r["id"], r["sample"]) for r in got if traces.repetition(traces.trace_text(reply_of(r), True), traces.prompt_text(DOMAIN, TASKS[r["id"]], True))]
+
+        self.assertEqual(traces.PROMPT_REPEAT_MAX, 12)
+        self.assertEqual(dropped(8), [("bounds-7-0072", 1), ("bounds-7-0294", 1), ("magic-7-0172", 0), ("magic-7-0062", 0)])
+        self.assertEqual(dropped(10), [("bounds-7-0294", 1), ("magic-7-0172", 0)])
+        self.assertEqual(dropped(12), [], "all 12 stay")
 
     def test_the_prompt_is_the_system_and_the_user_message_of_the_run(self):
         t = TASKS["bounds-7-0072"]
@@ -111,6 +125,33 @@ class Repetition(unittest.TestCase):
         for n, want in ((3, False), (4, True)):
             text = "\n".join(f"{lead} first the code subtracts the base then compares the width {tail}" for lead, tail in zip(self.LEADS[:n], self.TAILS))
             self.assertEqual(traces.repetition(text, self.PROMPT), want, n)
+
+    def test_the_prompts_own_words_are_counted_against_a_higher_limit_not_ignored(self):
+        """Round 15, m4: `repetition` used to skip every window and line of the prompt, so any number of restatings passed. Now more than PROMPT_REPEAT_MAX (12) is a loop, the strict limit for the rest."""
+        self.assertEqual(traces.PROMPT_REPEAT_MAX, 12)
+        for rounds, want in ((12, False), (13, True)):
+            windows = "\n".join(f"{lead} {self.QUOTE} {tail}" for lead, tail in zip((self.LEADS * 2)[:rounds], (self.TAILS * 2)[:rounds]))     # the same prompt window, `rounds` times
+            self.assertEqual(traces.repetition(windows, self.PROMPT), want, f"window x {rounds}")
+            said = lambda line: "\n".join(f"{line}\n{lead} {tail}" for lead, tail in zip((self.LEADS * 2)[:rounds], (self.TAILS * 2)[:rounds]))
+            self.assertEqual(traces.repetition(said("if (elapsed > 0x1234) return 1;"), self.PROMPT), want, f"a prompt line (5 words, so no window of its own) x {rounds}")
+            labelled = "\n".join(f"check {i}: {self.QUOTE} {i}" for i in range(rounds))
+            self.assertEqual(traces.repetition(labelled, self.PROMPT), want, f"the question's sentence, a number before and after it in each round, x {rounds}: the windows inside it are the prompt's and count")
+        self.assertTrue(traces.repetition("\n".join(f"{lead} {self.QUOTE} {tail}" for lead, tail in zip(self.LEADS, self.TAILS))), "no prompt: the strict limit")
+
+    def test_what_still_passes_is_the_documented_hole_and_nothing_wider(self):
+        label = lambda line, rounds: "\n".join(f"check {i}: {line}" for i in range(rounds))
+        self.assertFalse(traces.repetition(label("if (elapsed > 0x1234) return 1;", 40), self.PROMPT), "a short line restated with a numbered label: no window repeats, and the line is not the prompt's")
+        self.assertFalse(traces.repetition(label("if (elapsed > 0x1234) return 1;", 40)), "... with no prompt as well: that is why the docstring and the READMEs say so")
+        seven = "if (elapsed > 0x1234) return 1 now ok"
+        self.assertEqual(len(traces._gram_words(seven)), 7)
+        self.assertTrue(traces.repetition(label(seven, 6), self.PROMPT.replace("return 1;", "return 1 now ok;")), "7 words and the label's word are a window that repeats: not in the hole")
+        six = "if (elapsed > 0x1234) return 1 now"
+        self.assertFalse(traces.repetition(label(six, 40), self.PROMPT.replace("return 1;", "return 1 now;")), "6 words: in it (NGRAM - 2)")
+        copied = self.PROMPT.replace("\n", " ") + " "
+        self.assertTrue(traces.repetition(copied * 6, self.PROMPT), "a block of the question copied over and over: the windows across the copies are not in the prompt")
+        doc = traces.repetition.__doc__
+        for part in ("THE HOLE", "PROMPT_REPEAT_MAX", "12", "SHORT line", "NGRAM - 2 = 6 words", "numbered" if False else "a number which changes each round", "length rule"):
+            self.assertIn(part, doc)
 
     def test_a_row_of_numbers_is_not_a_window_whatever_the_prompt(self):
         self.assertFalse(traces.repetition("0x00 " * 40, ""))

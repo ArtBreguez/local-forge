@@ -31,6 +31,21 @@ class Names(unittest.TestCase):
             for name in re.findall(r"tests/(?:test_[a-z0-9_]+\.py|thinking_pilot\.py|distill_fixtures\.py)", md.read_text()):
                 self.assertTrue((ROOT / name).exists(), f"{md.relative_to(ROOT)} names {name}")
 
+    def test_the_prompt_quoting_limit_and_its_hole_are_in_the_docs_and_in_the_code(self):
+        """Round 15, m4: the repetition filter counts what the prompt contains against 12, and says what still passes (traces.repetition, tools/modal and tools/kaggle READMEs, distill/README.md)."""
+        from distill import traces
+        self.assertEqual(traces.PROMPT_REPEAT_MAX, 12)
+        kaggle = (ROOT / "tools" / "kaggle" / "README.md").read_text()
+        for part in ("PROMPT_REPEAT_MAX", "more than 12 times", "Why 12 and not 8", "83 teacher records", "The hole that is left, stated", "check 3: <a line of the code>", "length rule"):
+            self.assertIn(part, kaggle)
+        modal = next(l for l in (ROOT / "tools" / "modal" / "README.md").read_text().splitlines() if l.startswith("| `repetition` |"))
+        for part in ("counted against 12", "What still passes, stated", "6 words or fewer", "PROMPT_REPEAT_MAX"):
+            self.assertIn(part, modal)
+        generic = next(l for l in (ROOT / "distill" / "README.md").read_text().splitlines() if l.startswith("| 5 traces |"))
+        for part in ("counted against **12**", "6 words or fewer"):
+            self.assertIn(part, generic)
+        self.assertNotIn("not counting what is in the task's own prompt", generic)
+
     def test_the_filter_table_and_the_cost_bullet_say_what_the_run_does(self):
         text = (ROOT / "tools" / "modal" / "README.md").read_text()
         row = next(l for l in text.splitlines() if l.startswith("| `repetition` |"))

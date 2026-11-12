@@ -139,6 +139,7 @@ LINE_REPEAT_MAX = 3               # the same line (12+ characters, not a row of 
 LINE_MIN_CHARS = 12
 NGRAM = 8                         # words in a window...
 NGRAM_REPEAT_MAX = 3              # ...the same window more often than this: a loop
+PROMPT_REPEAT_MAX = 12            # ...but a line or a window that is in the task's own prompt (the model re-reads its question) more often than THIS: 12, not 8 (4 of the 12 pilot replies that only quote the question do so 9-11 times)
 QUALITY_DROPS = ("no_think", "mixed_language", "repetition", "unreadable", "contradiction")      # in the order they are tried; a reply is counted under the first that drops it
 TRACE_DROPS = QUALITY_DROPS + ("duplicate", "over_cap")      # what can happen to an accepted reply of a kept task besides being stored
 
@@ -186,23 +187,35 @@ def _gram_words(text: str) -> list:
 def repetition(text: str, prompt: str = "") -> bool:
     """True when the same line (lower case, bullet and spacing ignored, at least LINE_MIN_CHARS characters, not a row of numbers) occurs more than LINE_REPEAT_MAX times, or the same
     window of NGRAM words (not a window of numbers only) occurs more than NGRAM_REPEAT_MAX times: a loop (`Wait, let me recheck.` over and over). A self-correction that says new things
-    is not a loop. `prompt`: the task's own prompt (the system and the user message the model was asked): a line or a window that is in it is not counted, because a model that reasons
-    re-reads its question and quotes it (the thinking pilot: 12 of 13 replies dropped as loops only quoted the question, 4 to 12 times), and quoting the question is not looping. What the model
-    says about it, and every window that only partly overlaps the prompt, still counts; the thresholds are the same."""
+    is not a loop. `prompt`: the task's own prompt (the system and the user message the model was asked): a model that reasons re-reads its question and quotes it (the thinking pilot: 12 of 13
+    replies dropped as loops only quoted the question, 4 to 12 times), and quoting the question is not looping, so a line or a window that is in the prompt is counted against its own, higher limit,
+    PROMPT_REPEAT_MAX, instead of the 3. What the model says about it, and every window that only partly overlaps the prompt, still counts with the strict one.
+
+    THE HOLE, stated: what the prompt contains is not held to the strict limit, so a reply may re-read it more than three times and pass: up to PROMPT_REPEAT_MAX (12) times in any form (the pilot
+    has three accepted replies that re-read the same instruction 10 or 11 times; they are kept, and whether such a trace belongs in the data is a length rule, not this filter; a limit of 8 would have
+    dropped 4 of the 12 pilot replies that only quote the question). Beyond 12 a prompt line or window is a loop. One way of restating the prompt passes whatever the count: a SHORT line (up to
+    NGRAM - 2 = 6 words) restated with a label that carries a number which changes each round (`check 3: <a line of the code>`): every 8-word window of such a reply holds a number that is
+    different in each round, so no window repeats, and the line itself is never repeated as written. A line of 7 words or more has a window (its words and the label's word) that repeats, and a
+    long one has windows inside it that are the prompt's: those are counted. A reply that restates short lines this way ends: it is a long restating, kept like the others, not a loop that is cut off.
+    Not a hole: a loop in the model's own words, and a block of the question copied over and over (the windows across the copies are not in the prompt)."""
     in_prompt = {_line_form(line) for line in prompt.splitlines()}
-    lines = collections.Counter()
+    lines, quoted_lines = collections.Counter(), collections.Counter()
     for line in text.splitlines():
         s = _line_form(line)
-        if len(s) >= LINE_MIN_CHARS and s not in in_prompt and not all(_HEXLIKE.fullmatch(w) for w in s.split()):
-            lines[s] += 1
-    if lines and max(lines.values()) > LINE_REPEAT_MAX:
+        if len(s) >= LINE_MIN_CHARS and not all(_HEXLIKE.fullmatch(w) for w in s.split()):
+            (quoted_lines if s in in_prompt else lines)[s] += 1
+    if lines and max(lines.values()) > LINE_REPEAT_MAX or quoted_lines and max(quoted_lines.values()) > PROMPT_REPEAT_MAX:
         return True
     quoted_words = _gram_words(prompt)
     quoted = {tuple(quoted_words[i:i + NGRAM]) for i in range(len(quoted_words) - NGRAM + 1)}
     words = _gram_words(text)
     num = [bool(_HEXLIKE.fullmatch(w)) for w in words]
-    grams = collections.Counter(g for i in range(len(words) - NGRAM + 1) if not all(num[i:i + NGRAM]) and (g := tuple(words[i:i + NGRAM])) not in quoted)
-    return bool(grams) and max(grams.values()) > NGRAM_REPEAT_MAX
+    grams, quoted_grams = collections.Counter(), collections.Counter()
+    for i in range(len(words) - NGRAM + 1):
+        if not all(num[i:i + NGRAM]):
+            g = tuple(words[i:i + NGRAM])
+            (quoted_grams if g in quoted else grams)[g] += 1
+    return bool(grams) and max(grams.values()) > NGRAM_REPEAT_MAX or bool(quoted_grams) and max(quoted_grams.values()) > PROMPT_REPEAT_MAX
 
 
 _RESTATING = frozenset("the a an is are was be so thus therefore hence then and of to it its this that here answer final result value equals gives "
