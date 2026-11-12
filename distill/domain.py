@@ -12,6 +12,8 @@ What each member must guarantee is in `distill/README.md` ("How to add a subject
 
 The optional members have a default that is right for a subject that does not need them. `contradicts` and `canon_word` exist because the REA filters read the answer's numbers, `task_words` because its task records
 are not always complete when a filter runs; `check_task`, `kinds` and `tasks_prefix` because the REA run fails fast on a task it cannot score, validates `--quota` against its families and names its tasks files after its decompile stage.
+`task_keys` and `normalize_prompt` are what the check that an evaluation shares no CONTENT with a training set reads (the Kaggle LoRA builder, `backends/kaggle/build_lora.py`): a held-out id that is not a training id says nothing
+about whether the same problem was generated twice. Their default says nothing, and a builder that needs them refuses a subject that gives none.
 """
 from __future__ import annotations
 
@@ -20,6 +22,7 @@ import re
 from typing import Container, Iterable
 
 MODES = ("plain", "reasoning", "thinking")
+KEY_RULES = ("code", "answer")       # the keys of `Domain.task_keys`: "code" = the problem the model reads (its code and its question), "answer" = the question with the answer key (kind, question, accepted answers)
 # plain      the teacher answers directly; the reply itself is what `verify` sees, and what is stored is the domain's `truth_target`, never the teacher's text
 # reasoning  the teacher writes its steps and a last `Answer: <value>` line; `verify` sees that value; the steps are stored as the teacher wrote them (beside the truth record)
 # thinking   as `reasoning`, with the model's native reasoning (`<think>...</think>`) kept as the trace
@@ -38,6 +41,11 @@ class Domain(abc.ABC):
     def load_tasks(self, source) -> list:
         """The tasks of `source` (a path to a file or directory the subject's own task stage wrote, a list of such paths, or a seed for a subject that generates them): a list of dicts, each with a unique `id` and a `kind`
         (the family the quota counts by), in a stable order. A task keeps its ground truth next to the question: `verify` and `truth_target` read it."""
+
+    def load_heldout(self, source) -> list:
+        """The held-out tasks of `source`, for an EVALUATION of a student (never for training): the same records `load_tasks` returns. The default is `load_tasks`; a subject whose `load_tasks`
+        refuses the files of its held-out split (so that they are never turned into training data) overrides this to read them."""
+        return self.load_tasks(source)
 
     @abc.abstractmethod
     def messages(self, task: dict, mode: str) -> list:
@@ -86,3 +94,14 @@ class Domain(abc.ABC):
     def kinds(self) -> Iterable | None:
         """Every `kind` a task can have, to validate `--quota`; None: not checked."""
         return None
+
+    def normalize_prompt(self, text: str) -> str:
+        """A user message in the form in which two prompts that are the same problem are equal strings. Default: whitespace collapsed. A subject also collapses what its generator makes arbitrary
+        (REA: the addresses in the names its decompiler makes up)."""
+        return " ".join(text.split())
+
+    def task_keys(self, task: dict) -> dict:
+        """The content of `task` as keys for an overlap check: {"code": key, "answer": key} (`KEY_RULES`; a key is a string, and a rule the task cannot give is left out). Two tasks with the same "code" key are the same
+        problem for the model (what it reads, normalised by `normalize_prompt`: REA: the decompiled code and the question); two with the same "answer" key ask the same question with the same answer key (kind, question and
+        accepted answers), so the answer can be passed by memory. Keys come from the task record alone, never from its id. Default {}."""
+        return {}

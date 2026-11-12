@@ -9,9 +9,12 @@ Nothing here decides anything; every method calls the function that decided it b
   needs_agreement  the task's `chance` (the best constant guess within its variant) is `AGREE_CHANCE` or more
   messages         `SYSTEM_RECIPE` (plain; the text of modal_rea.py, which stays untouched) or `reasoning.SYSTEM_REASONING`, then the pseudocode and the question
   heldout_ids      the ids of seed 1001 (the held-out split: `<family>-1001-<n>`)
+  task_keys        the content of a decompiled task: its normalised pseudocode with its question, and its question with its answer key (kind, question, `accept`); `normalize_prompt` is what makes two decompilations of
+                   one function equal (the Ghidra names of two compiles differ in their addresses only). The ids never enter.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import pathlib
@@ -33,6 +36,15 @@ SYSTEM_RECIPE = ("You are a reverse engineer. You are given decompiled C pseudoc
                  "question. Answer in one short line with the concrete value or name asked for, then one sentence of justification.")
 
 
+# Ghidra's names for what it cannot name: a function (FUN_), data (DAT_), a label (LAB_), a pointer (PTR_), a subroutine (SUB_), each followed by the address in hex. Two compiles of one source put them at other
+# addresses, so the same function decompiles to texts that differ in these only. `PTR_DAT_00104010` is one name inside another: the inner one is collapsed, and its prefix stays.
+GHIDRA_ADDRESS = re.compile(r"(?<![A-Za-z0-9])(FUN|DAT|LAB|PTR|SUB)_[0-9a-fA-F]+(?![A-Za-z0-9_])")
+
+
+def _digest(*parts) -> str:
+    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()[:24]
+
+
 class _HeldoutIds:
     """The held-out split is the tasks of seed 1001, whose ids end in `-1001-<n>`: a container for `id in heldout_ids()`, with no list to build."""
 
@@ -47,13 +59,20 @@ class Rea(Domain):
     def load_tasks(self, source) -> list:
         """The decompiled tasks (records with pseudocode) of `source`: a `decompiled-<tag>.jsonl` of the decompile stage, several of them, or a directory with one `<id>.json` per task (the Modal volume).
         Files: sorted by `<id>.json`, the order the sample stage reads the volume in, so that the records come out in its order; a file of the held-out seed 1001 is refused by its name."""
+        return self._read(source, heldout=False)
+
+    def load_heldout(self, source) -> list:
+        """The same records for an evaluation: the files of the held-out seed 1001 (`decompiled-seed1001*.jsonl`) are the ones to read here, and are not refused."""
+        return self._read(source, heldout=True)
+
+    def _read(self, source, heldout: bool) -> list:
         files = [pathlib.Path(f) for f in ([source] if isinstance(source, (str, os.PathLike)) else source)]
         if len(files) == 1 and files[0].is_dir():
             tasks = [json.loads(p.read_text()) for p in sorted(files[0].glob("*.json"))]
             return [t for t in tasks if "pseudocode" in t]
         for f in files:
             seed = re.search(r"seed(\d+)", f.name)
-            if seed:
+            if seed and not heldout:
                 dedupe.check_sample_seed(int(seed.group(1)))             # the held-out split is never turned into SFT pairs
         tasks = sorted(outputs.load_tasks(files), key=lambda t: f"{t['id']}.json")
         if not tasks:
@@ -93,6 +112,22 @@ class Rea(Domain):
 
     def kinds(self):
         return reasoning.known_kinds()
+
+    def normalize_prompt(self, text: str) -> str:
+        return " ".join(GHIDRA_ADDRESS.sub(r"\1_ADDR", text).split())
+
+    def task_keys(self, task: dict) -> dict:
+        """{"code": sha of (the normalised pseudocode, the question), "answer": sha of (kind, the question, `accept`)}. The question is normalised as a prompt is. `refs` (the bytes the function references) is not
+        part of "code": two tasks with the same code and question and other data are the same problem to be excluded (the stricter reading). `accept` is taken as stored. A rule the record cannot give (no
+        pseudocode, no question or accept) is left out."""
+        question, code, accept = task.get("question"), task.get("pseudocode"), task.get("accept")
+        question = self.normalize_prompt(question) if isinstance(question, str) else ""
+        keys = {}
+        if question and isinstance(code, str) and code.strip():
+            keys["code"] = _digest("code", self.normalize_prompt(code), question)
+        if question and accept is not None and task.get("kind"):
+            keys["answer"] = _digest("answer", task["kind"], question, accept)
+        return keys
 
 
 DOMAIN = Rea()

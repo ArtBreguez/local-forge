@@ -55,6 +55,8 @@ Modes: `plain` (the teacher answers directly; the stored text is the domain's `t
 
 Optional, with a default that is right for a subject that does not need them: `check_task` (fail before a GPU is rented; default: `truth_target` passes `verify`), `contradicts`, `canon_word`, `task_words` (the trace filters that read the subject's answers; REA's read the numbers of its answer grammar), `kinds` (the names a `--quota` may use), `tasks_prefix` (a tasks file's name before the run tag). They exist because REA needs them to keep its behaviour exactly; a second subject that needs none of them leaves them alone.
 
+The Kaggle LoRA kit (`backends/kaggle/build_lora.py`) also reads two hooks to keep a held-out task out of an evaluation when its CONTENT, not its id, is a training task's: `task_keys(task) -> {"code": key, "answer": key}` (two tasks with the same `code` key are the same problem for the model: what it reads, normalised; two with the same `answer` key ask the same question with the same answer key, so the answer can be passed by memory) and `normalize_prompt(text)` (the form in which two prompts of one problem are equal strings; REA collapses Ghidra's address names). The defaults say nothing, and the kit refuses a subject that gives no key. REA's: the pseudocode with its question, and (kind, question, `accept`).
+
 ## How to add a subject
 
 1. Write its task generator and ground truth. The truth is computed by code and proven by a harness (REA compiles each program and runs it).
