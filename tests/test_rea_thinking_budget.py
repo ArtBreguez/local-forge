@@ -113,6 +113,18 @@ class FamilyTokens(unittest.TestCase):
         full = config.RunConfig(**{**json.loads(THINKING_CONFIG.read_text()), "quota": "structs=10,cipher=10"}).resolved()
         self.assertEqual((full["slots"], full["slot_context"]), (2, 12288))
 
+    def test_the_shipped_thinking_configs_window_holds_the_longest_record_its_slot_allows(self):
+        """Round 15, m5: a record is trained only if prompt + reply + 32 fits `max_len`; the slot of a run with a cipher/magic/password quota allows 4096 + 8192 = 12288, so the config's window is that, not 8192
+        (a reply the slot allowed would be generated, accepted, counted and then dropped by the length rule). modal_train takes any window: `batch_plan` is 1 x 16 from 8192 up."""
+        c = config.RunConfig.load(THINKING_CONFIG)
+        longest = max([c.max_tokens, *c.max_tokens_by_family.values()])
+        self.assertEqual(c.max_len, 12288)
+        self.assertGreaterEqual(c.max_len, config.slot_context(longest), "every record the slot allows fits the training window")
+        self.assertEqual(config.server_plan(c.max_tokens, longest)[1], c.max_len)
+        full = config.RunConfig(**{**json.loads(THINKING_CONFIG.read_text()), "quota": "structs=10,cipher=10"}).resolved()
+        self.assertEqual(full["max_len"], full["slot_context"])
+        self.assertEqual(config.merge_train_flags(THINKING_CONFIG, dict(config.TRAIN_FLAG_DEFAULTS))["max_len"], 12288, "modal_lora --run-config trains on the same window")
+
     def test_the_run_config_reaches_the_sample_stage_as_a_flag(self):
         flags = dict(config.FLAG_DEFAULTS)
         got = config.merge_flags(THINKING_CONFIG, flags, "rea")
@@ -256,6 +268,17 @@ class ModalWrapper(ModalCase):
         self.assertIn("over 4,096 tokens is not asked and is counted for a family with a budget of 8,192, over 8,192 for the others", line)
         self.assertTrue(line.endswith("Tasks: 10 tasks."))
 
+    def test_the_training_script_takes_the_window_of_the_shipped_config(self):
+        """Round 15, m5: `modal_train` has no cap on `max_len`: 12288 is a micro-batch of one sequence (`batch_plan` 1 x 16, the memory of it not measured), a pair over it is dropped."""
+        import sys
+        sys.modules.pop("distill.backends.modal_train", None)
+        import distill.backends.modal_train as modal_train
+        self.assertEqual((modal_train.batch_plan(8192), modal_train.batch_plan(12288)), ((1, 16), (1, 16)))
+        self.assertIsNone(modal_train.encode_ids([1, 2], list(range(12289)), 12288), "a pair over the window is dropped, never cut")
+        self.assertIsNotNone(modal_train.encode_ids([1, 2], list(range(12288)), 12288))
+        f = config.merge_train_flags(THINKING_CONFIG, dict(config.TRAIN_FLAG_DEFAULTS))
+        self.assertEqual(f["max_len"], 12288)
+
     def test_the_shipped_thinking_config_reaches_the_call_with_its_map(self):
         with tempfile.TemporaryDirectory() as d:
             remote, _run = self.run_main(pathlib.Path(d), stage="sample", seed=7, family="legacy", run_config=str(THINKING_CONFIG))
@@ -288,6 +311,20 @@ class StageReports(unittest.TestCase):
         self.assertIn("crc 4/6 at 4096", next(x for x in again if x.startswith("WARNING: families")), "a family without an entry has the run's budget")
         none = records.reasoning_report(self.stats({"cipher": 3, "crc": 0}))
         self.assertFalse(any(x.startswith("WARNING: families") for x in none), "no map: the report is what it was")
+
+    def test_the_cut_off_warning_is_the_owners_5_percent_and_5_exactly_is_not_more(self):
+        """Round 15, m5: TRUNCATED_WARN was 10% where the owner's rule (and ERROR_RATE_WARN) is 5%; the pilot cut off 13%."""
+        self.assertEqual(records.TRUNCATED_WARN, 0.05)
+        warns = lambda cut, of: [x for x in records.reasoning_report({**self.stats({"crc": 0}), "reasoning": {**self.stats({"crc": 0})["reasoning"], "replies": of, "truncated": cut, "by_kind": {}}}) if x.startswith("WARNING: ") and "cut off" in x]
+        self.assertEqual(warns(5, 100), [])
+        self.assertEqual(len(warns(6, 100)), 1)
+        self.assertIn("6% of the replies were cut off", warns(6, 100)[0])
+        self.assertEqual(len(warns(13, 100)), 1, "the pilot's 13%")
+        by_kind = lambda cut: {**self.stats({"cipher": cut, "crc": 0}, {"cipher": 8192}), "reasoning": {**self.stats({"cipher": cut, "crc": 0}, {"cipher": 8192})["reasoning"], "truncated": 0}}
+        self.assertEqual([x for x in records.reasoning_report(by_kind(0)) if x.startswith("WARNING: families")], [])
+        got = [x for x in records.reasoning_report(by_kind(1)) if x.startswith("WARNING: families")]
+        self.assertEqual(len(got), 1, "1 of 6 replies is 17%")
+        self.assertIn("more than 5% of their replies", got[0])
 
     def test_the_throughput_line_names_the_slots_the_run_had(self):
         perf = {"requests": 40, "completion_tokens": 100000, "wall_s": 5000, "tok_per_s": 20.0, "s_per_request": 125.0}

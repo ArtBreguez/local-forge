@@ -241,7 +241,7 @@ def reasoning_report(stats: dict) -> list:
     return out
 
 
-TRUNCATED_WARN = 0.10     # a reasoning run with more than this share of its replies cut off at max_tokens says so
+TRUNCATED_WARN = 0.05     # a reasoning run with more than this share of its replies cut off at max_tokens says so (the owner's 5%: the same rule as ERROR_RATE_WARN; the pilot cut off 13%)
 NO_THINK_WARN = 0.10      # a thinking run in which more than this share of the accepted replies has no reasoning block says so
 
 

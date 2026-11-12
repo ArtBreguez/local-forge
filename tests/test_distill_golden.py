@@ -117,7 +117,7 @@ class RunConfigAtTheEntrypoint(ModalCase):
         cfg = ROOT / "distill" / "configs"
         flags = {"plain": dict(model="codeforge-27b-heretic-q4"),
                  "reasoning": dict(model="codeforge-27b-heretic-q4", k=4, reasoning=True, max_len=3072, quota="structs=220,crc=220,antidebug=220,bounds=220,fsm=220,pktsum=80,encoding=80"),
-                 "thinking": dict(model="codeforge-27b-heretic-q4", k=4, reasoning=True, thinking=True, max_tokens=4096, max_len=8192, quota="structs=10,crc=10",
+                 "thinking": dict(model="codeforge-27b-heretic-q4", k=4, reasoning=True, thinking=True, max_tokens=4096, max_len=12288, quota="structs=10,crc=10",
                                   max_tokens_by_family="cipher=8192,magic=8192,password=8192")}
         for name, kw in flags.items():
             from_file, from_flags = self.stage_call(run_config=str(cfg / f"rea-{name}.json")), self.stage_call(**kw)
@@ -125,7 +125,7 @@ class RunConfigAtTheEntrypoint(ModalCase):
             self.assertEqual(from_file, from_flags, name)
         call = self.stage_call(run_config=str(cfg / "rea-thinking.json"))
         self.assertEqual((call.args[0], call.args[3], call.kwargs["thinking"], call.kwargs["max_tokens"], call.kwargs["max_len"], call.kwargs["sampling"]),
-                         ("codeforge-27b-heretic-q4", 4, True, 4096, 8192, {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}))
+                         ("codeforge-27b-heretic-q4", 4, True, 4096, 12288, {"temperature": 0.6, "top_p": 0.95, "top_k": 20, "min_p": 0.0}))
         self.assertEqual(call.kwargs["max_tokens_by_family"], {"cipher": 8192, "magic": 8192, "password": 8192}, "the pilot's cut-off families have their own budget")
 
     def test_a_flag_that_the_file_also_sets_is_refused(self):

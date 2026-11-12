@@ -396,7 +396,7 @@ class Config(unittest.TestCase):
         self.assertEqual(reasoning.resolved(), {"mode": "reasoning", "sampling": {"temperature": 0.7}, "max_tokens": 768, "max_len": 3072, "slot_context": 8192, "report_windows": (2048, 3072, 4096)})
         self.assertEqual((reasoning.k, reasoning.max_traces, reasoning.quota.split(",")[0]), (4, 3, "structs=220"))
         # the pilot quota (structs, crc) has none of the three families that have 8192 tokens, so the slot is the 4 x 8192 of every thinking run
-        self.assertEqual(thinking.resolved(), {"mode": "thinking", "sampling": config.THINKING_SAMPLING, "max_tokens": 4096, "max_len": 8192, "slot_context": 8192, "report_windows": (4096, 8192),
+        self.assertEqual(thinking.resolved(), {"mode": "thinking", "sampling": config.THINKING_SAMPLING, "max_tokens": 4096, "max_len": 12288, "slot_context": 8192, "report_windows": (4096, 8192),
                                                "max_tokens_by_family": {"cipher": 8192, "magic": 8192, "password": 8192}, "slots": 4})
         self.assertEqual(thinking.k, 4)
         for c in (plain, reasoning, thinking):
@@ -423,12 +423,12 @@ class Config(unittest.TestCase):
         flags = dict(config.FLAG_DEFAULTS)
         path = ROOT / "distill" / "configs" / "rea-thinking.json"
         got = config.merge_flags(path, flags, "rea")
-        self.assertEqual((got["model"], got["k"], got["reasoning"], got["thinking"], got["max_tokens"], got["max_len"], got["top_k"]), ("codeforge-27b-heretic-q4", 4, True, True, 4096, 8192, 20))
+        self.assertEqual((got["model"], got["k"], got["reasoning"], got["thinking"], got["max_tokens"], got["max_len"], got["top_k"]), ("codeforge-27b-heretic-q4", 4, True, True, 4096, 12288, 20))
         with self.assertRaisesRegex(SystemExit, "do not also give --k, --max-len"):
             config.merge_flags(path, {**flags, "k": 2, "max_len": 3072}, "rea")
         with self.assertRaisesRegex(SystemExit, "is for domain"):
             config.merge_flags(path, flags, "example_arith")
-        self.assertEqual(config.merge_train_flags(path, dict(config.TRAIN_FLAG_DEFAULTS)), {"student": config.DEFAULT_STUDENT, "max_len": 8192, "mix": False})
+        self.assertEqual(config.merge_train_flags(path, dict(config.TRAIN_FLAG_DEFAULTS)), {"student": config.DEFAULT_STUDENT, "max_len": 12288, "mix": False})
         with self.assertRaisesRegex(SystemExit, "--student"):
             config.merge_train_flags(path, {**config.TRAIN_FLAG_DEFAULTS, "student": "x/y"})
 

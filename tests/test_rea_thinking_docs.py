@@ -46,6 +46,13 @@ class Names(unittest.TestCase):
             self.assertIn(part, generic)
         self.assertNotIn("not counting what is in the task's own prompt", generic)
 
+    def test_the_modal_readme_says_5_percent_and_the_window_of_the_shipped_config(self):
+        text = (ROOT / "tools" / "modal" / "README.md").read_text()
+        self.assertNotIn("warns when more than 10% were cut off", text)
+        self.assertNotIn("the run warns above 10%", text)
+        for part in ("warns when more than 5% were cut off", "the run warns above 5%", "The window of the shipped thinking config is 12288", "`max_len: 12288`", "not** the same by construction", "start with `--smoke`"):
+            self.assertIn(part, text)
+
     def test_the_filter_table_and_the_cost_bullet_say_what_the_run_does(self):
         text = (ROOT / "tools" / "modal" / "README.md").read_text()
         row = next(l for l in text.splitlines() if l.startswith("| `repetition` |"))
