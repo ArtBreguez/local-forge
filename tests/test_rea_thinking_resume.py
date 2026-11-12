@@ -27,6 +27,7 @@ from unittest import mock
 
 from . import distill_fixtures as fx  # noqa: F401
 from .helpers import ROOT
+from .rea_tasks import right
 from .test_rea_kaggle import out as kit_out, write_replies, write_tasks
 from .test_rea_kaggle_kit import make_tasks
 from .test_rea_modal import ModalCase, StubbedSampleStage
@@ -432,18 +433,46 @@ class ModalResume(StubbedSampleStage):
         self.assertEqual(sorted(self.requests), [("password-7-0001", 0), ("password-7-0001", 1)])
         self.assertEqual({outputs.out_meta(o)["prompt_sha"] for o in self.lines()["password-7-0001"]["outs"]}, {outputs.prompt_sha(DOMAIN.messages(self.tasks["password-7-0001"], "thinking"))})
 
-    def test_a_reply_to_another_prompt_of_a_task_that_cannot_be_asked_again_is_not_stored(self):
-        self.run_modal(False)
+    def unaskable(self, outs_of):
+        """Round 12, m1. A thinking run with RIGHT replies and the shipped window (12288), so that the first run has records for the task and the length rule is not what drops them later. Then the checkpoint
+        line of one task is changed by `outs_of(outs, fingerprint of the prompt it will have)`, its prompt grows to 5,000 words (over the 4,096 tokens the slot has room for, under the window) and a resume
+        cannot ask it again. -> (task id, its records of the first run, the result of the resume)."""
         tid = "password-7-0001"
-        rec = {**self.lines()[tid]}
-        rec["outs"] = [[o[0], o[1], {**o[2], "prompt_sha": "0" * 16}] for o in rec["outs"]]
-        self.partial.write_text("".join(json.dumps(r) + "\n" for r in (rec, *(r for i, r in self.lines().items() if i != tid))))
+        self.reply = lambda t, i, body: {"choices": [{"message": {"content": f"Steps {i} about {t}.\nAnswer: {right(self.tasks[t])}", "reasoning_content": f"Thinking {i} about {t}: it reads the value."},
+                                                      "finish_reason": "stop"}], "usage": {"completion_tokens": 7}}
+        first = self.run_modal(False, max_len=12288)
+        before = [r for r in first["sft"] if r["task"] == tid]
+        grown = {**self.tasks[tid], "pseudocode": f"/* {tid} */ " + "x " * 5000}
+        line = self.lines()[tid]
+        lines = {**self.lines(), tid: {**line, "outs": outs_of(line["outs"], outputs.prompt_sha(DOMAIN.messages(grown, "thinking")))}}
+        self.partial.write_text("".join(json.dumps(r) + "\n" for r in lines.values()))
         p = self.root / "data" / rea_outputs.decompiled_stem(self.tag) / f"{tid}.json"
-        p.write_text(json.dumps({**json.loads(p.read_text()), "pseudocode": f"/* {tid} */ " + "x " * 9000}))        # no longer fits a slot: not asked
-        res = self.run_modal(True)
+        p.write_text(json.dumps(grown))
+        return tid, before, self.run_modal(True, max_len=12288)
+
+    def test_a_reply_to_another_prompt_of_a_task_that_cannot_be_asked_again_is_not_stored(self):
+        """Round 12, m1: the test used to have nothing to drop (its stub answered wrong for every task and its prompt was over the window as well), so removing the guard did not fail it."""
+        tid, before, res = self.unaskable(lambda outs, sha: [[o[0], o[1], {**o[2], "prompt_sha": "0" * 16}] for o in outs])
+        self.assertTrue(before, "the first run has records for the task: there is something to drop")
         self.assertNotIn(tid, {t for t, _ in self.requests})
         self.assertEqual(res["stats"]["slot"]["prompt_too_long"], 1)
-        self.assertFalse([r for r in res["sft"] if r["task"] == tid], "its replies answered another prompt: no record of it")
+        self.assertEqual([r["target_source"] for r in res["sft"] if r["task"] == tid], [], "its replies answered another prompt: no record of it, not even the truth-rendered one")
+        self.assertTrue([r for r in res["sft"] if r["task"] != tid], "the other tasks keep theirs")
+
+    def test_a_reply_with_no_fingerprint_of_a_task_that_cannot_be_asked_again_is_not_stored_either(self):
+        """Round 12, M1: the two-element reply of an older checkpoint answered a prompt that is not known."""
+        tid, before, res = self.unaskable(lambda outs, sha: [o[:2] for o in outs])
+        self.assertTrue(before)
+        self.assertNotIn(tid, {t for t, _ in self.requests})
+        self.assertEqual([r for r in res["sft"] if r["task"] == tid], [])
+
+    def test_a_reply_that_answered_the_prompt_the_task_has_now_is_stored_even_when_it_cannot_be_asked_again(self):
+        """The control of the two above: the guard drops what is stale and nothing else (a task whose prompt no longer fits the slot is not asked, but its replies to THIS prompt are complete)."""
+        tid, before, res = self.unaskable(lambda outs, sha: [[o[0], o[1], {**o[2], "prompt_sha": sha}] for o in outs])
+        self.assertTrue(before)
+        self.assertEqual(self.requests, [], "nothing is stale: nothing is asked")
+        self.assertEqual([r["target_source"] for r in res["sft"] if r["task"] == tid], [r["target_source"] for r in before])
+        self.assertEqual(res["stats"]["slot"]["prompt_too_long"], 0, "and the task is complete, so it is not even looked at for the slot")
 
     def older_checkpoint(self):
         """A checkpoint of the code before the fingerprints: the replies are `[text, flag]`, with no `prompt_sha` and no `max_tokens`; the first reply of every task was cut off."""
