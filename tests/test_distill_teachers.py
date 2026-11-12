@@ -381,3 +381,21 @@ class Docs(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ScoreLabelWithoutRunJson(unittest.TestCase):
+    """Review r14 m1: with no run.json naming the GGUF, kaggle-score still judges the `--model` label, the only handle there is."""
+
+    def test_a_label_that_names_an_openai_or_anthropic_model_is_refused_without_run_json(self):
+        from distill import score_replies
+        for label in ("gpt-oss-120b", "claude-opus-distill", "gpt_oss_20b", "GPT.OSS-20B"):
+            for info in (None, {}, {"thinking": True}):
+                with self.subTest(label=label, info=info), self.assertRaises(SystemExit):
+                    score_replies.check_teacher(info, label)
+
+    def test_an_accepted_or_neutral_label_still_scores_without_run_json(self):
+        from distill import score_replies
+        for label in ("codeforge-27b-heretic-q4", "stub-model"):
+            with self.subTest(label=label):
+                score_replies.check_teacher(None, label)
+                score_replies.check_teacher({}, label)

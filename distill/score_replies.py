@@ -116,6 +116,9 @@ def check_teacher(info, model: str) -> None:
     if info and (info.get("model_repo") or info.get("model_file")):
         repo, file = info.get("model_repo") or "", info.get("model_file") or ""
         teachers.require_reasoning(model, repo, file, strict=bool(repo and file), why="kaggle-score")
+    else:
+        # No run.json (or one that does not name the GGUF): the label is the only handle there is, and it is what the records will say the teacher was.
+        teachers.require_reasoning(model, why="kaggle-score")
 
 
 def projected_fit(kept: list, lengths: dict, windows: tuple) -> dict:
