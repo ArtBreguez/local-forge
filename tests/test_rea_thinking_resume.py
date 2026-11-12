@@ -328,13 +328,31 @@ class Out2Shape(Resumer, unittest.TestCase):
         self.assertEqual(single, ["cipher-7-0204", "crc-7-0083", "password-7-0291", "pktsum-7-0110", "rotate-7-0088", "structs-7-0079", "threshold-7-0069", "threshold-7-0149"])
         self.assertEqual((summary["asked"], summary["requests"], summary["stale"], summary["unfingerprinted"]), (8, 10, 2, 0))
         self.assertEqual(sorted((b["max_tokens"] for b in server.asked)), [4096] * 6 + [8192] * 4)
-        for tid in ("magic-7-0062", "bounds-7-0072"):                     # complete and not cut off at a budget that grew: not asked, not rewritten (the line is the copy of the old one)
-            self.assertEqual(last[tid], previous[tid])
+        for tid in ("magic-7-0062", "bounds-7-0072"):                     # complete and not cut off at a budget that grew: not asked, but written with the fingerprint and the budget the owner's word gives (round 13, m2)
+            sha = run_teacher.prompt_sha(next(j for j in jobs if j["id"] == tid)["messages"])
+            self.assertEqual(last[tid]["outs"], [{**o, "prompt_sha": sha, "max_tokens": 4096} for o in previous[tid]["outs"]])
+            self.assertEqual({k: v for k, v in last[tid].items() if k != "outs"}, {k: v for k, v in previous[tid].items() if k != "outs"}, "the rest of the line is the old one's")
         for tid in ("pktsum-7-0110", "rotate-7-0088"):                    # cut off at 4096, a family that is still at 4096: kept, stamped
             kept = last[tid]["outs"][0]
             self.assertEqual((kept["finish"], kept["max_tokens"], kept["prompt_sha"]), ("length", 4096, run_teacher.prompt_sha(next(j for j in jobs if j["id"] == tid)["messages"])))
             self.assertEqual(kept["text"], previous[tid]["outs"][0]["text"])
         self.assertEqual([o["max_tokens"] for o in last["cipher-7-0204"]["outs"]], [8192, 8192])
+
+    def test_with_the_owners_word_the_file_it_writes_is_checked_by_kaggle_score_without_a_second_flag(self):
+        """Round 13, m2: `trust_unfingerprinted` is the owner's word that the file was asked under this prompt, and the README says one flag suffices. The lines the session does not ask used to be copied raw
+        (no fingerprint), so `kaggle-score` skipped them unless it was told twice (`--keep-unchecked`): 52 of 57 tasks of the real `out2` vanished. Now every earlier line of a task of the run is written with them."""
+        previous = out2_lines()
+        tasks = [PILOT_TASKS[tid] for tid in previous]
+        for kw in ({}, {"deadline": -1}):                                  # the session asks what it can; and the deadline has passed, so it asks nothing
+            cfg, jobs, server, summary, last, _ = self.resume(previous, tasks, trust_unfingerprinted=True, **kw)
+            with tempfile.TemporaryDirectory() as d, contextlib.redirect_stderr(io.StringIO()) as err:
+                kept, stats = kaggle_score.score(write_replies(d, self.written.splitlines()), write_tasks(d, tasks, "decompiled-seed7-all.jsonl"), "m", thinking=True)
+            p = stats["prompts"]
+            self.assertEqual((p["lines"], p["checked"], p["unchecked"], p["unchecked_replies"], p["mismatch"], p["kept_unchecked"], "partial" in p), (len(previous), len(previous), 0, 0, 0, False, False), kw)
+            self.assertNotIn("no prompt fingerprint", err.getvalue())
+            self.assertEqual(summary["requests"], 0 if kw else 10)
+            for job in jobs:
+                self.assertTrue(all(o["prompt_sha"] == run_teacher.prompt_sha(job["messages"]) and o["max_tokens"] for o in last[job["id"]]["outs"]), job["id"])
 
     def test_kaggle_score_skips_the_unfingerprinted_file_unless_told_to_keep_it(self):
         previous = out2_lines()

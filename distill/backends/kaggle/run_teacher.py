@@ -16,7 +16,7 @@ What it does, in order:
      STALE are asked again, a task with none of those is not (`samples_to_ask`). A reply is stale when it was asked under another prompt than the task's now (its `prompt_sha`), when it has NO fingerprint
      (the prompt it answered is not known: the thinking pilot's `out2`, which has none anywhere, is asked again in full), or when it was cut off ("length") at a smaller budget than the task's now (its
      `max_tokens` below `task_max_tokens`: a longer budget gives a different reply, not the same cut) or at a budget it does not say. `"trust_unfingerprinted": true` in config.json (build_tasks
-     --trust-unfingerprinted) is the owner's word that a file without fingerprints was asked under this very prompt and the config's `max_tokens`: such a reply then takes both, and stays. Attaching an
+     --trust-unfingerprinted) is the owner's word that a file without fingerprints was asked under this very prompt and the config's `max_tokens`: such a reply then takes both, and stays, and is written with both (the line of every task of the run, asked again or not), so `kaggle-score` needs no `--keep-unchecked`. Attaching an
      earlier output brings its replies with it; to take only its llama-server, attach the `llama-bin` dataset instead (build_tasks --llama-dataset);
   7. writes `run.json` (settings, throughput, llama.cpp commit, what was skipped) next to the replies, which `kaggle-score` reads.
 
@@ -315,13 +315,16 @@ def find_previous(root: pathlib.Path = INPUT) -> list:
 
 
 def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path, deadline: float, base_url: str = URL, urlopen=None, log_fn=print) -> dict:
-    """Ask what is left. `previous` = {id: record} from earlier sessions: they are copied to `checkpoint` first (so a session that asks nothing loses nothing), a task with every sample answered is skipped,
+    """Ask what is left. `previous` = {id: record} from earlier sessions: they are copied to `checkpoint` first (so a session that asks nothing loses nothing; with `trust_unfingerprinted` the line of every task of
+    this run is written with the fingerprint and budget the owner's word gives its replies, `with_own_sha(rec, assumed(...))`, asked again or not), a task with every sample answered is skipped,
     a task with missing, failed or stale samples (`samples_to_ask`: another prompt or none known, or cut off at a smaller budget than the task's now or an unknown one) is asked for those only, and each of them
     replaces the earlier reply. A task whose prompt and own budget (`task_max_tokens`) do not fit a slot is not asked (`skipped_too_long`). Each finished task is appended and flushed. Returns the counters for
     run.json (`stale`: the earlier replies that were asked again for being stale; `unfingerprinted`: how many of those had no fingerprint, `trust_unfingerprinted` keeps them)."""
     session = Session()
     checkpoint = pathlib.Path(checkpoint)
-    checkpoint.write_text("".join(json.dumps(r) + "\n" for r in previous.values()))
+    by_id = {t["id"]: t for t in tasks}
+    carried = lambda rec: {**rec, "outs": with_own_sha(rec, assumed(cfg, by_id[rec["id"]]))} if rec["id"] in by_id and cfg.get("trust_unfingerprinted") else rec
+    checkpoint.write_text("".join(json.dumps(carried(r)) + "\n" for r in previous.values()))
     todo, too_long, complete, stale, unfingerprinted = [], [], 0, 0, 0
     for t in tasks:
         rec = previous.get(t["id"])

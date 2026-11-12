@@ -50,7 +50,7 @@ python3 tools/rea-bench kaggle-score --replies ~/work/kaggle-rea/out1/replies.js
 | `deadline_h` | 10.5 | hours after the start at which no new request is started (a GPU session ends at 12 h; a request in flight may take `request_timeout_s`, 1800, more) |
 | `seed_base` | 1234 | sample `i` is asked with seed `seed_base + i`, as the Modal stage does |
 | `model_repo`, `model_file` | CodeForge 27B heretic i1-Q4_K_M | `--model-repo`, `--model-file` |
-| `trust_unfingerprinted` | absent (false) | `--trust-unfingerprinted`, or the run config's key: a resume keeps the earlier replies that have no fingerprint, on your word that they were asked under this prompt and `max_tokens`; otherwise they are asked again (below) |
+| `trust_unfingerprinted` | absent (false) | `--trust-unfingerprinted`, or the run config's key: a resume keeps the earlier replies that have no fingerprint, on your word that they were asked under this prompt and `max_tokens`, and writes them with both (`kaggle-score` then needs no `--keep-unchecked`); otherwise they are asked again (below) |
 
 Each line of `replies.jsonl`: `{"id", "kind", "prompt_sha", "outs": [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha", "max_tokens"}]}`: each reply says which prompt it answered and the budget it was asked with, because a line can hold replies of several sessions (the line's `prompt_sha` is the task's prompt of the session that wrote it). In a thinking run `text` is `<think>\nreasoning\n</think>\n\nvisible reply` (the server's `reasoning_content` and `content`, the form `kaggle-score --thinking` reads); `finish` is `stop`, `length` (cut off: rejected) or `error` (a failed request, `[error ...]` as the text: never scored, asked again by a resume).
 
