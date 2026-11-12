@@ -66,9 +66,12 @@ class Kit(unittest.TestCase):
         self.dir = pathlib.Path(self.tmp.name)
         self.sft = write_jsonl(self.dir / "sft.jsonl", sft_rows())
         self.heldout = write_jsonl(self.dir / "heldout.jsonl", HELDOUT)
+        self.train_tasks = write_jsonl(self.dir / "train-tasks.jsonl", TRAIN)
 
     def build(self, **kw):
-        return build_lora.build(kw.pop("sft", self.sft), kw.pop("heldout", [self.heldout]), kw.pop("out", self.dir / "out"), kw.pop("owner", "someone"), domain=ARITH, **{"per_family": 3, **kw})
+        """`min_family` 1: the fixture has four held-out tasks per family, under the floor of 5 that a real file is judged by (the tests of the floor say so)."""
+        return build_lora.build(kw.pop("sft", self.sft), kw.pop("heldout", [self.heldout]), kw.pop("out", self.dir / "out"), kw.pop("owner", "someone"), domain=ARITH,
+                                **{"train_tasks": [self.train_tasks], "per_family": 3, "min_family": 1, **kw})
 
 
 class Builder(Kit):
@@ -102,7 +105,7 @@ class Builder(Kit):
         self.build()
         lines = [json.loads(line) for line in (self.dir / "out" / "data" / "eval_tasks.jsonl").read_text().splitlines()]
         self.assertEqual(len(lines), 9)
-        for line, t in zip(lines, config.apply_quota(HELDOUT, {"add": 3, "mul": 3, "sub": 3})):
+        for line, t in zip(lines, config.apply_quota(KEPT, {"add": 3, "mul": 3, "sub": 3})):
             self.assertEqual(sorted(line), ["id", "kind", "messages"])
             self.assertEqual(line["messages"], ARITH.messages(t, "thinking"), "the prompt of the training records")
         self.assertNotIn("answer", (self.dir / "out" / "data" / "eval_tasks.jsonl").read_text().replace("Answer:", ""))
@@ -139,9 +142,10 @@ class Builder(Kit):
     def test_the_command_prints_the_plan_and_what_comes_next(self):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            build_lora.main(["--domain", "example_arith", "--sft", str(self.sft), "--heldout", str(self.heldout), "--owner", "someone", "--out", str(self.dir / "cli"), "--per-family", "3"])
+            build_lora.main(["--domain", "example_arith", "--sft", str(self.sft), "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), "--owner", "someone", "--out", str(self.dir / "cli"),
+                             "--per-family", "3", "--min-family", "1"])
         text = buf.getvalue()
-        for needle in ("60 training records", "9 held-out tasks", "training:", "eval:", "overhead:", "total:", "it fits", "kaggle datasets create", "kaggle kernels push", "GPU T4 x2"):
+        for needle in ("60 training records", "9 held-out tasks", "excluded from the evaluation: 2 of 12", "training:", "eval:", "overhead:", "total:", "it fits", "kaggle datasets create", "kaggle kernels push", "GPU T4 x2"):
             self.assertIn(needle, text)
 
     def test_a_smoke_build_is_marked_and_measures_instead_of_capping(self):
@@ -160,34 +164,34 @@ class Refusals(Kit):
         self.assertFalse((self.dir / "out").exists(), "nothing is written before the checks pass")
 
     def test_a_training_record_of_a_task_of_the_evaluation_subset_is_refused(self):
-        eval_ids = {t["id"] for t in make_tasks(7, 30)[:2]}
+        eval_tasks = make_tasks(7, 30)[:2]
         with self.assertRaisesRegex(SystemExit, "2 training record task.*evaluation subset"):
-            build_lora.check_training(sft_rows(), eval_ids, domain=ARITH)
-        build_lora.check_training(sft_rows(), {"arith-9999-000"}, domain=ARITH)
+            build_lora.check_training(sft_rows(), eval_tasks, domain=ARITH)
+        build_lora.check_training(sft_rows(), [HELDOUT[0]], domain=ARITH)
 
     def test_a_held_out_file_that_holds_tasks_that_are_not_held_out_is_refused(self):
-        train_tasks = write_jsonl(self.dir / "t.jsonl", make_tasks(7, 6))
+        not_held_out = write_jsonl(self.dir / "t.jsonl", make_tasks(7, 6))
         with self.assertRaisesRegex(SystemExit, "not held-out ids"):
-            build_lora.pick_eval([train_tasks], "", 3, ["add"], domain=ARITH)
+            build_lora.pick_eval([not_held_out], "", 3, ["add"], domain=ARITH, train_tasks=TRAIN_BY_ID)
 
     def test_a_teacher_that_may_only_filter_is_refused_whatever_the_spelling(self):
         for label in ("gpt-oss-120b", "gpt_oss_20b", "ArliAI-gpt-oss-120b-Derestricted", "claude-opus-5-5", "Claude Sonnet", "gpt-4o"):
             with self.assertRaisesRegex(SystemExit, "may only FILTER|stores the teacher's reply", msg=label):
-                build_lora.check_training([r for t in make_tasks(7, 4) for r in (row(t, label=label), row(t, "truth-template"))], set(), domain=ARITH)
+                build_lora.check_training([r for t in make_tasks(7, 4) for r in (row(t, label=label), row(t, "truth-template"))], [], domain=ARITH)
 
     def test_the_rule_is_the_one_of_teachers_py(self):
         with mock.patch.object(teachers, "require_reasoning", wraps=teachers.require_reasoning) as rule:
-            build_lora.check_training(sft_rows(4), set(), domain=ARITH)
+            build_lora.check_training(sft_rows(4), [], domain=ARITH)
         self.assertEqual([c.args for c in rule.call_args_list], [(TEACHER,)])
 
     def test_a_truth_template_record_may_come_from_a_filter_only_label_for_it_stores_nothing_of_the_model(self):
         rows = [r for t in make_tasks(7, 4) for r in (row(t), row(t, "truth-template", label="gpt-oss-120b"))]
-        self.assertEqual(build_lora.check_training(rows, set(), domain=ARITH)["labels"], [TEACHER])
+        self.assertEqual(build_lora.check_training(rows, [], domain=ARITH)["labels"], [TEACHER])
 
     def test_a_file_with_no_thinking_record_is_refused(self):
         plain = [row(t, "truth-template") for t in make_tasks(7, 6)]
         with self.assertRaisesRegex(SystemExit, "no thinking record"):
-            build_lora.check_training(plain, set(), domain=ARITH)
+            build_lora.check_training(plain, [], domain=ARITH)
 
     def test_a_file_that_is_not_an_sft_file_is_refused(self):
         bad = [{**sft_rows(1)[0], "teacher_headline": "x"}]
@@ -199,17 +203,17 @@ class Refusals(Kit):
             build_lora.read_sft(self.dir / "junk.jsonl")
 
     def test_the_fates_follow_mix(self):
-        self.assertEqual(build_lora.check_training(sft_rows(5), set(), domain=ARITH)["fates"], {"think": 5, "skipped_plain": 5})
-        self.assertEqual(build_lora.check_training(sft_rows(5), set(), domain=ARITH, mix=True)["fates"], {"think": 5, "plain": 5})
+        self.assertEqual(build_lora.check_training(sft_rows(5), [], domain=ARITH)["fates"], {"think": 5, "skipped_plain": 5})
+        self.assertEqual(build_lora.check_training(sft_rows(5), [], domain=ARITH, mix=True)["fates"], {"think": 5, "plain": 5})
         mal = sft_rows(2) + [row(make_tasks(7, 3)[2], text="<think>never closed")]
-        self.assertEqual(build_lora.check_training(mal, set(), domain=ARITH)["fates"]["malformed"], 1)
+        self.assertEqual(build_lora.check_training(mal, [], domain=ARITH)["fates"]["malformed"], 1)
 
     def test_a_quota_that_names_no_family_of_the_subject_or_selects_nothing_is_refused(self):
         with self.assertRaises(SystemExit):
-            build_lora.pick_eval([self.heldout], "add=0", 3, [], domain=ARITH)
+            build_lora.pick_eval([self.heldout], "add=0", 3, [], domain=ARITH, train_tasks=TRAIN_BY_ID)
         none = write_jsonl(self.dir / "mul.jsonl", [t for t in HELDOUT if t["kind"] == "mul"])
         with self.assertRaisesRegex(SystemExit, "no held-out task"):
-            build_lora.pick_eval([none], "add=3", 3, [], domain=ARITH)
+            build_lora.pick_eval([none], "add=3", 3, [], domain=ARITH, train_tasks=TRAIN_BY_ID)
 
 
 class Estimate(unittest.TestCase):
@@ -776,13 +780,13 @@ class ReaWiring(unittest.TestCase):
         self.assertEqual(len(self.domain.load_tasks([other])), 4)
         self.assertEqual(len(self.domain.load_heldout([other])), 4)
         with self.assertRaisesRegex(SystemExit, "not held-out ids"):
-            build_lora.pick_eval([other], "", 2, ["xor-key"], domain=self.domain)
+            build_lora.pick_eval([other], "", 2, ["xor-key"], domain=self.domain, train_tasks={})
 
     def test_the_evaluation_subset_of_rea_is_checked_by_the_domain(self):
-        chosen = build_lora.pick_eval([self.file], "", 1, ["xor-key", "password"], domain=self.domain)
+        chosen, _ = build_lora.pick_eval([self.file], "", 1, ["xor-key", "password"], domain=self.domain, train_tasks={})
         self.assertEqual(sorted(t["kind"] for t in chosen), ["password", "xor-key"])
         with self.assertRaisesRegex(SystemExit, "no task kind|which is no task kind"):
-            build_lora.pick_eval([self.file], "nonsense=3", 1, [], domain=self.domain)
+            build_lora.pick_eval([self.file], "nonsense=3", 1, [], domain=self.domain, train_tasks={})
 
     def test_a_reply_is_judged_by_the_rea_scorer(self):
         t = self.tasks[0]
@@ -829,6 +833,13 @@ class Docs(unittest.TestCase):
         for needle in ("T4 x2", "--smoke", "--measured", "fp16", "NF4", "chunk", "not run on a GPU", "llama-bin", "kaggle datasets create", "kaggle kernels push", "--resume-from", "score_lora", "heldout-1001", "Wilson",
                        "build_lora", "not tried"):
             self.assertIn(needle, text, needle)
+
+    def test_the_section_explains_the_content_check_and_the_commands_that_go_with_it(self):
+        text = self.section()
+        for needle in ("not by id", "code+question", "question+answer", "before the quota", "--train-tasks", "--min-family", "--strict-families", "built_from.eval.excluded", "build_lora overlap", "structs-7-0292", "structs-1001-0028",
+                       "FUN_", "truth-template record that has think text", "user message is an evaluation task's"):
+            self.assertIn(needle, text, needle)
+        self.assertRegex(text, r"(?s)build_lora overlap --train-tasks .*?--heldout", "the overlap command is shown with both its inputs")
 
     def test_the_files_the_readme_names_exist(self):
         for name in re.findall(r"`((?:tests/|distill/)[\w./-]+\.py)`", self.section()):

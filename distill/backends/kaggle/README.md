@@ -65,17 +65,25 @@ Does the thinking dataset make the student better? This kit trains the **same st
 
 ### The commands
 
-The held-out tasks are the decompiled seed-1001 file of the decompile stage (30 per new family; `tools/rea-bench/rea_bench/heldout-1001.txt` pins the tasks of the split). The SFT file is what `kaggle-score --thinking` wrote.
+The held-out tasks are the decompiled seed-1001 file of the decompile stage (30 per new family; `tools/rea-bench/rea_bench/heldout-1001.txt` pins the tasks of the split). The SFT file is what `kaggle-score --thinking` wrote, and `--train-tasks` is the decompiled tasks file it was made from (`decompiled-seed7-all.jsonl`: ALL its tasks, not only the ones that became records).
 
 ```bash
 modal run tools/modal/modal_rea_data.py --stage decompile --seed 1001 --family all --n 330    # only if results/phase6/rea-data/decompiled-seed1001-all.jsonl does not exist
+```
+
+0. See how much of the held-out file the training tasks cover (nothing is built; per family: the tasks that share their code+question or their question+answer with a training task, either, and how many are left):
+
+```bash
+python3 -m distill.backends.kaggle.build_lora overlap --train-tasks results/phase6/rea-data/decompiled-seed7-all.jsonl \
+    --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl
 ```
 
 1. Build the **smoke** run (4 steps on the longest records, two replies per process: ~0.7 h of quota) and look at the estimate it prints:
 
 ```bash
 python3 -m distill.backends.kaggle.build_lora --domain rea --owner <kaggle-user> --out ~/work/kaggle-lora-smoke --smoke \
-    --sft results/phase6/rea-data/sft-<teacher>-<tag>-reasoning-think.jsonl --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl
+    --sft results/phase6/rea-data/sft-<teacher>-<tag>-reasoning-think.jsonl --train-tasks results/phase6/rea-data/decompiled-seed7-all.jsonl \
+    --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl
 ```
 
 2. Create the dataset and push the kernel; **set the kernel's accelerator to GPU T4 x2** (`kernel-metadata.json` cannot choose it: `enable_gpu` alone may give a P100, and the kernel stops before the download when a GPU is not a T4):
@@ -91,8 +99,9 @@ kaggle kernels output <kaggle-user>/rea-lora-eval -p ~/work/kaggle-lora-smoke/ou
 
 ```bash
 python3 -m distill.backends.kaggle.build_lora --domain rea --owner <kaggle-user> --out ~/work/kaggle-lora \
-    --sft results/phase6/rea-data/sft-<teacher>-<tag>-reasoning-think.jsonl --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl \
-    --measured ~/work/kaggle-lora-smoke/out/run.json --per-family 10 --max-len 4096 --k 1 --train-hours 3
+    --sft results/phase6/rea-data/sft-<teacher>-<tag>-reasoning-think.jsonl --train-tasks results/phase6/rea-data/decompiled-seed7-all.jsonl \
+    --heldout results/phase6/rea-data/decompiled-seed1001-all.jsonl --measured ~/work/kaggle-lora-smoke/out/run.json \
+    --per-family 10 --max-len 4096 --k 1 --train-hours 3
 ```
 
 4. Push it the same way (`kaggle datasets create -p ~/work/kaggle-lora/data`, `kaggle kernels push -p ~/work/kaggle-lora/kernel`, the same accelerator), wait, fetch the output, and score it:
@@ -106,7 +115,14 @@ A session that ends early (quota, crash, the deadline) is **resumed**, not resta
 
 ### What it checks before anything is written
 
-`build_lora.py` refuses: a training record of a **held-out** task (`domain.heldout_ids`: for REA the ids that end in `-1001-<n>`), a training record of a task in the **evaluation subset**, a `--heldout` file that holds a task that is not held-out, a teacher-reasoning record whose **label is a teacher that may only filter** (`teachers.require_reasoning`, the rule `kaggle-score` applies: gpt-oss, claude and the rest of `FILTER_ONLY_MARKERS`; a truth-template record's label is only the filter), an SFT file with no thinking record, and an earlier build without `--force`. The subset is `--quota structs=10,crc=10` or, by default, `--per-family` (10) tasks of each family the training records have (the first by id, round robin).
+**The held-out tasks must share nothing with the training tasks, by content, not by id.** The held-out ids (`-1001-<n>`) never equal a training id, so an id check is empty: the generator draws the same function, question and answer under two seeds (`structs-7-0292` and `structs-1001-0028` are one `return *(undefined2 *)(param_1 + 8);` with the question "At which byte offset ...", answer `0x8`). A held-out task is **excluded** from the evaluation, before the quota, when **either** rule matches a task of `--train-tasks` (all of them, whether they became SFT records or not; `Domain.task_keys`):
+
+- **code+question**: its pseudocode and its question are a training task's, with Ghidra's `FUN_`/`DAT_`/`LAB_`/`PTR_`/`SUB_<hex>` names collapsed (two compiles put them at other addresses) and whitespace collapsed (`Rea.normalize_prompt`);
+- **question+answer**: its question and its answer key (kind, question, accepted answers) are a training task's: with the same question and answer the evaluation can be passed by memory.
+
+This is the strict reading. `rea_bench/dedupe.py` applies its answer rule only to free-string answers and leaves small numeric answers in ("which is what the `chance` level measures"); here a repeated question with a repeated answer is out, whatever the answer is. `build_lora overlap` prints how many tasks that costs (step 0). The quota then fills from what remains; a family that the exclusion left with fewer than `--min-family` (5) tasks, or none, is **left out of the evaluation with a printed note** (`--strict-families` refuses instead); a family that was small before the exclusion is not judged by the floor. The build prints what was excluded and `lora-config.json` records it (`built_from.eval.excluded`: the rule, per family the held-out tasks, the matches by each rule, the excluded and the remaining ones, the pairs of ids, the families left out).
+
+`build_lora.py` also refuses: a training record of a **held-out** task (`domain.heldout_ids`: for REA the ids that end in `-1001-<n>`), a training record of a task in the **evaluation subset**, a training record whose **user message is an evaluation task's** (normalised the same way: the check does not depend on `--train-tasks`), a training record of a task that `--train-tasks` does not have (it is not the file the records were made from), a `--train-tasks` file that holds held-out ids, a `--heldout` file that holds a task that is not held-out, a subject that gives no content key, any record with **think text** whose **label is a teacher that may only filter** (`teachers.require_reasoning`, the rule `kaggle-score` applies: gpt-oss, claude and the rest of `FILTER_ONLY_MARKERS`; a teacher-reasoning record is a teacher's text whatever its form), a **truth-template record that has think text** (it is rendered from the truth and has no think tag: re-labelling a model's trace as one is how a refused teacher's text would get in) or whose text is not `domain.truth_target` of its task, an SFT file with no thinking record, and an earlier build without `--force`. The subset is `--quota structs=10,crc=10` or, by default, `--per-family` (10) tasks of each family the training records have (the first by id, round robin, of the tasks that remain).
 
 ### What runs, and the decisions
 
