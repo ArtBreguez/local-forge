@@ -36,13 +36,14 @@ class Names(unittest.TestCase):
         from distill import traces
         self.assertEqual(traces.PROMPT_REPEAT_MAX, 12)
         kaggle = (ROOT / "tools" / "kaggle" / "README.md").read_text()
-        for part in ("PROMPT_REPEAT_MAX", "more than 12 times", "Why 12 and not 8", "83 teacher records", "The hole that is left, stated", "check 3: <a line of the code>", "length rule"):
+        for part in ("PROMPT_REPEAT_MAX", "more than 12 times", "Why 12 and not 8", "83 teacher records", "The hole that is left, stated", "check 3: <a line of the code>", "length rule",
+                     "in a number or in a word", "`alpha: <a line of the code>`", "7 words or fewer when the label word itself changes"):
             self.assertIn(part, kaggle)
         modal = next(l for l in (ROOT / "tools" / "modal" / "README.md").read_text().splitlines() if l.startswith("| `repetition` |"))
-        for part in ("counted against 12", "What still passes, stated", "6 words or fewer", "PROMPT_REPEAT_MAX"):
+        for part in ("counted against 12", "What still passes, stated", "6 words or fewer", "PROMPT_REPEAT_MAX", "in a number or in a word", "7 words or fewer when the label word itself changes"):
             self.assertIn(part, modal)
         generic = next(l for l in (ROOT / "distill" / "README.md").read_text().splitlines() if l.startswith("| 5 traces |"))
-        for part in ("counted against **12**", "6 words or fewer"):
+        for part in ("counted against **12**", "6 words or fewer", "in a number (6 words or fewer) or in a word (7 words or fewer)"):
             self.assertIn(part, generic)
         self.assertNotIn("not counting what is in the task's own prompt", generic)
 

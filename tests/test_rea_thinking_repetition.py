@@ -150,8 +150,29 @@ class Repetition(unittest.TestCase):
         copied = self.PROMPT.replace("\n", " ") + " "
         self.assertTrue(traces.repetition(copied * 6, self.PROMPT), "a block of the question copied over and over: the windows across the copies are not in the prompt")
         doc = traces.repetition.__doc__
-        for part in ("THE HOLE", "PROMPT_REPEAT_MAX", "12", "SHORT line", "NGRAM - 2 = 6 words", "numbered" if False else "a number which changes each round", "length rule"):
+        for part in ("THE HOLE", "PROMPT_REPEAT_MAX", "12", "SHORT line", "NGRAM - 2 = 6 words", "NGRAM - 1 = 7 words", "in a number or in a word", "`alpha: <a line of the code>`", "different label WORD", "length rule"):
             self.assertIn(part, doc)
+
+    LABELS = "alpha bravo charlie delta echo foxtrot golf hotel india juliet kilo lima mike november oscar papa quebec romeo sierra tango uniform victor whiskey xray yankee zulu".split()
+
+    def test_a_label_that_changes_in_a_word_is_the_same_hole_one_word_wider(self):
+        """Round 12, m2: the docstring and the READMEs said only lines of 6 words or fewer pass. That holds for a constant label word with a changing number (`check N:`). With a different label WORD each
+        round (`alpha: <line>`, `bravo: <line>`, ...) no 8-word window of a 7-word line is free of a label, so it passes too, at any count the label words last; from 8 words the line has windows of its own."""
+        words = "if elapsed is greater than the limit it returns one now and later again".split()
+        word_label = lambda n, rounds=26: "\n".join(f"{self.LABELS[i]}: {' '.join(words[:n])}" for i in range(rounds))
+        number_label = lambda n, rounds=26: "\n".join(f"check {i}: {' '.join(words[:n])}" for i in range(rounds))
+        prompt = lambda n: self.PROMPT.replace("return 1;", " ".join(words[:n]) + ";")
+        for n in range(1, 8):
+            self.assertFalse(traces.repetition(word_label(n), prompt(n)), f"{n} words, a different label word in each of 26 rounds, the line in the prompt: in the hole")
+            self.assertFalse(traces.repetition(word_label(n)), f"{n} words, no prompt")
+        for n in range(1, 7):
+            self.assertFalse(traces.repetition(number_label(n), prompt(n)), f"{n} words behind `check N:`: in the hole")
+        self.assertTrue(traces.repetition(number_label(7), prompt(7)), "7 words behind the constant label word: its words and `check` are a window that repeats (the one-word difference between the two cases)")
+        self.assertTrue(traces.repetition(number_label(7)))
+        for n in (8, 9, 12, len(words)):
+            self.assertTrue(traces.repetition(word_label(n), prompt(n)), f"{n} words with a changing label word: a window of its own repeats (the line is in the prompt: over 12)")
+            self.assertTrue(traces.repetition(word_label(n)), f"{n} words, no prompt: over 3")
+        self.assertEqual(len(self.LABELS), 26)
 
     def test_a_row_of_numbers_is_not_a_window_whatever_the_prompt(self):
         self.assertFalse(traces.repetition("0x00 " * 40, ""))

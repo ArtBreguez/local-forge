@@ -193,10 +193,13 @@ def repetition(text: str, prompt: str = "") -> bool:
 
     THE HOLE, stated: what the prompt contains is not held to the strict limit, so a reply may re-read it more than three times and pass: up to PROMPT_REPEAT_MAX (12) times in any form (the pilot
     has three accepted replies that re-read the same instruction 10 or 11 times; they are kept, and whether such a trace belongs in the data is a length rule, not this filter; a limit of 8 would have
-    dropped 4 of the 12 pilot replies that only quote the question). Beyond 12 a prompt line or window is a loop. One way of restating the prompt passes whatever the count: a SHORT line (up to
-    NGRAM - 2 = 6 words) restated with a label that carries a number which changes each round (`check 3: <a line of the code>`): every 8-word window of such a reply holds a number that is
-    different in each round, so no window repeats, and the line itself is never repeated as written. A line of 7 words or more has a window (its words and the label's word) that repeats, and a
-    long one has windows inside it that are the prompt's: those are counted. A reply that restates short lines this way ends: it is a long restating, kept like the others, not a loop that is cut off.
+    dropped 4 of the 12 pilot replies that only quote the question). Beyond 12 a prompt line or window is a loop. One way of restating the prompt passes whatever the count: a SHORT line restated with a
+    label that changes each round, in a number or in a word. With a constant label word and a number that changes (`check 3: <a line of the code>`) it is a line of up to NGRAM - 2 = 6 words: every
+    8-word window of such a reply holds the number, which is different in each round, so no window repeats, and the line itself is never repeated as written. With a different label WORD each round
+    (`alpha: <a line of the code>`, `bravo: <a line of the code>`, ...: a model does not write ordinals, but it can number its rounds with words) it is a line of up to NGRAM - 1 = 7 words, because no
+    8-word window is free of a label word; it passes for as many rounds as the model has different label words. A line of 7 words behind the constant label word has a window (its words and the label's word)
+    that repeats, a line of 8 words or more has windows of its own with no label in them, and a long one has windows inside it that are the prompt's: those are counted. A reply that restates short lines this
+    way ends: it is a long restating, kept like the others, not a loop that is cut off.
     Not a hole: a loop in the model's own words, and a block of the question copied over and over (the windows across the copies are not in the prompt)."""
     in_prompt = {_line_form(line) for line in prompt.splitlines()}
     lines, quoted_lines = collections.Counter(), collections.Counter()
