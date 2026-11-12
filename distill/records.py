@@ -216,6 +216,11 @@ def reasoning_report(stats: dict) -> list:
                    f"{r.get('tasks_without_trace', 0):,} kept tasks have no trace (their truth record stays)")
     if r["truncated"] and r["replies"] and r["truncated"] / r["replies"] > TRUNCATED_WARN:
         out.append(f"WARNING: {100 * r['truncated'] // r['replies']}% of the replies were cut off at max_tokens: raise --max-tokens (and look at the cost line again)")
+    budgets = (stats.get("sampling") or {}).get("max_tokens_by_family")
+    if budgets:         # a family has a budget of its own: the share cut off is read against that budget
+        cut = [f"{k} {b['truncated']}/{b['replies']} at {budgets.get(k, stats['sampling']['max_tokens'])}" for k, b in r.get("by_kind", {}).items() if b["replies"] and b["truncated"] / b["replies"] > TRUNCATED_WARN]
+        if cut:
+            out.append("WARNING: families with more than " + f"{int(TRUNCATED_WARN * 100)}% of their replies cut off at their own max_tokens: " + ", ".join(cut))
     if r.get("mode") == "thinking" and d and r["accepted"] and d.get("no_think", 0) / r["accepted"] > NO_THINK_WARN:
         out.append(f"WARNING: {100 * d['no_think'] // r['accepted']}% of the accepted replies came back without reasoning: the server did not return `reasoning_content` or a <think> block "
                    f"(llama-server --reasoning-format), so they were dropped")
@@ -224,16 +229,19 @@ def reasoning_report(stats: dict) -> list:
         out.append("sampling: " + ", ".join(f"{k} {v}" for k, v in s.items()))
     sl = stats.get("slot")
     if sl and sl.get("prompt_too_long"):
+        own = sl.get("max_prompt_tokens_by_kind") or {}          # a family with a budget of its own leaves its own room for the prompt
+        what = ", ".join(f"{k} {c}" + (f" (over {own[k]:,} tokens)" if k in own else "") for k, c in sl["by_kind"].items())
         out.append(f"WARNING: {sl['prompt_too_long']} task(s) were not asked: their prompt is longer than {sl['max_prompt_tokens']:,} tokens, which with max_tokens {s['max_tokens'] if s else '?'} does not fit one "
-                   f"{sl['slot_context']:,}-token slot of the server ({', '.join(f'{k} {c}' for k, c in sl['by_kind'].items())})")
+                   f"{sl['slot_context']:,}-token slot of the server ({what})")
     p = stats.get("perf")
     if p and p.get("requests"):
-        out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over the four slots "
+        slots = (s or {}).get("parallel")           # 4, or 2 when a family has a longer budget (config.server_plan)
+        out.append(f"this call: {p['requests']:,} requests, {p['completion_tokens']:,} completion tokens in {p['wall_s']:,} s = {p['tok_per_s']} tokens/s over {f'the {slots} slots' if slots else 'the slots'} "
                    f"({p['s_per_request']} s per request): modal_sample.PHASE_A_REPLY_S is 1.04 s per phase-A reply")
     return out
 
 
-TRUNCATED_WARN = 0.10     # a reasoning run with more than this share of its replies cut off at max_tokens says so
+TRUNCATED_WARN = 0.05     # a reasoning run with more than this share of its replies cut off at max_tokens says so (the owner's 5%: the same rule as ERROR_RATE_WARN; the pilot cut off 13%)
 NO_THINK_WARN = 0.10      # a thinking run in which more than this share of the accepted replies has no reasoning block says so
 
 
@@ -257,7 +265,7 @@ def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bo
         rec = results.get(t["id"])
         if rec is None:
             continue
-        outs = [(o, score(o, t)) for o, _flag in rec["outs"]]
+        outs = [(out[0], score(out[0], t)) for out in rec["outs"]]          # an out is [reply, flag] or [reply, flag, {prompt_sha, max_tokens}] (outputs.out_meta)
         if reasoning:
             verdicts = collections.Counter(verdict(o, t, domain=domain) for o, _flag in outs)
             records, reason, dropped = select_traces(outs, t, thinking, max_traces, domain=domain)

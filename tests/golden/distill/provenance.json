@@ -1,0 +1,59 @@
+{
+ "baseline": {
+  "commit": "9afd8aebd97fb6c80941c5db232720e009752491",
+  "what": "origin/dataset/phase-a, the code before the distill/ refactor; tests/golden_baseline.py run in a worktree of it writes the files whose sha256 is `phase_a_sha256` (7 tests, 10 files)"
+ },
+ "tasks_sha256": "fa01ec638d8d3446639d2cc7a2debd1928074c91aced8f04bf50315f088ef1ea",
+ "files": {
+  "kit.json": {
+   "sha256": "4eb743a5453cecf1d3e12b13ea84227871c030fb2a9a207cc96ae2d51a071421",
+   "phase_a_sha256": "51be45aefe72e11192bfd11766296e85e8f167e95bce5c6b5708ae49eec4915d",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file"
+  },
+  "lora.json": {
+   "sha256": "510d1622c9c2df91728b4822eaac5a6c8862206901f5f96feef6fb37d6b9373a",
+   "phase_a_sha256": "510d1622c9c2df91728b4822eaac5a6c8862206901f5f96feef6fb37d6b9373a",
+   "changed": null
+  },
+  "plan.json": {
+   "sha256": "dbb8522a30e984c3af12e58eb75bfc171b5ab18d7bf9725b713d44350119007c",
+   "phase_a_sha256": "dbb8522a30e984c3af12e58eb75bfc171b5ab18d7bf9725b713d44350119007c",
+   "changed": null
+  },
+  "score-reasoning.json": {
+   "sha256": "53f13fb3b5924daf1849a69a3b55cb2887dc4bf5def17da16615ac08746d7a42",
+   "phase_a_sha256": "4246e9460693a693f13644a375793dad7b4064dc4268a5ae36e93d274a4fde1c",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; kaggle-score counts the lines with no prompt fingerprint and skips them unless `keep_unchecked` (review r12, M1): `prompts` gains lines, unchecked, unchecked_replies, unchecked_ids and kept_unchecked, and the command prints a line about them (the lines of this fixture are an older notebook's, so the new code's test scores them with `keep_unchecked`; nothing else of the file moved)"
+  },
+  "score-thinking.json": {
+   "sha256": "e2a48a77ead8fb1c576a8a842ea211e9d8a6b72560f522b17327bb40175e3414",
+   "phase_a_sha256": "a2121c1573f197b374bd98771b572951a6fb275d87c7af6d418e86d139d198e5",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; kaggle-score counts the lines with no prompt fingerprint and skips them unless `keep_unchecked` (review r12, M1): `prompts` gains lines, unchecked, unchecked_replies, unchecked_ids and kept_unchecked, and the command prints a line about them (the lines of this fixture are an older notebook's, so the new code's test scores them with `keep_unchecked`; nothing else of the file moved)"
+  },
+  "stage-plain.json": {
+   "sha256": "8f309c6ea7642aa6919e8f3ba67f97708769b9cd54433384f4cbb2191d05317d",
+   "phase_a_sha256": "8f309c6ea7642aa6919e8f3ba67f97708769b9cd54433384f4cbb2191d05317d",
+   "changed": null
+  },
+  "stage-reasoning-quota.json": {
+   "sha256": "01e49eed8c6d7c9538676ec6b82fe53729c133fbfcfdeaf503077f4c3a5a3013",
+   "phase_a_sha256": "706588865ae7351139068feaaa9652448f0df9b6fd5f2647f56e07738f4adb73",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; and the checkpoint of a reasoning or thinking run carries {prompt_sha, max_tokens} with each reply (review r11 M1): only the two partial_sha256 moved for it"
+  },
+  "stage-reasoning.json": {
+   "sha256": "6a089b30e93c598d3d8c3fe8135da04099ee8b60f12771b24d17bca70785af3a",
+   "phase_a_sha256": "520eaf671be3fcff36af2d5dbce3ae1b6ad9d0d72343ba4584c605da8d18e84e",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; and the checkpoint of a reasoning or thinking run carries {prompt_sha, max_tokens} with each reply (review r11 M1): only the two partial_sha256 moved for it"
+  },
+  "stage-thinking.json": {
+   "sha256": "2ee4f5ca58dc89f60e6e2d22f1eb716ce064ddffb93700ec4e66eedb7e3856b6",
+   "phase_a_sha256": "4b7d73b0959f745f6b832153e5a2b019105d24abac94a3d686c0d62b936a3739",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file; and the checkpoint of a reasoning or thinking run carries {prompt_sha, max_tokens} with each reply (review r11 M1): only the two partial_sha256 moved for it"
+  },
+  "traces.json": {
+   "sha256": "963194c4e039dccede511a365e44d39f8793ae0ab2cbdc1b0503ae40d0a1038a",
+   "phase_a_sha256": "17a904a2d260d08bc9b0ff973dd6317e4de15dbe46682a222d54a7746ce7bcf5",
+   "changed": "SYSTEM_REASONING tells the model that the last line gives every part of a multi-part question (thinking-pilot fix 1, #33): the prompt and its fingerprint (system_sha bd6b48eaa3a0131b -> 88584e3550d4407f) are in the file"
+  }
+ }
+}

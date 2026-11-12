@@ -518,8 +518,8 @@ class ThinkingStage(StubbedSampleStage):
         self.assertEqual(outputs.sample_tag(self.tag, True, True), f"{self.tag}-reasoning-think")
         self.assertNotEqual(outputs.sample_tag(self.tag, True, True), outputs.sample_tag(self.tag, True))
         self.assertTrue(self.partial(self.ttag).exists())
-        self.assertTrue(all("<think>" in o for r in map(json.loads, self.partial(self.ttag).read_text().splitlines()) for o, _ in r["outs"]))
-        self.assertFalse(any("<think>" in o for r in map(json.loads, visible.read_text().splitlines()) for o, _ in r["outs"]))
+        self.assertTrue(all("<think>" in o[0] for r in map(json.loads, self.partial(self.ttag).read_text().splitlines()) for o in r["outs"]))
+        self.assertFalse(any("<think>" in o[0] for r in map(json.loads, visible.read_text().splitlines()) for o in r["outs"]))
         self.assertEqual(visible.read_bytes(), before, "the visible-reasoning checkpoint is untouched")
         with self.assertRaises(ValueError):
             outputs.sample_tag(self.tag, False, True)
@@ -539,13 +539,13 @@ class ThinkingStage(StubbedSampleStage):
         self.reply = lambda tid, i, body: think_body("", "Still thinking about it and it goes on", finish="length")
         res = self.run_stage(False, **self.KW)
         self.assertEqual((res["stats"]["reasoning"]["truncated"], res["stats"]["kept_tasks"]), (len(self.tasks) * self.k, 0))
-        self.assertTrue(all(o.endswith(rsn.TRUNCATED) for r in map(json.loads, self.partial(self.ttag).read_text().splitlines()) for o, _ in r["outs"]))
+        self.assertTrue(all(o[0].endswith(rsn.TRUNCATED) for r in map(json.loads, self.partial(self.ttag).read_text().splitlines()) for o in r["outs"]))
 
     def test_the_flag_in_the_checkpoint_is_the_verdict_on_the_visible_text(self):
         self.reply = lambda tid, i, body: think_body(reply(self.tasks[tid], "x"), "Answer: 0x1\nthen more") if i == 0 else think_body(reply(self.tasks[tid]), "ok")
         self.run_stage(False, **self.KW)
         for r in map(json.loads, self.partial(self.ttag).read_text().splitlines()):
-            self.assertEqual([ok for _o, ok in r["outs"]], [True] * self.k, r["id"])
+            self.assertEqual([o[1] for o in r["outs"]], [True] * self.k, r["id"])
 
 
 class ThinkingEntry(ModalCase):

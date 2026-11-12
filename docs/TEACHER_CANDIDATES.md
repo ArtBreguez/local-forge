@@ -1,6 +1,8 @@
 # Teacher candidates: open-weight uncensored models
 
-The REA dataset needs a teacher that answers reverse-engineering tasks (keygen, crack, anti-debug) without refusing. A task enters the set only when the teacher's final answer matches the truth computed by the code. In phase A the stored text was rendered from that truth and no model text was stored; in the reasoning run (`modal_rea_data.py --stage sample --reasoning`, `tools/modal/README.md`) the teacher's reply is stored as well, next to the rendered one, with its final answer verified and its steps not checked. Either way any open-weight model can be a teacher, whatever its origin.
+The REA dataset needs a teacher that answers reverse-engineering tasks (keygen, crack, anti-debug) without refusing. A task enters the set only when the teacher's final answer matches the truth computed by the code. In phase A the stored text was rendered from that truth and no model text was stored; in the reasoning run (`modal_rea_data.py --stage sample --reasoning`, `tools/modal/README.md`) the teacher's reply is stored as well, next to the rendered one, with its final answer verified and its steps not checked. 
+
+**What a teacher may do depends on what the run stores (the owner's rule).** In the default mode any open-weight model may FILTER, whatever its origin: its answer only decides whether a task is kept, the record is rendered from the truth, and none of its text is stored. In the reasoning and thinking modes the teacher's reply is stored verbatim, and the dataset rule is that no DIRECT OpenAI or Anthropic output is stored. **gpt-oss-\* (OpenAI's own models, their derestricted and heresy variants included) and the GPT-4o distill are filter-only.** An open-weight model whose lineage includes fine-tunes on such data may be accepted case by case by the owner, with the decision recorded (CodeForge: the last section). A dataset card that publishes teacher-reasoning records must state the teacher's lineage. The filter-only part is enforced: `Teacher.reasoning_ok` in `distill/teachers.py` (False unless someone has looked at the lineage and the owner has decided), and the Modal sample stage (`--reasoning`, `--thinking`) and the Kaggle kit refuse a teacher without it. A candidate below is added to `teachers.py` only after the run it is for is decided, with the flag set by this rule.
 
 This file catalogues the strongest candidates found on 2026-11-11. None of the new ones is measured on our tasks yet; the scores below are third-party. Run `modal_qbench` (40 code problems) and a small `modal_rea_data --stage sample` before trusting any of them.
 
@@ -51,10 +53,10 @@ Sizes are total parameters. "Fits" assumes vLLM, 4-bit or FP8, with room for the
 
 | Model | Base | Size | Licence | Why |
 |---|---|---|---|---|
-| [ArliAI/gpt-oss-120b-Derestricted](https://huggingface.co/ArliAI/gpt-oss-120b-Derestricted) ([MXFP4 repack](https://huggingface.co/justinjja/gpt-oss-120b-Derestricted-MXFP4)) | gpt-oss 120B | 117B, 5.1B active | Apache-2.0 | Strong at code; MXFP4 (~63 GB) fits one H100. |
+| [ArliAI/gpt-oss-120b-Derestricted](https://huggingface.co/ArliAI/gpt-oss-120b-Derestricted) ([MXFP4 repack](https://huggingface.co/justinjja/gpt-oss-120b-Derestricted-MXFP4)) | gpt-oss 120B | 117B, 5.1B active | Apache-2.0 | Strong at code; MXFP4 (~63 GB) fits one H100. **Filter only** (an OpenAI model: its text is not stored). |
 | [ArliAI/GLM-4.5-Air-Derestricted](https://huggingface.co/ArliAI/GLM-4.5-Air-Derestricted) | GLM-4.5 Air | 110B, 12B active | MIT | Best reasoning in the digest (36.6). |
-| [MuXodious/gpt-oss-120b-tainted-heresy](https://huggingface.co/MuXodious/gpt-oss-120b-tainted-heresy) | gpt-oss 120B | 120B, 5.1B active | Apache-2.0 | Alternative method (reasoning 32.3). |
-| [MuXodious/gpt-4o-distil-Llama-3.3-70B-Instruct-PaperWitch-heresy](https://huggingface.co/MuXodious/gpt-4o-distil-Llama-3.3-70B-Instruct-PaperWitch-heresy) | Llama 3.3 70B (GPT-4o distill) | 70B | not stated | Fallback (reasoning 30.6). |
+| [MuXodious/gpt-oss-120b-tainted-heresy](https://huggingface.co/MuXodious/gpt-oss-120b-tainted-heresy) | gpt-oss 120B | 120B, 5.1B active | Apache-2.0 | Alternative method (reasoning 32.3). **Filter only** (an OpenAI model). |
+| [MuXodious/gpt-4o-distil-Llama-3.3-70B-Instruct-PaperWitch-heresy](https://huggingface.co/MuXodious/gpt-4o-distil-Llama-3.3-70B-Instruct-PaperWitch-heresy) | Llama 3.3 70B (GPT-4o distill) | 70B | not stated | Fallback (reasoning 30.6). **Filter only** (a distill of GPT-4o: its text is not stored). |
 
 ### Several GPUs (catalogued, not planned)
 
@@ -78,4 +80,20 @@ Sizes are total parameters. "Fits" assumes vLLM, 4-bit or FP8, with room for the
 
 ## Next step
 
-Run the 40-problem code bench on the first three L40S rows and gpt-oss-120b-Derestricted against CodeForge, then a small sample run of the best one on the families where yield is low (cipher, multi, fsm). Add the measured rows to the table above.
+Run the 40-problem code bench on the first three L40S rows and gpt-oss-120b-Derestricted against CodeForge (gpt-oss as a filter in the default mode only: it cannot be a reasoning or thinking teacher), then a small sample run of the best one on the families where yield is low (cipher, multi, fsm). Add the measured rows to the table above.
+
+## The teacher in use: accepted by the owner (2026-11-12), lineage recorded
+
+`codeforge-27b-heretic-q4` (CodeForge 3xMerge, heretic) is the teacher of the thinking pilot, of the Kaggle kernel's default and of `distill/configs/rea-thinking.json`, and `distill/teachers.py` says `reasoning_ok=True` for it and for its other quantization.
+
+**Decision (the owner, 2026-11-12): CodeForge is accepted as a reasoning and thinking teacher.** The dataset rule is no DIRECT OpenAI or Anthropic output in a stored record; an open-weight model whose lineage includes fine-tunes on such data may be accepted case by case by the owner, with the decision recorded, and this section is the record. gpt-oss-\* and the GPT-4o distill are not in that position: they stay filter-only, and `teachers.require_reasoning` refuses them.
+
+**Lineage, as recorded.** Its repo card does not name what was merged. The card of its base, `xtools-at/Qwen3.8-27B-CodeForge-3xMerge`, lists three fine-tunes (all on Qwen3.8 27B, merge weights 1.00, 0.85 and 0.70):
+
+| fine-tune | its teachers or data |
+|---|---|
+| nerkyor's Coder390 EfficientThink | teacher trajectories of Opus 5.5 and GPT-6 Astra |
+| TeichAI's Qwen3.8-27B-Fable-Distill (Fable Distill) | claude-fable-5-claude-code and Fable-5-Chat |
+| Jackrong's Qwopus3.8-27B-Coder-Flash (Qwopus Coder Flash) | Qwen, DeepSeek and NVIDIA teachers |
+
+So CodeForge's lineage includes fine-tunes on Anthropic and OpenAI model output, and the dataset must not hide it: a dataset card that publishes teacher-reasoning records must state this lineage next to the records. There is no dataset-card template in the repository yet (the only cards are the two model cards under `results/phase6/lora/`, which `tools/modal/modal_hf_upload.py` uploads with the model weights and which publish no teacher text); the rule is written here, in `distill/README.md` and in `tools/modal/README.md`, for whoever writes that card. The traces CodeForge has already written (the thinking pilot's `out1` and `out2`) are covered by the same decision. Any other teacher added to `teachers.py` with `reasoning_ok=True` needs the same look and a decision recorded in the same way.

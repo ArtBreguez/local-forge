@@ -3,7 +3,8 @@
 The mode itself (the `Answer:` line, the trace, the quality filters, the duplicate rule, the traces a task keeps, the sampling settings, the quota) is `distill/traces.py` and `distill/config.py`, moved from here
 with its behaviour; what is left is what only REA decides, and `distill/domains/rea` hands it to them:
 
-  SYSTEM_REASONING   the system message of a reasoning or thinking run (`SYSTEM_RECIPE` of modal_rea.py is the plain one and is untouched): a short step-by-step analysis, then a LAST line `Answer: <value>`.
+  SYSTEM_REASONING   the system message of a reasoning or thinking run (`SYSTEM_RECIPE` of modal_rea.py is the plain one and is untouched): a short step-by-step analysis, then a LAST line `Answer: <value>`, which gives every part the question asks for, in the question's order, comma-separated (the thinking pilot's antidebug replies
+                     had the number and not the technique: 6 of 6 rejected by `score_strict`, which is not loosened).
   messages           the system and user message of a task (`user_message`: its pseudocode, the data it references, the question); both record sources and the sampler use them.
   contradicts        the `contradiction` filter: the last explicit statement of a final value in the analysis names numbers none of which is a number of the task's accept groups (read with `grammar.Spec`).
   task_words         the words of a task's prompt (a reply may name a non-ASCII word of it in any script: the `mixed_language` filter).
@@ -19,7 +20,9 @@ from .scoring import strict_task
 
 SYSTEM_REASONING = ("You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a question. "
                     "First write a short step-by-step analysis, at most eight short lines: what the code reads, which constants it uses and why they give the answer. "
-                    "Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it.")
+                    "Then write one last line of the form `Answer: <the concrete value or name asked for, in the form the question asks>` and nothing after it. "
+                    "If the question asks for several things, that last line must give every one of them, in the order the question asks for them, separated by commas as the question shows "
+                    "(for `X, and Y` write `<X>, <Y>`); a note about the form of one value (`a plain integer`, `decimal`, `hex`) applies to that value only and never lets you leave another part out.")
 
 
 def user_message(t: dict) -> str:

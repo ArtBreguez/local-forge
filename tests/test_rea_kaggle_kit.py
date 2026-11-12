@@ -165,7 +165,8 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(sorted(line), ["id", "kind", "outs", "prompt_sha"])
             self.assertEqual(line["prompt_sha"], rsn.prompt_sha(rsn.messages(by_id[line["id"]])))
             for i, o in enumerate(line["outs"]):
-                self.assertEqual(sorted(o), ["finish", "prompt_tokens", "secs", "text", "tokens"])
+                self.assertEqual(sorted(o), ["finish", "max_tokens", "prompt_sha", "prompt_tokens", "secs", "text", "tokens"])
+                self.assertEqual((o["prompt_sha"], o["max_tokens"]), (line["prompt_sha"], 4096), "a reply says what it answered and the budget it was asked with")
                 self.assertTrue(o["text"].startswith(f"<think>\nLet me think about {line['id']}, sample {i}."), o["text"])
                 self.assertIn("\n</think>\n\n", o["text"])
                 self.assertTrue(o["text"].endswith(f"Answer: {right(by_id[line['id']])}"))
@@ -184,7 +185,7 @@ class EndToEnd(unittest.TestCase):
             self.assertTrue(r["messages"][-1]["content"].startswith("<think>\nLet me think about"))
         self.assertEqual((stats["reasoning"]["mode"], stats["thinking"], stats["kept_tasks"]), ("thinking", True, 5))
         self.assertEqual(stats["sampling"], {"thinking": True, **rsn.THINKING_SAMPLING, "max_tokens": 4096, "seed_base": 1234, "slot_context": 8192, "parallel": 4})
-        self.assertEqual(stats["prompts"], {"checked": 5, "mismatch": 0, "mismatched_ids": []})
+        self.assertEqual(stats["prompts"], {"lines": 5, "checked": 5, "mismatch": 0, "mismatched_ids": [], "unchecked": 0, "unchecked_replies": 0, "unchecked_ids": [], "kept_unchecked": False})
         self.assertEqual(stats["projected_fit"]["windows"], {"4096": 10, "8192": 10})
         self.assertEqual((stats["projected_fit"]["records"], stats["projected_fit"]["measured"]), (10, 10))
         self.assertEqual(stats["run"]["requests"], 10)
@@ -326,7 +327,10 @@ class Checkpoint(unittest.TestCase):
         return summary, run_teacher.load_previous([ck])
 
     def ok(self, tid, i, text=None):
-        return {"text": text or f"<think>\nearlier {tid} {i}\n</think>\n\nSteps {i}.\nAnswer: 1", "finish": "stop", "tokens": 5, "prompt_tokens": 50, "secs": 1.0}
+        """An earlier reply as the current kernel writes it: with the fingerprint of the task's prompt and the budget it was asked with (`ask_one`)."""
+        job = next(j for j in self.jobs if j["id"] == tid)
+        return {"text": text or f"<think>\nearlier {tid} {i}\n</think>\n\nSteps {i}.\nAnswer: 1", "finish": "stop", "tokens": 5, "prompt_tokens": 50, "secs": 1.0,
+                "prompt_sha": run_teacher.prompt_sha(job["messages"]), "max_tokens": self.cfg["max_tokens"]}
 
     def failed(self):
         return {"text": "[error OSError: connection refused]", "finish": "error", "tokens": 0, "prompt_tokens": 0, "secs": 0.1}
@@ -404,7 +408,7 @@ class Checkpoint(unittest.TestCase):
 
     def test_the_session_counts_what_it_did_for_run_json(self):
         summary, _ = self.session()
-        self.assertEqual(sorted(summary), sorted(["asked", "cut_off", "deadline_hit", "failed", "completion_tokens", "requests", "seconds", "skipped_too_long", "tasks", "tasks_written", "tok_per_s"]))
+        self.assertEqual(sorted(summary), sorted(["asked", "cut_off", "deadline_hit", "failed", "completion_tokens", "requests", "seconds", "skipped_too_long", "stale", "tasks", "tasks_written", "tok_per_s", "unfingerprinted"]))
         self.assertEqual((summary["tasks"], summary["completion_tokens"]), (5, 5 * (40 + 41)))
 
     def test_read_lines_skips_a_line_cut_off_by_a_timeout_and_the_last_line_of_an_id_wins(self):
@@ -625,15 +629,22 @@ class Score(unittest.TestCase):
         with contextlib.redirect_stderr(stderr):
             records, stats = self.score([good, bad])
         self.assertEqual({r["task"] for r in records}, {self.tasks[0]["id"]})
-        self.assertEqual(stats["prompts"], {"checked": 2, "mismatch": 1, "mismatched_ids": [self.tasks[1]["id"]]})
+        self.assertEqual(stats["prompts"], {**{"lines": 2, "checked": 2, "mismatch": 0, "mismatched_ids": [], "unchecked": 0, "unchecked_replies": 0, "unchecked_ids": [], "kept_unchecked": False}, "mismatch": 1, "mismatched_ids": [self.tasks[1]["id"]]})
         self.assertIn("answered a prompt other than", stderr.getvalue())
         self.assertEqual(stats["tasks"], 1)
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaisesRegex(SystemExit, "disagree on reasoning.messages"):
             self.score([bad])
 
-    def test_a_file_from_an_older_notebook_has_no_fingerprint_and_is_taken_as_it_was(self):
-        records, stats = self.score([self.line(t, sha=False) for t in self.tasks])
+    def test_a_file_from_an_older_notebook_has_no_fingerprint_and_is_skipped_unless_it_is_kept_on_purpose(self):
+        """Round 12, M1: nothing shows that its replies answered this prompt. They are counted (`prompts.unchecked`), and skipped like a mismatch; `keep_unchecked` is the owner's word that they did."""
+        lines = [self.line(t, sha=False) for t in self.tasks]
+        stderr = io.StringIO()
+        with contextlib.redirect_stderr(stderr), self.assertRaisesRegex(SystemExit, "3 line.s. have no fingerprint at all.*--keep-unchecked"):
+            self.score(lines)
+        self.assertIn("3 replies line(s) hold 6 repl(ies) with no prompt fingerprint", stderr.getvalue())
+        records, stats = self.score(lines, keep_unchecked=True)
         self.assertEqual((stats["prompts"]["checked"], stats["prompts"]["mismatch"], stats["kept_tasks"]), (0, 0, 3))
+        self.assertEqual((stats["prompts"]["unchecked"], stats["prompts"]["unchecked_replies"], stats["prompts"]["kept_unchecked"]), (3, 6, True), "kept, and still counted")
 
     def test_the_thinking_flag_must_agree_with_the_notebooks_own_record(self):
         lines = [self.line(t) for t in self.tasks]

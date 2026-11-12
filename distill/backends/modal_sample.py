@@ -7,7 +7,8 @@ answer, the truth record. What is here is the same for every subject: the llama-
   sample_answers   the body of the stage. A subject's wrapper registers it with Modal (`@app.function(gpu=..., volumes={"/models": ..., "/data": data_vol})`) and calls it with its domain and the volume.
   project, cost_line, ...   the projected GPU hours and dollars of a run (`thinking_cost_line` for a thinking run, which has no expected figure), from the one measurement there is: REA's phase A on one L40S.
 
-The teacher is open-weight (see `distill/teachers.py`); no output of an OpenAI or Anthropic model enters a dataset.
+The teacher is open-weight (see `distill/teachers.py`). Any open-weight teacher may FILTER in the default mode whatever its origin (its text is not stored); a reasoning or thinking run stores the teacher's reply, so it
+refuses a teacher without `reasoning_ok` (a direct OpenAI or Anthropic model: gpt-oss-*, the GPT-4o distill; a lineage that includes fine-tunes on such data is the owner's call, case by case: distill/teachers.py).
 """
 from __future__ import annotations
 
@@ -19,10 +20,10 @@ import re
 import subprocess
 import time
 
-from .. import config, outputs, records, traces
+from .. import config, outputs, records, teachers, traces
 from ..config import MAX_LEN  # noqa: F401  (the training window: one number for the length rule of the sample stage and of the training run)
 from ..domain import mode_of
-from ..traces import DEFAULT_MAX_TRACES
+from ..traces import DEFAULT_MAX_TRACES, is_error_reply
 
 
 def _server_token_count(text: str) -> int:
@@ -76,11 +77,15 @@ SEED_BASE = 1234            # the seed of sample i is SEED_BASE + i
 
 
 def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None) -> dict:
+                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = DEFAULT_MAX_TRACES, sampling: dict = None, max_tokens_by_family: dict = None,
+                   trust_unfingerprinted: bool = False) -> dict:
     """The sample stage, for any subject: `domain` supplies the tasks (`domain.load_tasks(tasks_source)`: for REA the directory of the volume the decompile stage wrote), the messages, the verdict and the truth; `data_vol` is the Modal
     Volume mounted at /data (`reload` and `commit` are called on it); the model is read from /models. The wrapper of a subject (tools/modal/modal_rea_data.py for REA) registers this function with Modal and gives it its own.
     K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
-    with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those. The SFT
+    with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those; in a reasoning run also the STALE ones: a reply carries
+    the fingerprint of the prompt it answered and the budget it was asked with (`outputs.out_meta`), and one that answered another prompt than the task's now, or was cut off at a smaller budget than
+    the task's now (`max_tokens_by_family` grew) or at a budget it does not say, is asked again; so is a reply of an older checkpoint, which has no fingerprint (the prompt it answered is not known), unless
+    `trust_unfingerprinted` (the run config's, the owner's word that such a checkpoint was asked under this prompt and `max_tokens`: its replies take both and stay). The SFT
     records are built at the end from all replies (`distill.records`: the teacher's answer is a filter, the stored text is rendered from the truth, a
     task that `domain.needs_agreement` needs two right samples); the stats come per family.
     `reasoning` (round 11, `distill.traces`): the teacher is asked for the steps and a last `Answer:` line, `max_tokens` defaults to 768 (300 otherwise), the final answer is the filter and a kept
@@ -88,14 +93,22 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
     output have their own tag (`-reasoning`), the thinking stays off. `thinking` (needs `reasoning`): `enable_thinking: true`, `max_tokens` defaults to 4096, the server's reasoning is kept in
     the reply and in the record as `<think>...</think>` + the visible reply, only the visible text's last `Answer:` line is scored; own tag (`-reasoning-think`). `sampling`: the request's sampling values
     (`config.sampling_for`: `{"temperature": 0.7}` as always, Qwen3's thinking settings with `thinking`); a reasoning run records it, the slot and the prompts that did not fit in its stats. `max_len`: the
-    training window of the length rule (required with `reasoning`, MAX_LEN otherwise). `quota`: `kind=N,...`, at most N tasks of each listed kind and no task of another kind."""
+    training window of the length rule (required with `reasoning`, MAX_LEN otherwise). `quota`: `kind=N,...`, at most N tasks of each listed kind and no task of another kind.
+    `max_tokens_by_family` (a reasoning run): {kind: tokens}, the reply budget of the tasks of that kind instead of `max_tokens` (`config.task_max_tokens`); each request asks its own task's budget, the prompt-fit check uses
+    it, and the server's slot is sized for the longest budget among the tasks that are asked (`config.server_plan`: 4 slots of 8192 tokens, or 2 of 12288 when a task of the run has 8192; the same total context)."""
     from huggingface_hub import hf_hub_download
     import urllib.request
     _check_thinking(reasoning, thinking, max_tokens, max_traces)
+    if trust_unfingerprinted and not reasoning:
+        raise SystemExit("trust_unfingerprinted is for a reasoning or thinking run (a default run's checkpoint carries no fingerprint and needs none)")
+    if reasoning:           # the reply is stored verbatim: a teacher of the catalogue that may only filter is refused here too, whoever called (the wrapper has looked the name up already)
+        teachers.require_reasoning(name, repo, fname, why="--thinking" if thinking else "--reasoning")
     window = _window(reasoning, max_len)
     max_tokens = max_tokens or config.default_max_tokens(reasoning, thinking)
     sampling = config.sampling_for(thinking, **(sampling or {}))                    # validated again where it is used: a thinking run is never greedy, whoever called
-    slot_ctx = config.slot_context(max_tokens) if reasoning else config.SLOT_CONTEXT      # tokens per slot of the server: the prompt and max_tokens fit (a default run: the 8192 it always had)
+    by_family = config.check_family_tokens(max_tokens_by_family or {}, domain.kinds())
+    if by_family and not reasoning:
+        raise SystemExit("max_tokens_by_family is for a reasoning or thinking run")
     mode = mode_of(reasoning, thinking)
     run_tag = outputs.sample_tag(tag, reasoning, thinking)        # the checkpoint and the output of a reasoning run are their own (`-reasoning`, `-reasoning-think`); the decompiled tasks are read by `tag`
     score = (lambda txt, t: traces.score_reasoning(txt, t, domain=domain)) if reasoning else (lambda txt, t: records.plain_ok(txt, t, domain))
@@ -110,19 +123,32 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         print(f"--quota {quota}: {len(tasks)} tasks to sample: " + ", ".join(f"{kind} {have[kind]}/{n}" for kind, n in want.items()))
         if not tasks:
             raise SystemExit(f"--quota {quota} selects no task of {tasks_source}")
+    longest = config.run_max_tokens([t["kind"] for t in tasks], max_tokens, by_family)       # the longest budget of a task that is in this run: what the slot holds
+    slots, slot_ctx = config.server_plan(max_tokens, longest, SAMPLER_SLOTS) if reasoning else (SAMPLER_SLOTS, config.SLOT_CONTEXT)      # requests in flight, tokens per slot: the prompt and the budget fit (a run without a longer family: 4 x the 8192 it always had)
+    budget = lambda t: config.task_max_tokens(t["kind"], max_tokens, by_family)
     for t in tasks:
         domain.check_task(t)    # a task the domain cannot score, or whose truth its own verify rejects, must stop the run before the model download and the server start
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, run_tag)}.partial.jsonl")
     results = outputs.load_partial(partial, resume)
-    todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k)) for t in tasks]
+    # a reasoning run's replies carry the prompt they answered and the budget they were asked with: a resume asks again what is stale (another prompt or none known, or cut off at a smaller budget than the task's
+    # now or an unknown one); a default run's checkpoint keeps its two-element replies (its record is rendered from the truth, the teacher's text is not stored)
+    prompt_of = lambda t: outputs.prompt_sha(domain.messages(t, mode))
+    stale_args = lambda t: (prompt_of(t), budget(t)) if reasoning else ()
+    by_id = {t["id"]: t for t in tasks}
+    if trust_unfingerprinted:       # the owner's word: a reply with no fingerprint was asked under this prompt and `max_tokens`; it takes both (`outputs.assume_meta`)
+        results = {tid: outputs.assume_meta(rec, prompt_of(by_id[tid]), max_tokens) if tid in by_id else rec for tid, rec in results.items()}
+    todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k, *stale_args(t))) for t in tasks]
     todo = [(t, ask) for t, ask in todo if ask]
     if results:
         redo = sum(len(ask) for t, ask in todo if t["id"] in results)
-        print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask ({redo} failed or missing samples of checkpointed tasks)")
+        stale = sum(1 for t, ask in todo if t["id"] in results for i in ask if i < len(results[t["id"]]["outs"]) and not is_error_reply(results[t["id"]]["outs"][i][0]))
+        print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask (" + (f"{redo} failed or missing samples of checkpointed tasks)" if not stale else
+              f"{redo - stale} failed or missing and {stale} stale samples of checkpointed tasks: a stale one answered another prompt than the task's now, carries no fingerprint (an older checkpoint: "
+              f"run config `trust_unfingerprinted` keeps it), or was cut off at a smaller budget than its own or at one it does not say)"))
     path = hf_hub_download(repo, fname, cache_dir="/models")
     server_log = open("/tmp/server.log", "w")
-    srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(SAMPLER_SLOTS * slot_ctx),
-                            "--parallel", str(SAMPLER_SLOTS), "-fa", "off", *(THINKING_SERVER_ARGS if thinking else [])], stdout=subprocess.DEVNULL, stderr=server_log)
+    srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(slots * slot_ctx),
+                            "--parallel", str(slots), "-fa", "off", *(THINKING_SERVER_ARGS if thinking else [])], stdout=subprocess.DEVNULL, stderr=server_log)
     for _ in range(600):
         try:
             if urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=2).status == 200:
@@ -130,16 +156,17 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         except Exception:
             time.sleep(1)
     too_long = collections.Counter()
-    if thinking:            # a prompt that leaves less than max_tokens in its slot gets a reply the server cuts off early: it is not asked, and it is counted (kind -> tasks)
+    if thinking or by_family:            # a prompt that leaves less than its budget in the slot gets a reply the server cuts off early: it is not asked, and it is counted (kind -> tasks)
         fits = []
         for t, ask in todo:
             n = sum(_server_token_count(m["content"]) for m in domain.messages(t, mode)) + records.LENGTH_OVERHEAD
-            if config.prompt_fits(n, max_tokens, slot_ctx):
+            if config.prompt_fits(n, budget(t), slot_ctx):
                 fits.append((t, ask))
             else:
                 too_long[t["kind"]] += 1
         if too_long:
-            print(f"{sum(too_long.values())} task(s) not asked: prompt + max_tokens {max_tokens} do not fit a {slot_ctx}-token slot ({', '.join(f'{k} {c}' for k, c in sorted(too_long.items()))})")
+            own = f" (and each family's own: {config.family_tokens_text(by_family)})" if by_family else ""
+            print(f"{sum(too_long.values())} task(s) not asked: prompt + max_tokens {max_tokens}{own} do not fit a {slot_ctx}-token slot ({', '.join(f'{k} {c}' for k, c in sorted(too_long.items()))})")
         todo = fits
     from concurrent.futures import ThreadPoolExecutor
     import threading
@@ -150,14 +177,15 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         msgs = domain.messages(t, mode)
         outs = [tuple(o) for o in results[t["id"]]["outs"]] if t["id"] in results else []
         outs += [("", False)] * (k - len(outs))                    # a checkpointed task keeps its answers; only the samples in `ask` are asked
+        meta = {"prompt_sha": outputs.prompt_sha(msgs), "max_tokens": budget(t)}       # what a reasoning run's reply answers and was asked with (`outputs.out_meta`)
         for i in ask:
             try:
                 body_seed = SEED_BASE + i
                 import urllib.request as ur
-                body = {"model": "local", "messages": msgs, **sampling, "seed": body_seed, "max_tokens": max_tokens,
+                body = {"model": "local", "messages": msgs, **sampling, "seed": body_seed, "max_tokens": budget(t),
                         "chat_template_kwargs": {"enable_thinking": thinking}, "cache_prompt": False}
                 req = ur.Request("http://127.0.0.1:8080/v1/chat/completions", data=json.dumps(body).encode(), headers={"Content-Type": "application/json"})
-                with ur.urlopen(req, timeout=600) as r:
+                with ur.urlopen(req, timeout=max(600, budget(t) * 600 // config.DEFAULT_THINKING_MAX_TOKENS)) as r:       # 600 s up to 4096 tokens, longer for a longer budget
                     reply = json.load(r)
                 msg = reply["choices"][0]["message"]
                 if reasoning:       # the reply as the checkpoint stores it (`traces.reply_text`: think blocks stripped, or kept as the trace in a thinking run; a cut-off reply ends in the TRUNCATED marker)
@@ -171,12 +199,12 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
                 ok = score(txt, t)
             except Exception as e:
                 txt, ok = f"[error {e!r}]", False       # the text of a failed request is never scored (B1) and never stored; stats count it; --resume asks it again
-            outs[i] = (txt, ok)
+            outs[i] = (txt, ok, meta) if reasoning else (txt, ok)
         return t, outs
 
     t_start = time.time()
     try:
-        with ThreadPoolExecutor(SAMPLER_SLOTS) as ex, open(partial, "a") as ck:
+        with ThreadPoolExecutor(slots) as ex, open(partial, "a") as ck:
             for i, (t, outs) in enumerate(ex.map(work, todo), 1):
                 rec = {"id": t["id"], "kind": t["kind"], "outs": outs}
                 results[t["id"]] = rec
@@ -185,12 +213,16 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
                 if i % 20 == 0:
                     data_vol.commit()
         wall = max(time.time() - t_start, 1e-9)
+        if reasoning:           # a reply to another prompt, or with no fingerprint, that could not be asked again (its task does not fit the slot now) is not stored under the task's prompt
+            results = {tid: {**rec, "outs": outputs.current_outs(rec["outs"], prompt_of(by_id[tid]))} if tid in by_id else rec for tid, rec in results.items()}
         kept, stats = records.assemble(tasks, results, name, lambda t: domain.messages(t, mode), reasoning, thinking, max_traces, domain=domain)
         if reasoning:           # this call's own throughput, next to the cost line's assumption (a resumed run reports only the replies it asked)
             stats["perf"] = {**perf, "wall_s": round(wall), "tok_per_s": round(perf["completion_tokens"] / wall, 1), "s_per_request": round(wall / max(perf["requests"], 1), 2)}
-            stats["sampling"] = config.sampling_record(thinking, sampling, max_tokens, seed_base=SEED_BASE, slot_context=slot_ctx, parallel=SAMPLER_SLOTS)
+            stats["sampling"] = config.sampling_record(thinking, sampling, max_tokens, seed_base=SEED_BASE, slot_context=slot_ctx, parallel=slots,
+                                                       **({"max_tokens_by_family": by_family} if by_family else {}))
             if thinking:
-                stats["slot"] = {"slot_context": slot_ctx, "max_prompt_tokens": slot_ctx - max_tokens, "prompt_too_long": sum(too_long.values()), "by_kind": dict(sorted(too_long.items()))}
+                stats["slot"] = {"slot_context": slot_ctx, "max_prompt_tokens": slot_ctx - max_tokens, "prompt_too_long": sum(too_long.values()), "by_kind": dict(sorted(too_long.items())),
+                                 **({"max_prompt_tokens_by_kind": {k: slot_ctx - n for k, n in sorted(by_family.items())}} if by_family else {})}
         windows = (config.THINKING_REPORT_WINDOWS if thinking else config.REPORT_WINDOWS) if reasoning else ()
         kept, stats = _apply_length_rule(kept, stats, window, windows)       # round 9, m2: what the training run would drop is dropped (and counted) here, while the server is still up
     finally:
@@ -267,15 +299,22 @@ def budget_warning(p: dict, budget_usd: float):
     return None
 
 
-def thinking_cost_line(p: dict, source: str = "") -> str:
+def thinking_cost_line(p: dict, source: str = "", by_family: dict = None, tokens: int = 0, slots: int = 0) -> str:
     """The line of a THINKING run (printed before the GPU is rented). There is no expected cost: the 5x-8x length of the visible-reasoning mode does not hold when the model reasons first and the
-    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`. The slot of the server holds the prompt and that many tokens (`slot_context`)."""
+    length of its reasoning is not measured. What is known is the worst case, every reply running to `--max-tokens`. The slot of the server holds the prompt and that many tokens (`slot_context`).
+    A run with a budget per family (`by_family`, `tokens` = `--max-tokens`, `slots` = the requests in flight of `config.server_plan`) has `p["max_tokens"]` = the longest budget: the room for a prompt is
+    that budget's for the families that have it and the base budget's for the others, and the line says that the run has fewer requests in flight than the 4 the phase-A time was measured at."""
     w = p["worst"]
     slot = config.slot_context(p["max_tokens"])
+    if by_family and p["max_tokens"] > tokens:
+        room = (f"The prompt and the reply share one {slot:,}-token slot of the server, {slots} requests in flight (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted for a family with a budget of "
+                f"{p['max_tokens']:,}, over {slot - tokens:,} for the others; the worst case above assumes the longest budget for every reply, and phase A's four requests in flight, not {slots}: what that does to the speed is not measured).")
+    else:
+        room = f"The prompt and the reply share one {slot:,}-token slot of the server (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted)."
     return (f"projected cost (thinking pilot): {p['tasks']:,} tasks x k={p['k']} = {p['replies']:,} replies. No estimate: the 5x-8x length assumption is for visible reasoning, and how long this model "
             f"reasons is not measured. Worst case, every reply runs to max_tokens={p['max_tokens']}: {w['gpu_hours']} GPU-h on one L40S = about US${w['usd']:.2f} at US${p['usd_per_h']:.2f}/h "
-            f"(an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. The prompt and the reply share "
-            f"one {slot:,}-token slot of the server (a prompt over {slot - p['max_tokens']:,} tokens is not asked and is counted). A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
+            f"(an overestimate: it scales the phase-A time per reply by length). Keep --quota small, then read `perf` and the share of replies cut off at max_tokens. {room} "
+            f"A sampler call times out after {p['call_hours']:g} h: the worst case takes ~{max(1, math.ceil(w['gpu_hours'] / p['call_hours']))} call(s), each after the first with "
             f"--resume." + (f" Tasks: {source}." if source else ""))
 
 

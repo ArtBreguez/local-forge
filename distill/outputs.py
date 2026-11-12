@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 
-from .traces import is_error_reply
+from .traces import is_error_reply, is_truncated
 
 
 REASONING_SUFFIX = "-reasoning"
@@ -84,14 +84,54 @@ def load_partial(path: pathlib.Path, resume: bool) -> dict:
     return out
 
 
-def samples_to_ask(rec, k: int) -> list:
+def out_meta(out) -> dict:
+    """What a reasoning run's checkpoint says about one reply beyond its text and flag: the third element of an out, `{"prompt_sha", "max_tokens"}` (the fingerprint of the messages it answered and the budget it
+    was asked with); {} for the two-element outs of a default run and of an older checkpoint."""
+    return out[2] if len(out) > 2 and isinstance(out[2], dict) else {}
+
+
+def valid_budget(n) -> bool:
+    """A token budget: an integer of at least 1 that is not a bool (anything else in a checkpoint is a hand edit: the budget is not known)."""
+    return isinstance(n, int) and not isinstance(n, bool) and n >= 1
+
+
+def assume_meta(rec: dict, prompt: str, budget: int) -> dict:
+    """`rec` with the fingerprint and the budget that a reply of an older checkpoint lacks filled in: the owner's word (`trust_unfingerprinted`) that its replies were asked under `prompt` and `budget`. A reply
+    that has its own keeps them; the others are written with the two fields from then on. Nothing is assumed unless the run was told to: without it such a reply is stale (`is_stale`)."""
+    outs = []
+    for o in rec["outs"]:
+        meta = out_meta(o)
+        meta = {"prompt_sha": meta.get("prompt_sha") or prompt, "max_tokens": meta["max_tokens"] if valid_budget(meta.get("max_tokens")) else budget}
+        outs.append([o[0], o[1], meta, *o[3:]])
+    return {**rec, "outs": outs}
+
+
+def is_stale(out, prompt: str = None, budget: int = None) -> bool:
+    """True when an answered reply no longer stands for its task. With `prompt` (the task's prompt now): it answered another prompt, or it has NO fingerprint (what it answered is not known: the two-element out
+    of an older checkpoint). With `budget` (the task's now): it was cut off at `max_tokens` (it ends in the TRUNCATED marker) at a smaller budget, or at one it does not say. Without `prompt` and `budget`
+    nothing is stale."""
+    meta = out_meta(out)
+    if prompt and meta.get("prompt_sha") != prompt:
+        return True
+    asked = meta.get("max_tokens")
+    return bool(budget and is_truncated(out[0]) and (not valid_budget(asked) or asked < budget))
+
+
+def current_outs(outs: list, prompt: str) -> list:
+    """The replies of a checkpointed task that answered the task's prompt `prompt`: a reply to another prompt, or one that does not say which (an older checkpoint), is left out, so that it is never stored under
+    this one."""
+    return [o for o in outs if out_meta(o).get("prompt_sha") == prompt]
+
+
+def samples_to_ask(rec, k: int, prompt: str = None, budget: int = None) -> list:
     """The sample indexes (0..k-1) of one task that a resumed sample stage must ask: all of them for a task that is not in the checkpoint (`rec` is None),
-    otherwise the samples that failed (`[error ...]`, a dead server or a timeout) or are missing. A failed request is checkpointed like an answer so that the
+    otherwise the samples that failed (`[error ...]`, a dead server or a timeout), are missing, or are STALE (`is_stale`: a reply to another prompt than `prompt` or with none known, or one cut off at a smaller
+    budget than the task's `budget` now or at an unknown one: a longer budget gives a different reply, not the same cut). A failed request is checkpointed like an answer so that the
     run can finish and count it, but it is not an answer: `--resume` is the remedy the failure warning prints, so it must ask again (round 4, M3)."""
     if rec is None:
         return list(range(k))
     outs = rec["outs"]
-    return [i for i in range(k) if i >= len(outs) or is_error_reply(outs[i][0])]
+    return [i for i in range(k) if i >= len(outs) or is_error_reply(outs[i][0]) or is_stale(outs[i], prompt, budget)]
 
 
 def prompt_sha(messages: list) -> str:

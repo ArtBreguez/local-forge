@@ -91,10 +91,12 @@ def run_tag(smoke: bool = False, config: str = DEFAULT_CONFIG, tag: str = "", mi
 
 
 def batch_plan(max_len: int) -> tuple:
-    """(per-device batch size, gradient accumulation steps) for a training window. 4 x 4 at the default 2048 tokens, as before; a longer window keeps the tokens per micro-batch
-    at 4 x 2048 (the memory of the A100-40GB run that is known to fit) and the batch of 16 examples per optimizer step: 2 x 8 at 3072 and 4096, 1 x 16 at 8192 (the window recommended for thinking
-    records: one sequence of 8192 tokens per micro-batch, the same 8192 tokens as 4 x 2048, so the token-proportional memory (logits, activations with gradient checkpointing) is the same by construction;
-    the attention part is not, and the first run is a `--smoke --max-len 8192`). NOT measured on a GPU for a window above 2048."""
+    """(per-device batch size, gradient accumulation steps) for a training window. 4 x 4 at the default 2048 tokens, as before; a longer window up to 8192 keeps the tokens per micro-batch
+    at 4 x 2048 (the memory of the A100-40GB run that is known to fit) and the batch of 16 examples per optimizer step: 2 x 8 at 3072 and 4096, 1 x 16 at 8192 (one sequence of 8192 tokens per micro-batch,
+    the same 8192 tokens as 4 x 2048, so the token-proportional memory (logits, activations with gradient checkpointing) is the same by construction; the attention part is not, and the first run is a
+    `--smoke --max-len 8192`). ABOVE 8192 that no longer holds: a micro-batch cannot be smaller than one sequence, so the plan stays 1 x 16 and the tokens per micro-batch GROW with the window: at 12288, the
+    window of the shipped thinking config, one micro-batch is 12288 tokens, 1.5 times the 4 x 2048 that is known to fit, so even the token-proportional memory is not the same, and nothing says it fits
+    (tools/modal/README.md says so; start with `--smoke`, and `--max-len 8192` is the fallback). NOT measured on a GPU for a window above 2048."""
     per_device = min(4, max(1, 4 * 2048 // max_len))
     return per_device, max(1, 16 // per_device)
 

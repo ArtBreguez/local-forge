@@ -67,7 +67,7 @@ if (ROOT / "distill").is_dir() and str(ROOT) not in sys.path:      # the pipelin
     sys.path.insert(0, str(ROOT))
 from modal_qbench import MODELS, models_vol  # noqa: E402
 from modal_rea import image, chat, SYSTEM_RECIPE  # noqa: E402  (same REA/Ghidra image)
-from distill import config, records  # noqa: E402  (stdlib-only)
+from distill import config, records, teachers  # noqa: E402  (stdlib-only)
 from distill.backends import modal_sample  # noqa: E402  (the sample stage: no Modal import in it)
 from distill.backends.modal_sample import MAX_LEN, SAMPLER_SLOTS, SAMPLER_TIMEOUT_H, SEED_BASE, THINKING_SERVER_ARGS, _apply_length_rule, _check_thinking, _window  # noqa: E402,F401  (the stage's names, as they were here)
 from distill.domains.rea import AGREE_CHANCE, DOMAIN  # noqa: E402  (REA as a subject: the adapter of rea_bench)
@@ -188,10 +188,12 @@ def _tasks_dir(tag: str) -> pathlib.Path:
 
 @app.function(gpu=["L40S", "A100-40GB"], volumes={"/models": models_vol, "/data": data_vol}, timeout=SAMPLER_TIMEOUT_H * 3600)
 def sample_answers(name: str, repo: str, fname: str, k: int, tag: str = "seed7-legacy", resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
-                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = config.DEFAULT_MAX_TRACES, sampling: dict = None) -> dict:
+                   max_len: int = 0, quota: str = "", thinking: bool = False, max_traces: int = config.DEFAULT_MAX_TRACES, sampling: dict = None, max_tokens_by_family: dict = None,
+                   trust_unfingerprinted: bool = False) -> dict:
     """The sample stage (`distill/backends/modal_sample.py`, which has the documentation of every argument) for the REA domain, on this app's GPU function."""
     data_vol.reload()
-    return modal_sample.sample_answers(DOMAIN, data_vol, _tasks_dir(tag), name, repo, fname, k, tag, resume, reasoning, max_tokens, max_len, quota, thinking, max_traces, sampling)
+    return modal_sample.sample_answers(DOMAIN, data_vol, _tasks_dir(tag), name, repo, fname, k, tag, resume, reasoning, max_tokens, max_len, quota, thinking, max_traces, sampling, max_tokens_by_family,
+                                       trust_unfingerprinted)
 
 
 def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
@@ -241,7 +243,8 @@ def _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag):
 def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "", k: int = 6, family: str = "legacy", cc: str = "mix",
          exclude_seed: int = -1, force: bool = False, local_gate: bool = True, resume: bool = False, reasoning: bool = False, max_tokens: int = 0,
          max_len: int = 0, quota: str = "", budget_usd: float = 30.0, gpu_usd_per_h: float = modal_sample.L40S_USD_PER_H, thinking: bool = False,
-         max_traces: int = config.DEFAULT_MAX_TRACES, temperature: float = -1.0, top_p: float = -1.0, top_k: int = -1, min_p: float = -1.0, run_config: str = ""):
+         max_traces: int = config.DEFAULT_MAX_TRACES, temperature: float = -1.0, top_p: float = -1.0, top_k: int = -1, min_p: float = -1.0, run_config: str = "", max_tokens_by_family: str = "",
+         trust_unfingerprinted: bool = False):
     """exclude_seed: tasks of that seed never enter this run (-1: the held-out seed 1001 for any other seed, 0: none).
     local_gate: draw tasks again when the asked constant is not in the code compiled HERE (needs gcc, objdump and, for clang tasks,
     clang on PATH; without them the draws it cannot check are counted and warned about, and only the Modal-side re-check applies).
@@ -254,7 +257,10 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
     --thinking; a thinking run refuses greedy decoding).
     max_len: the training window in tokens the length rule drops against (0: 2048; required with --reasoning; the report says how many teacher records fit 2048, 3072 and 4096).
     quota: `kind=N,...`, sample at most N tasks of each listed kind and none of another (sizing a run). budget_usd, gpu_usd_per_h: the cost line printed before a reasoning run.
-    run_config: a JSON file of `distill.config.RunConfig` (`distill/configs/rea-*.json`) that sets model, k, mode, max_tokens, max_len, quota, max_traces and sampling instead of their flags (--stage sample).
+    max_tokens_by_family (--reasoning): `kind=N,...`, the reply budget of the tasks of those families instead of --max-tokens (the thinking pilot cut every cipher reply off at 4096: `cipher=8192`); the server's slot is
+    sized for the longest budget of a task in the run (4 slots of 8192 tokens, or 2 of 12288 when a task needs 8192).
+    trust_unfingerprinted (--resume --reasoning): keep the replies of an older checkpoint that carry no fingerprint (they are asked again otherwise): the owner's word that they were asked under this prompt and --max-tokens.
+    run_config: a JSON file of `distill.config.RunConfig` (`distill/configs/rea-*.json`) that sets model, k, mode, max_tokens, max_tokens_by_family, max_len, quota, max_traces and sampling instead of their flags (--stage sample).
     Outputs are keyed by seed and family (rea_bench.outputs); an existing output is never overwritten without --force."""
     if stage not in ("decompile", "sample"):         # `--stage decompil` used to rent a GPU for a sample stage (round 4, m4)
         raise SystemExit(f"unknown stage {stage!r}; known: decompile, sample")
@@ -262,9 +268,11 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         if stage != "sample":
             raise SystemExit("--run-config is for --stage sample")
         f = config.merge_flags(run_config, dict(model=model, k=k, reasoning=reasoning, thinking=thinking, max_tokens=max_tokens, max_len=max_len, quota=quota, max_traces=max_traces,
-                                                temperature=temperature, top_p=top_p, top_k=top_k, min_p=min_p), DOMAIN.name)
+                                                temperature=temperature, top_p=top_p, top_k=top_k, min_p=min_p, max_tokens_by_family=max_tokens_by_family,
+                                                trust_unfingerprinted=trust_unfingerprinted), DOMAIN.name)
         model, k, reasoning, thinking, max_tokens, max_len, quota, max_traces = f["model"], f["k"], f["reasoning"], f["thinking"], f["max_tokens"], f["max_len"], f["quota"], f["max_traces"]
         temperature, top_p, top_k, min_p = f["temperature"], f["top_p"], f["top_k"], f["min_p"]
+        max_tokens_by_family, trust_unfingerprinted = f["max_tokens_by_family"], f["trust_unfingerprinted"]
     dest = ROOT / "results" / "phase6" / "rea-data"
     dest.mkdir(parents=True, exist_ok=True)
     tag = outputs.run_tag(seed, family)
@@ -276,8 +284,8 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         print("note: the legacy family keeps its frozen whole-reply substring scoring in modal_rea.py's evaluation (comparable with 34/60 -> "
               "50/60); this script's sample stage scores it with the strict headline grammar like every other family (scoring.score_strict).")
     if stage == "decompile":
-        if reasoning or quota or max_tokens or max_len or thinking or max_traces != config.DEFAULT_MAX_TRACES:
-            print("note: --reasoning, --thinking, --max-traces, --max-tokens, --max-len and --quota belong to --stage sample; the decompile stage ignores them (--family and --n are what limit it)")
+        if reasoning or quota or max_tokens or max_len or thinking or max_traces != config.DEFAULT_MAX_TRACES or max_tokens_by_family:
+            print("note: --reasoning, --thinking, --max-traces, --max-tokens, --max-tokens-by-family, --max-len and --quota belong to --stage sample; the decompile stage ignores them (--family and --n are what limit it)")
         dedupe.check_heldout_range(names, n, seed)          # the pinned held-out list covers 120 tasks per family
         _decompile_stage(names, n, seed, cc, exclude_seed, force, local_gate, tag)
     else:
@@ -288,30 +296,40 @@ def main(stage: str = "decompile", n: int = 300, seed: int = 7, model: str = "",
         if k < records.AGREE_MIN:
             print(f"warning: k={k}: no task with a chance level of {AGREE_CHANCE} or more (CRC init/xorout, pktsum, fsm, TEA/XTEA, ...) can have "
                   f"{records.AGREE_MIN} right samples, so none of them is kept")
-        name, repo, fname, _ = m[0]
+        name, repo, fname = m[0][:3]
         _check_thinking(reasoning, thinking, max_tokens, max_traces)      # --thinking without --reasoning stops here, before anything is rented
+        if reasoning:
+            teachers.require_reasoning(name, repo, fname, why="--thinking" if thinking else "--reasoning")      # a teacher that may only filter (OpenAI/Anthropic origin) stops here, before anything is rented
         window = _window(reasoning, max_len)                 # a reasoning run without --max-len stops here, before anything else is checked or rented
         given = lambda v: None if v < 0 else v               # a negative value is "not given": the default of the mode
         sampling = config.sampling_for(thinking, temperature=given(temperature), top_p=given(top_p), top_k=given(top_k), min_p=given(min_p))      # a thinking run that is greedy stops here too
         want = config.parse_quota(quota, DOMAIN.kinds()) if quota else {}
+        by_family = config.parse_family_tokens(max_tokens_by_family, DOMAIN.kinds())      # a typo'd family stops the run here, before anything is rented
+        if by_family and not reasoning:
+            raise SystemExit("--max-tokens-by-family is for --reasoning or --thinking")
+        if trust_unfingerprinted and not reasoning:
+            raise SystemExit("--trust-unfingerprinted is for --reasoning or --thinking (a default run's checkpoint carries no fingerprint and needs none)")
         rtag = outputs.sample_tag(tag, reasoning, thinking)  # a reasoning run's checkpoint and output are its own: `-reasoning` (`-reasoning-think` with --thinking) in the tag
         out, stats = (dest / f"{outputs.sft_stem(name, rtag)}.{ext}" for ext in ("jsonl", "stats.json"))
         outputs.refuse_overwrite([out, stats], force)       # before a GPU is rented
         if reasoning:
             tokens = max_tokens or config.default_max_tokens(reasoning, thinking)
             count, source = modal_sample.local_task_count(dest / f"{outputs.decompiled_stem(tag)}.jsonl", want, n)
-            plan = modal_sample.project(count, k, tokens, gpu_usd_per_h, SAMPLER_TIMEOUT_H)
-            print(modal_sample.thinking_cost_line(plan, source) if thinking else modal_sample.cost_line(plan, source))
+            longest = config.run_max_tokens(list(want), tokens, by_family) if want else max([tokens, *by_family.values()])      # the longest budget of a family in the run (without a quota: of every family)
+            plan = modal_sample.project(count, k, longest, gpu_usd_per_h, SAMPLER_TIMEOUT_H)      # an overestimate when only some families have it: the line is a budget guard
+            slots, slot_tokens = config.server_plan(tokens, longest, modal_sample.SAMPLER_SLOTS)
+            print(modal_sample.thinking_cost_line(plan, source, by_family, tokens, slots) if thinking else modal_sample.cost_line(plan, source))
             warning = modal_sample.thinking_budget_warning(plan, budget_usd) if thinking else modal_sample.budget_warning(plan, budget_usd)
             if warning:
                 print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
             print(f"window of the length rule: --max-len {window}; max_tokens {tokens}; up to {max_traces} traces per kept task; checkpoint and output tag {rtag}")
-            print(f"sampling: {sampling}; server slot {config.slot_context(tokens):,} tokens (prompt + max_tokens)")
+            print(f"sampling: {sampling}; server slot {slot_tokens:,} tokens (prompt + max_tokens)"
+                  + (f", {slots} slots; max_tokens per family {config.family_tokens_text(by_family)} (the cost line above assumes the longest, {longest}, for every reply)" if by_family else ""))
             if thinking and window < config.THINKING_WINDOW:
                 print(f"note: --max-len {window} is below the recommended {config.THINKING_WINDOW} for thinking records: a record longer than it is dropped (the length report counts what fits "
                       f"{' and '.join(map(str, config.THINKING_REPORT_WINDOWS))}); modal_lora.py needs the same --max-len")
         res = sample_answers.remote(name, repo, fname, k, tag, resume=resume, reasoning=reasoning, max_tokens=max_tokens, max_len=max_len, quota=quota,
-                                    thinking=thinking, max_traces=max_traces, sampling=sampling)
+                                    thinking=thinking, max_traces=max_traces, sampling=sampling, max_tokens_by_family=by_family or None, trust_unfingerprinted=trust_unfingerprinted)
         outputs.write_atomic(out, (json.dumps(r) for r in res["sft"]))
         stats.write_text(json.dumps(res["stats"], indent=1))
         s = res["stats"]

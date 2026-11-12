@@ -14,6 +14,8 @@ from __future__ import annotations
 import collections
 import re
 
+from .domain import mode_of
+
 TARGET_SOURCE = "teacher-reasoning"
 TRUNCATED = "[truncated at max_tokens]"  # appended by the sampler to a reply the server cut off (finish_reason "length"); it is not an `Answer:` line, so the reply is rejected
 ERROR_PREFIX = "[error"       # what the sample stage writes for a failed request (`[error <exception repr>]`)
@@ -49,12 +51,17 @@ def final_answer(reply: str):
     return _ANSWER_LINE.match(lines[-1]).group("rest").strip() or None
 
 
+def is_truncated(reply: str) -> bool:
+    """True for a reply the server cut off at max_tokens: the text ends in `TRUNCATED` (`reply_text` appends it for finish "length")."""
+    return clean_reply(reply).endswith(TRUNCATED)
+
+
 def verdict(reply: str, t: dict, *, domain) -> str:
     """Why a reply is or is not an answer: "error" (the text of a failed request), "truncated", "no_answer_line" (no final `Answer:` line, text after it, or an empty
     one), "wrong" (the line is there and `domain.verify` rejects its text) or "accepted"."""
     if is_error_reply(reply):
         return "error"
-    if clean_reply(reply).endswith(TRUNCATED):
+    if is_truncated(reply):
         return "truncated"
     answer = final_answer(reply)
     if answer is None:
@@ -132,6 +139,7 @@ LINE_REPEAT_MAX = 3               # the same line (12+ characters, not a row of 
 LINE_MIN_CHARS = 12
 NGRAM = 8                         # words in a window...
 NGRAM_REPEAT_MAX = 3              # ...the same window more often than this: a loop
+PROMPT_REPEAT_MAX = 12            # ...but a line or a window that is in the task's own prompt (the model re-reads its question) more often than THIS: 12, not 8 (4 of the 12 pilot replies that only quote the question do so 9-11 times)
 QUALITY_DROPS = ("no_think", "mixed_language", "repetition", "unreadable", "contradiction")      # in the order they are tried; a reply is counted under the first that drops it
 TRACE_DROPS = QUALITY_DROPS + ("duplicate", "over_cap")      # what can happen to an accepted reply of a kept task besides being stored
 
@@ -167,21 +175,50 @@ def mixed_language(text: str, t: dict = None, *, domain=None) -> bool:
 _HEXLIKE = re.compile(r"0x[0-9a-f]+|[0-9]+|[0-9a-f]{2}")      # a word of a row of numbers or a hex dump: such a window repeats legitimately (a table of zeros)
 
 
-def repetition(text: str) -> bool:
+def _line_form(line: str) -> str:
+    """A line in the form the repetition counts compare it in: lower case, bullet or list number removed, spacing collapsed."""
+    return " ".join(re.sub(r"^\s*(?:[-*\u2022>]+|\d+[.)])\s*", "", line.lower()).split())
+
+
+def _gram_words(text: str) -> list:
+    return re.findall(r"[a-z0-9_]+", _THINK_TAG.sub(" ", text.lower()))
+
+
+def repetition(text: str, prompt: str = "") -> bool:
     """True when the same line (lower case, bullet and spacing ignored, at least LINE_MIN_CHARS characters, not a row of numbers) occurs more than LINE_REPEAT_MAX times, or the same
     window of NGRAM words (not a window of numbers only) occurs more than NGRAM_REPEAT_MAX times: a loop (`Wait, let me recheck.` over and over). A self-correction that says new things
-    is not a loop."""
-    lines = collections.Counter()
+    is not a loop. `prompt`: the task's own prompt (the system and the user message the model was asked): a model that reasons re-reads its question and quotes it (the thinking pilot: 12 of 13
+    replies dropped as loops only quoted the question, 4 to 12 times), and quoting the question is not looping, so a line or a window that is in the prompt is counted against its own, higher limit,
+    PROMPT_REPEAT_MAX, instead of the 3. What the model says about it, and every window that only partly overlaps the prompt, still counts with the strict one.
+
+    THE HOLE, stated: what the prompt contains is not held to the strict limit, so a reply may re-read it more than three times and pass: up to PROMPT_REPEAT_MAX (12) times in any form (the pilot
+    has three accepted replies that re-read the same instruction 10 or 11 times; they are kept, and whether such a trace belongs in the data is a length rule, not this filter; a limit of 8 would have
+    dropped 4 of the 12 pilot replies that only quote the question). Beyond 12 a prompt line or window is a loop. One way of restating the prompt passes whatever the count: a SHORT line restated with a
+    label that changes each round, in a number or in a word. With a constant label word and a number that changes (`check 3: <a line of the code>`) it is a line of up to NGRAM - 2 = 6 words: every
+    8-word window of such a reply holds the number, which is different in each round, so no window repeats, and the line itself is never repeated as written. With a different label WORD each round
+    (`alpha: <a line of the code>`, `bravo: <a line of the code>`, ...: a model does not write ordinals, but it can number its rounds with words) it is a line of up to NGRAM - 1 = 7 words, because no
+    8-word window is free of a label word; it passes for as many rounds as the model has different label words. A line of 7 words behind the constant label word has a window (its words and the label's word)
+    that repeats, a line of 8 words or more has windows of its own with no label in them, and a long one has windows inside it that are the prompt's: those are counted. A reply that restates short lines this
+    way ends: it is a long restating, kept like the others, not a loop that is cut off.
+    Not a hole: a loop in the model's own words, and a block of the question copied over and over (the windows across the copies are not in the prompt)."""
+    in_prompt = {_line_form(line) for line in prompt.splitlines()}
+    lines, quoted_lines = collections.Counter(), collections.Counter()
     for line in text.splitlines():
-        s = " ".join(re.sub(r"^\s*(?:[-*•>]+|\d+[.)])\s*", "", line.lower()).split())
+        s = _line_form(line)
         if len(s) >= LINE_MIN_CHARS and not all(_HEXLIKE.fullmatch(w) for w in s.split()):
-            lines[s] += 1
-    if lines and max(lines.values()) > LINE_REPEAT_MAX:
+            (quoted_lines if s in in_prompt else lines)[s] += 1
+    if lines and max(lines.values()) > LINE_REPEAT_MAX or quoted_lines and max(quoted_lines.values()) > PROMPT_REPEAT_MAX:
         return True
-    words = re.findall(r"[a-z0-9_]+", _THINK_TAG.sub(" ", text.lower()))
+    quoted_words = _gram_words(prompt)
+    quoted = {tuple(quoted_words[i:i + NGRAM]) for i in range(len(quoted_words) - NGRAM + 1)}
+    words = _gram_words(text)
     num = [bool(_HEXLIKE.fullmatch(w)) for w in words]
-    grams = collections.Counter(tuple(words[i:i + NGRAM]) for i in range(len(words) - NGRAM + 1) if not all(num[i:i + NGRAM]))
-    return bool(grams) and max(grams.values()) > NGRAM_REPEAT_MAX
+    grams, quoted_grams = collections.Counter(), collections.Counter()
+    for i in range(len(words) - NGRAM + 1):
+        if not all(num[i:i + NGRAM]):
+            g = tuple(words[i:i + NGRAM])
+            (quoted_grams if g in quoted else grams)[g] += 1
+    return bool(grams) and max(grams.values()) > NGRAM_REPEAT_MAX or bool(quoted_grams) and max(quoted_grams.values()) > PROMPT_REPEAT_MAX
 
 
 _RESTATING = frozenset("the a an is are was be so thus therefore hence then and of to it its this that here answer final result value equals gives "
@@ -199,6 +236,17 @@ def unreadable(analysis: str, answer: str, *, domain=None) -> bool:
     (`the answer is`, `so`, `therefore`, `result`, ...). A reply must have some reasoning before its `Answer:` line."""
     words = _value_words(analysis, domain)
     return not words or all(w in set(_value_words(answer, domain)) | _RESTATING for w in words)
+
+
+def prompt_text(domain, t: dict, thinking: bool = False) -> str:
+    """The task's own prompt as the sample stage asks it (`domain.messages` of the run's mode: the system and the user message), one text: what a reply may quote without looping. "" without a task, and
+    for a record that lacks the fields its prompt is made of (the filters also run on a bare task: `domain.task_words` has the same case): nothing to quote, so the repetition rule is the strict one."""
+    if not t:
+        return ""
+    try:
+        return "\n".join(m["content"] for m in domain.messages(t, mode_of(True, thinking)))
+    except KeyError:
+        return ""
 
 
 def reply_parts(reply: str, thinking: bool = False) -> tuple:
@@ -221,7 +269,7 @@ def quality_drop(reply: str, t: dict, thinking: bool = False, *, domain):
         return "no_think"
     if mixed_language(text, t, domain=domain):
         return "mixed_language"
-    if repetition(text):
+    if repetition(text, prompt_text(domain, t, thinking)):
         return "repetition"
     if unreadable(analysis, answer, domain=domain):
         return "unreadable"

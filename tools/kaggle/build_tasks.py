@@ -2,7 +2,8 @@
 the messages are REA's. Nothing changed in what it writes; the kernel script it copies is `distill/backends/kaggle/run_teacher.py`. See tools/kaggle/README.md.
 
     python3 tools/kaggle/build_tasks.py --tasks results/phase6/rea-data/decompiled-seed9-all.jsonl --owner <kaggle-user> --out ~/work/kaggle-rea \\
-        --quota structs=220,crc=220,antidebug=220,bounds=220,fsm=220,pktsum=80,encoding=80 [--k 4] [--max-tokens 4096] [--no-thinking] [--force]
+        --quota structs=220,crc=220,antidebug=220,bounds=220,fsm=220,pktsum=80,encoding=80 [--k 4] [--max-tokens 4096] [--max-tokens-by-family cipher=8192,magic=8192,password=8192] [--no-thinking] [--trust-unfingerprinted] [--force]
+    python3 tools/kaggle/build_tasks.py --run-config distill/configs/rea-thinking.json --tasks ... --owner <kaggle-user> --out ~/work/kaggle-rea
 """
 from __future__ import annotations
 
@@ -24,13 +25,15 @@ def pick_tasks(files, quota: str = "") -> list:
     return _generic.pick_tasks(files, quota, domain=DOMAIN)
 
 
-def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_tokens, sampling_overrides: dict, deadline_h: float, model_repo, model_file) -> dict:
-    return _generic.make_config(tasks, files, quota, k, thinking, max_tokens, sampling_overrides, deadline_h, model_repo, model_file, domain=DOMAIN)
+def make_config(tasks: list, files, quota: str, k: int, thinking: bool, max_tokens, sampling_overrides: dict, deadline_h: float, model_repo, model_file, max_tokens_by_family: dict = None, trust_unfingerprinted: bool = False) -> dict:
+    return _generic.make_config(tasks, files, quota, k, thinking, max_tokens, sampling_overrides, deadline_h, model_repo, model_file, domain=DOMAIN, max_tokens_by_family=max_tokens_by_family,
+                                trust_unfingerprinted=trust_unfingerprinted)
 
 
 def build(files, out, owner: str, quota: str = "", k: int = 4, thinking: bool = True, max_tokens=None, sampling_overrides=None, deadline_h: float = None,
-          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None) -> dict:
-    return _generic.build(files, out, owner, quota, k, thinking, max_tokens, sampling_overrides, deadline_h, dataset_slug, kernel_slug, resume_from, model_repo, model_file, force, teacher, domain=DOMAIN)
+          dataset_slug: str = None, kernel_slug: str = None, resume_from: str = "", model_repo=None, model_file=None, force: bool = False, teacher: str = None, max_tokens_by_family: dict = None, llama_dataset: str = "", trust_unfingerprinted: bool = False) -> dict:
+    return _generic.build(files, out, owner, quota, k, thinking, max_tokens, sampling_overrides, deadline_h, dataset_slug, kernel_slug, resume_from, model_repo, model_file, force, teacher, max_tokens_by_family,
+                          llama_dataset, trust_unfingerprinted, domain=DOMAIN)
 
 
 def main(argv=None) -> None:

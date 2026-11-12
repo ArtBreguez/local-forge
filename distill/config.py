@@ -34,6 +34,7 @@ THINKING_REPORT_WINDOWS = (4096, 8192)           # the length report of a thinki
 THINKING_WINDOW = 8192                           # the recommended `--max-len` (sample stage and `modal_lora.py`) for thinking records
 SLOT_CONTEXT = 8192                              # tokens of one slot of the sampler's llama-server (`-c` is slots x this); the phase-A and visible-reasoning runs have always used it
 SLOT_PROMPT_ROOM = 4096                          # what the prompt may take next to a reply of `max_tokens`: the slot holds prompt + max_tokens (4096 + 4096 = 8192)
+SLOT_ROUND = 1024                                # a slot's size is a multiple of this
 SAMPLING_KEYS = tuple(THINKING_SAMPLING)
 
 
@@ -43,9 +44,66 @@ def slot_context(max_tokens: int) -> int:
     return max(SLOT_CONTEXT, -(-(max_tokens + SLOT_PROMPT_ROOM) // 1024) * 1024)
 
 
+def server_plan(max_tokens: int, longest: int = 0, slots: int = 4) -> tuple:
+    """(slots, tokens per slot) of the sampler's server. The base is `slots` slots of `slot_context(max_tokens)` tokens (4 x 8192 for every run so far). When a task of the run has a budget `longest`
+    above `max_tokens` (a family of `RunConfig.max_tokens_by_family`), each slot grows by the difference (up to a multiple of 1024: 4096 -> 8192 tokens makes the 8192-token slot a 12288-token one) and the
+    server keeps the SAME total context, so it holds fewer slots (4 x 8192 -> 2 x 12288): a longer reply costs requests in flight, not memory. Without such a task the base is returned unchanged."""
+    ctx = slot_context(max_tokens)
+    if longest > max_tokens:
+        total = slots * ctx
+        ctx = -(-(ctx + longest - max_tokens) // SLOT_ROUND) * SLOT_ROUND
+        slots = max(1, total // ctx)
+    return slots, ctx
+
+
 def prompt_fits(prompt_tokens: int, max_tokens: int, slot_ctx: int) -> bool:
     """True when a prompt of `prompt_tokens` and a reply of up to `max_tokens` fit one slot of `slot_ctx` tokens: otherwise the server cuts the reply off early (or refuses the request)."""
     return prompt_tokens + max_tokens <= slot_ctx
+
+
+def task_max_tokens(kind: str, max_tokens: int, by_family: dict = None) -> int:
+    """The reply budget of a task of family `kind`: its entry of `by_family` (`RunConfig.max_tokens_by_family`), else the run's `max_tokens`."""
+    return (by_family or {}).get(kind, max_tokens)
+
+
+def run_max_tokens(kinds, max_tokens: int, by_family: dict = None) -> int:
+    """The longest reply budget among the tasks of a run (`kinds`: the family of each task): what the server's slot must hold. Families of `by_family` that no task has do not count."""
+    return max([task_max_tokens(k, max_tokens, by_family) for k in kinds] or [max_tokens])
+
+
+def check_family_tokens(by_family, known=None) -> dict:
+    """`by_family` as a clean dict {family: tokens}: every key a family name (one of `known`, when given: a typo must not silently run the default) and every value an integer of at least 1 (a bool is
+    not one). SystemExit otherwise."""
+    if not isinstance(by_family, dict):
+        raise SystemExit(f"max_tokens_by_family {by_family!r}: a map family -> tokens, e.g. {{\"cipher\": 8192}}")
+    for kind, n in by_family.items():
+        if not isinstance(kind, str) or not kind:
+            raise SystemExit(f"max_tokens_by_family: {kind!r} is not a family name")
+        if not isinstance(n, int) or isinstance(n, bool) or n < 1:
+            raise SystemExit(f"max_tokens_by_family {kind}={n!r}: a number of tokens, at least 1")
+        if known is not None and kind not in known:
+            raise SystemExit(f"max_tokens_by_family names {kind!r}, which is no task kind; known: {', '.join(known)}")
+    return dict(by_family)
+
+
+def parse_family_tokens(text: str, known=None) -> dict:
+    """`cipher=8192,magic=8192` -> {"cipher": 8192, "magic": 8192} (the form of `--max-tokens-by-family`; "" is no override). SystemExit on a part that is not kind=N, a repeated kind, and what
+    `check_family_tokens` refuses."""
+    out: dict = {}
+    for part in [p.strip() for p in text.split(",") if p.strip()]:
+        kind, eq, count = part.partition("=")
+        kind = kind.strip()
+        if not eq or not kind or not (count.strip().isascii() and count.strip().isdigit()):        # isdigit() alone takes '²', which int() refuses: a traceback, not this message
+            raise SystemExit(f"bad --max-tokens-by-family entry {part!r}: write kind=N with N a number of tokens, e.g. --max-tokens-by-family cipher=8192,magic=8192")
+        if kind in out:
+            raise SystemExit(f"--max-tokens-by-family names {kind!r} twice")
+        out[kind] = int(count)
+    return check_family_tokens(out, known)
+
+
+def family_tokens_text(by_family: dict) -> str:
+    """The flag form of a map (`parse_family_tokens` is its inverse), "" for none."""
+    return ",".join(f"{k}={n}" for k, n in (by_family or {}).items())
 
 
 def default_max_tokens(reasoning: bool, thinking: bool) -> int:
@@ -80,7 +138,7 @@ def parse_quota(text: str, known=None) -> dict:
     for part in [p.strip() for p in text.split(",") if p.strip()]:
         kind, eq, count = part.partition("=")
         kind = kind.strip()
-        if not eq or not kind or not count.strip().isdigit() or int(count) < 1:
+        if not eq or not kind or not (count.strip().isascii() and count.strip().isdigit()) or int(count) < 1:        # ASCII digits only: isdigit() takes '²', which int() refuses
             raise SystemExit(f"bad --quota entry {part!r}: write kind=N with N a positive integer, e.g. --quota crc=250,structs=100")
         if kind in out:
             raise SystemExit(f"--quota names {kind!r} twice")
@@ -113,7 +171,10 @@ def apply_quota(tasks: list, quota: dict) -> list:
 @dataclasses.dataclass
 class RunConfig:
     """A run. `sampling` / `max_tokens` / `max_len` left out (None / 0) mean the default of the mode (`sampling_for`, `default_max_tokens`, `MAX_LEN`); `max_len` of a reasoning or thinking run has no default
-    (the stage refuses it: a reasoning record is several times longer than a truth record, and what survives depends on the window). `mix` is a training choice: a thinking file's truth-template records are trained too."""
+    (the stage refuses it: a reasoning record is several times longer than a truth record, and what survives depends on the window). `mix` is a training choice: a thinking file's truth-template records are trained too.
+    `max_tokens_by_family`: {family: tokens}, the reply budget of the tasks of a family whose reasoning does not fit `max_tokens` (the thinking pilot cut off every cipher reply at 4096); empty (the default): `max_tokens`
+    for every task. The names are the tasks' `kind`; a family no task of the run has changes nothing. `trust_unfingerprinted`: a resume keeps the earlier replies that carry no fingerprint (a replies file or
+    checkpoint of an older kernel: the thinking pilot's) instead of asking them again; it is the owner's word that they were asked under this prompt and `max_tokens` (a reasoning or thinking run only)."""
     domain: str = "rea"
     teacher: str = DEFAULT_TEACHER
     student: str = DEFAULT_STUDENT
@@ -125,6 +186,8 @@ class RunConfig:
     max_len: int = 0
     mix: bool = False
     quota: str = ""
+    max_tokens_by_family: dict = dataclasses.field(default_factory=dict)
+    trust_unfingerprinted: bool = False
 
     def __post_init__(self):
         if self.mode not in MODES:
@@ -136,6 +199,13 @@ class RunConfig:
         if self.sampling is not None and not set(self.sampling) <= set(SAMPLING_KEYS):
             raise SystemExit(f"run config: sampling holds {sorted(self.sampling)}; only {', '.join(SAMPLING_KEYS)} can be set")
         sampling_for(self.thinking, **(self.sampling or {}))          # out of range, or greedy in a thinking run: refused here, before anything is rented
+        self.max_tokens_by_family = check_family_tokens(self.max_tokens_by_family)
+        if self.max_tokens_by_family and not self.reasoning:
+            raise SystemExit("run config: max_tokens_by_family is for a reasoning or thinking run (a plain run's reply is one short line)")
+        if not isinstance(self.trust_unfingerprinted, bool):
+            raise SystemExit(f"run config: trust_unfingerprinted {self.trust_unfingerprinted!r}: true or false")
+        if self.trust_unfingerprinted and not self.reasoning:
+            raise SystemExit("run config: trust_unfingerprinted is for a reasoning or thinking run (a plain run's checkpoint carries no fingerprint and needs none)")
 
     @property
     def reasoning(self) -> bool:
@@ -162,23 +232,33 @@ class RunConfig:
     def dump(self) -> str:
         return json.dumps(dataclasses.asdict(self), indent=1) + "\n"
 
-    def resolved(self) -> dict:
-        """What the run will use, with the mode's defaults filled in."""
+    def longest_budget(self) -> int:
+        """The longest reply budget of a task of this run: `max_tokens`, or a family's own when the run has a task of that family (the families of the quota; without a quota, every family)."""
         tokens = self.max_tokens or default_max_tokens(self.reasoning, self.thinking)
+        if self.quota:
+            return run_max_tokens(list(parse_quota(self.quota)), tokens, self.max_tokens_by_family)
+        return max([tokens, *self.max_tokens_by_family.values()])
+
+    def resolved(self) -> dict:
+        """What the run will use, with the mode's defaults filled in. `slot_context` and `slots` are for the longest budget of a task of the run (`longest_budget`, `server_plan`)."""
+        tokens = self.max_tokens or default_max_tokens(self.reasoning, self.thinking)
+        longest = self.longest_budget()
         return {"mode": self.mode, "sampling": sampling_for(self.thinking, **(self.sampling or {})), "max_tokens": tokens,
-                "max_len": self.max_len or MAX_LEN, "slot_context": slot_context(tokens) if self.reasoning else SLOT_CONTEXT,
-                "report_windows": (THINKING_REPORT_WINDOWS if self.thinking else REPORT_WINDOWS) if self.reasoning else ()}
+                "max_len": self.max_len or MAX_LEN, "slot_context": server_plan(tokens, longest)[1] if self.reasoning else SLOT_CONTEXT,
+                "report_windows": (THINKING_REPORT_WINDOWS if self.thinking else REPORT_WINDOWS) if self.reasoning else (),
+                **({"max_tokens_by_family": dict(self.max_tokens_by_family), "slots": server_plan(tokens, longest)[0]} if self.max_tokens_by_family else {})}
 
     def sample_kwargs(self) -> dict:
         """The keyword arguments of the sample stage (`modal_sample.sample_answers`) for this run."""
         return {"reasoning": self.reasoning, "thinking": self.thinking, "max_tokens": self.max_tokens, "max_len": self.max_len, "quota": self.quota, "max_traces": self.max_traces,
-                "sampling": self.sampling or None}
+                "sampling": self.sampling or None, **({"max_tokens_by_family": dict(self.max_tokens_by_family)} if self.max_tokens_by_family else {}),
+                **({"trust_unfingerprinted": True} if self.trust_unfingerprinted else {})}
 
 
 # ---- a run config in place of flags -----------------------------------------------------------------------------------------------------------------
 
 FLAG_DEFAULTS = {"model": "", "k": 6, "reasoning": False, "thinking": False, "max_tokens": 0, "max_len": 0, "quota": "", "max_traces": DEFAULT_MAX_TRACES,
-                 "temperature": -1.0, "top_p": -1.0, "top_k": -1, "min_p": -1.0}      # the defaults of the sample stage's flags (a negative sampling value is "not given"); a test pins them to the wrapper's
+                 "temperature": -1.0, "top_p": -1.0, "top_k": -1, "min_p": -1.0, "max_tokens_by_family": "", "trust_unfingerprinted": False}      # the defaults of the sample stage's flags (a negative sampling value is "not given"); a test pins them to the wrapper's
 TRAIN_FLAG_DEFAULTS = {"student": DEFAULT_STUDENT, "max_len": MAX_LEN, "mix": False}      # the same for the training stage
 
 
@@ -193,7 +273,8 @@ def merge_flags(path, flags: dict, domain: str) -> dict:
         raise SystemExit(f"--run-config {path} sets the run: do not also give " + ", ".join("--" + k.replace("_", "-") for k in clash))
     sampling = cfg.sampling or {}
     return {"model": cfg.teacher, "k": cfg.k, "reasoning": cfg.reasoning, "thinking": cfg.thinking, "max_tokens": cfg.max_tokens, "max_len": cfg.max_len, "quota": cfg.quota,
-            "max_traces": cfg.max_traces, **{key: sampling.get(key, FLAG_DEFAULTS[key]) for key in SAMPLING_KEYS}}
+            "max_traces": cfg.max_traces, **{key: sampling.get(key, FLAG_DEFAULTS[key]) for key in SAMPLING_KEYS}, "max_tokens_by_family": family_tokens_text(cfg.max_tokens_by_family),
+            "trust_unfingerprinted": cfg.trust_unfingerprinted}
 
 
 def merge_train_flags(path, flags: dict) -> dict:

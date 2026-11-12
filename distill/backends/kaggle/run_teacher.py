@@ -5,18 +5,28 @@ function of this file, so tests/test_rea_kaggle_kit.py runs it against a stub se
 
 What it does, in order:
   1. reads `tasks.jsonl` ({id, kind, messages}: the exact messages of `domain.messages(task, mode)`) and `config.json` from the attached dataset;
-  2. gets a llama-server with CUDA for the T4 (sm_75): a prebuilt one from an attached dataset (the `llama-bin` folder a previous run saved), else it builds llama.cpp (about 30 minutes;
+  2. gets a llama-server with CUDA for the T4 (sm_75): a prebuilt one from an attached dataset or kernel output (`llama-bin/llama-server` and its libraries: `use_prebuilt`), else it builds llama.cpp (about 30 minutes;
      the libcuda stub fix: Kaggle has the driver library but not where cmake looks, so its path is passed as CUDA_cuda_driver_LIBRARY);
-  3. downloads the GGUF, starts `llama-server --jinja --reasoning-format deepseek` over the two T4 (layer split), `slots` requests in flight, `ctx_per_slot` tokens each;
-  4. asks every task `k` times with the sampling of the config (a thinking run: Qwen3's recommended settings, never greedy), `enable_thinking` as the config says, `max_tokens` per reply;
+  3. downloads the GGUF, starts `llama-server --jinja --reasoning-format deepseek` over the two T4 (layer split), `slots` requests in flight, `ctx_per_slot` tokens each (`server_geometry`: when a family of
+     `max_tokens_by_family` has a longer budget than `max_tokens`, the slot grows by the difference and the slots become fewer, 4 x 8192 -> 2 x 12288, the same total context);
+  4. asks every task `k` times with the sampling of the config (a thinking run: Qwen3's recommended settings, never greedy), `enable_thinking` as the config says, `max_tokens` per reply (the task's family
+     `max_tokens_by_family` entry, when it has one);
   5. appends each finished task to `/kaggle/working/replies.jsonl` at once (a checkpoint) and stops starting requests when the deadline comes (`deadline_h` hours after the start);
-  6. resumes: every `replies.jsonl` found under /kaggle/input (a previous session's output attached to the kernel or uploaded as a dataset) is read first; only the samples that are missing or failed
-     are asked again; a task that is complete is not;
+  6. resumes: every `replies.jsonl` found under /kaggle/input (a previous session's output attached to the kernel or uploaded as a dataset) is read first; only the samples that are missing, failed or
+     STALE are asked again, a task with none of those is not (`samples_to_ask`). A reply is stale when it was asked under another prompt than the task's now (its `prompt_sha`), when it has NO fingerprint
+     (the prompt it answered is not known: the thinking pilot's `out2`, which has none anywhere, is asked again in full), or when it was cut off ("length") at a smaller budget than the task's now (its
+     `max_tokens` below `task_max_tokens`: a longer budget gives a different reply, not the same cut) or at a budget it does not say. `"trust_unfingerprinted": true` in config.json (build_tasks
+     --trust-unfingerprinted) is the owner's word that a file without fingerprints was asked under this very prompt and the config's `max_tokens`: such a reply then takes both, and stays, and is written with both (the line of every task of the run, asked again or not), so `kaggle-score` needs no `--keep-unchecked`. Attaching an
+     earlier output brings its replies with it; to take only its llama-server, attach the `llama-bin` dataset instead (build_tasks --llama-dataset);
   7. writes `run.json` (settings, throughput, llama.cpp commit, what was skipped) next to the replies, which `kaggle-score` reads.
 
-A line of `replies.jsonl`: {"id", "kind", "prompt_sha", "outs": [{"text", "finish", "tokens", "prompt_tokens", "secs"}]}. In a thinking run `text` is `<think>\\nreasoning\\n</think>\\n\\nvisible reply`
+A line of `replies.jsonl`: {"id", "kind", "prompt_sha", "outs": [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha", "max_tokens"}]}. In a thinking run `text` is `<think>\\nreasoning\\n</think>\\n\\nvisible reply`
 (the server's `reasoning_content` and `content`: `stored_text`, the form `kaggle-score --thinking` reads); `finish` is the server's finish_reason ("length" = cut off at max_tokens, which is rejected
-downstream), or "error" with `[error ...]` as the text for a request that failed (never scored). `prompt_sha` fingerprints the messages that were sent; `kaggle-score` refuses a reply to another prompt.
+downstream), or "error" with `[error ...]` as the text for a request that failed (never scored). A reply carries its own `prompt_sha` (the fingerprint of the messages that were sent) and the `max_tokens` it was asked
+with, because a line can hold replies of several sessions; the line's `prompt_sha` is the task's prompt of the session that wrote it, and speaks for no reply that has a `prompt_sha` key of its own. A reply kept out
+of a file with no fingerprint (the pilot's `out2`) that the session could not ask again is written with `"prompt_sha": null`: `kaggle-score` counts it as unchecked. `kaggle-score` refuses each reply to
+another prompt. A reply of an older kernel has no such fields: it takes its line's `prompt_sha` when the line has one; a reply with no fingerprint at all, and a cut-off reply with no budget, are asked again
+(unless `trust_unfingerprinted`).
 Nothing is scored here: the truth is not in the dataset.
 """
 from __future__ import annotations
@@ -46,12 +56,13 @@ DEFAULTS = {
     "k": 4,                       # replies per task
     "thinking": True,             # `enable_thinking`: the model's native reasoning
     "slots": 4,                   # requests in flight (llama-server --parallel)
-    "ctx_per_slot": 8192,         # tokens one request may take: the prompt and max_tokens (4096 + 4096)
+    "ctx_per_slot": 8192,         # tokens one request may take: the prompt and max_tokens (4096 + 4096); `server_geometry` makes it longer, and the slots fewer, for a family with a longer budget
     "deadline_h": 10.5,           # hours after the start at which no new request is started (a Kaggle GPU session ends at 12 h; a reply in flight may take up to request_timeout_s more)
-    "request_timeout_s": 1800,    # a 4096-token reply at ~4.6 tokens/s per slot (27B Q4 on two T4, four slots, measured 18 tokens/s in all) takes ~15 minutes
+    "request_timeout_s": 1800,    # for a reply of max_tokens (4096): at ~4.6 tokens/s per slot (27B Q4 on two T4, four slots, measured 18 tokens/s in all) it takes ~15 minutes; a longer budget gets a proportionally longer timeout
     "seed_base": 1234,            # sample i is asked with seed seed_base + i, as the Modal stage does
     "reasoning_format": "deepseek",     # llama-server --reasoning-format: the reasoning comes back as `reasoning_content`
     "llama_cpp_ref": "",          # a llama.cpp tag or commit to build ("" = the head of the default branch; run.json records what was built)
+    "trust_unfingerprinted": False,     # True = the owner says that the earlier replies WITHOUT a fingerprint were asked under this prompt and `max_tokens`: they are kept (see `with_own_sha`); False = they are asked again
 }
 
 T0 = time.time()
@@ -85,12 +96,38 @@ def resolve_config(user: dict) -> dict:
         raise ValueError(f"a thinking run is never greedy: {sampling} (temperature 0 or top_k 1 makes the reasoning loop); Qwen3 recommends {THINKING_SAMPLING}")
     cfg["thinking"], cfg["sampling"] = thinking, sampling
     cfg["max_tokens"] = int(user.get("max_tokens", 4096 if thinking else 768))
+    by_family = user.get("max_tokens_by_family") or {}
+    if not isinstance(by_family, dict) or any(not isinstance(k, str) or not isinstance(n, int) or isinstance(n, bool) or n < 1 for k, n in by_family.items()):
+        raise ValueError(f"max_tokens_by_family {by_family!r}: a map family -> tokens (an integer of at least 1)")
+    cfg["max_tokens_by_family"] = dict(by_family)
+    if not isinstance(cfg["trust_unfingerprinted"], bool):
+        raise ValueError(f"trust_unfingerprinted {cfg['trust_unfingerprinted']!r}: true or false")
     return cfg
 
 
-def request_body(cfg: dict, messages: list, i: int) -> dict:
-    """The request of sample `i`: the messages of the task exactly as the dataset has them, the config's sampling, `enable_thinking`, the token budget. The same body as the Modal stage's sampler."""
-    return {"model": "local", "messages": messages, **cfg["sampling"], "seed": cfg["seed_base"] + i, "max_tokens": cfg["max_tokens"],
+def task_max_tokens(cfg: dict, kind: str) -> int:
+    """The reply budget of a task of family `kind`: its entry of `max_tokens_by_family` (distill.config.task_max_tokens), else `max_tokens`."""
+    return cfg.get("max_tokens_by_family", {}).get(kind, cfg["max_tokens"])
+
+
+def server_geometry(cfg: dict, tasks: list) -> tuple:
+    """(slots, ctx_per_slot) the server is started with. The config's own `slots` x `ctx_per_slot`, unless a task of the run (`tasks`: dicts with a `kind`) has a longer budget than `max_tokens` (a family of
+    `max_tokens_by_family`): then each slot grows by the difference, up to a multiple of 1024, and the server keeps the same total context, so it holds fewer slots (4 x 8192 with an 8192-token family
+    -> 2 x 12288: the prompt room of the config is kept, the memory the config allowed is not exceeded; a run with no such task starts exactly as the config says). It is `distill.config.server_plan`
+    (tests pin the two together); a family that no task has costs nothing."""
+    slots, ctx = cfg["slots"], cfg["ctx_per_slot"]
+    longest = max([task_max_tokens(cfg, t["kind"]) for t in tasks] or [cfg["max_tokens"]])
+    if longest > cfg["max_tokens"]:
+        total = slots * ctx
+        ctx = -(-(ctx + longest - cfg["max_tokens"]) // 1024) * 1024
+        slots = max(1, total // ctx)
+    return slots, ctx
+
+
+def request_body(cfg: dict, messages: list, i: int, max_tokens: int = None) -> dict:
+    """The request of sample `i`: the messages of the task exactly as the dataset has them, the config's sampling, `enable_thinking`, the token budget (`max_tokens`: the task's own, the config's by default).
+    The same body as the Modal stage's sampler."""
+    return {"model": "local", "messages": messages, **cfg["sampling"], "seed": cfg["seed_base"] + i, "max_tokens": max_tokens or cfg["max_tokens"],
             "chat_template_kwargs": {"enable_thinking": bool(cfg["thinking"])}, "cache_prompt": False}
 
 
@@ -114,10 +151,55 @@ def is_failed(out) -> bool:
     return not isinstance(out, dict) or out.get("finish") == "error" or str(out.get("text", "")).startswith("[error")
 
 
-def samples_to_ask(have: list, k: int) -> list:
-    """The sample indices to ask for a task whose earlier replies are `have` (outs in sample order): every index the list does not reach, and every one whose reply is a failed request. A cut-off reply
-    ("length") is an answer and is not asked again (it is rejected downstream, and asking again with the same seed and budget gives the same cut)."""
-    return [i for i in range(k) if i >= len(have) or is_failed(have[i])]
+def valid_budget(n) -> bool:
+    """A token budget: an integer of at least 1 that is not a bool (anything else in a replies file is a hand edit: the budget is not known)."""
+    return isinstance(n, int) and not isinstance(n, bool) and n >= 1
+
+
+def with_own_sha(rec: dict, assume: dict = None) -> list:
+    """The outs of an earlier line, each carrying its own `prompt_sha`: a reply of an older kernel, which has no `prompt_sha` key, takes the line's (that is the prompt it was asked under, as far as the file says).
+    A new line gets the CURRENT prompt's fingerprint whatever its replies are, so the fingerprint travels with each reply that is kept, and a reply that has none is written with `"prompt_sha": null` (`ask_task`):
+    the key says "no fingerprint", and the line's never speaks for it. A reply that has none, on a line that has none (a file with no fingerprints at all, the thinking pilot's `out2`), stays without:
+    `is_stale` asks it again. `assume`: {"prompt_sha", "max_tokens"} (`assumed`), the owner's word (`trust_unfingerprinted`) that such a file was asked under the task's prompt now and the config's `max_tokens`:
+    a reply takes the one it lacks (a null `prompt_sha` too), which is written with it from then on."""
+    sha, assume = rec.get("prompt_sha"), assume or {}
+    outs = []
+    for o in rec.get("outs", []):
+        if isinstance(o, dict):
+            own_sha = o.get("prompt_sha") or (None if "prompt_sha" in o else sha) or assume.get("prompt_sha")
+            budget = o["max_tokens"] if valid_budget(o.get("max_tokens")) else assume.get("max_tokens")
+            o = {**o, **({"prompt_sha": own_sha} if own_sha else {}), **({"max_tokens": budget} if budget else {})}
+        outs.append(o)
+    return outs
+
+
+def assumed(cfg: dict, task: dict):
+    """What a run told to trust a file without fingerprints (`trust_unfingerprinted`) takes for an earlier reply that has none: the task's prompt now and the config's `max_tokens` (the one budget the kernels
+    that wrote no `max_tokens` had). None for any other run."""
+    return {"prompt_sha": prompt_sha(task["messages"]), "max_tokens": cfg["max_tokens"]} if cfg.get("trust_unfingerprinted") else None
+
+
+def is_stale(out, sha: str = None, budget: int = None) -> bool:
+    """True when an answered reply no longer stands for the task. With `sha` (the task's prompt now; the kit always knows it): it answered another prompt, or it has NO fingerprint (what it answered is not known).
+    With `budget` (the task's now): it was cut off ("length") at a smaller budget, or at one it does not say (`max_tokens` missing or not a budget). Without `sha` and `budget` nothing is stale."""
+    if not isinstance(out, dict):
+        return False
+    if sha and out.get("prompt_sha") != sha:
+        return True
+    asked = out.get("max_tokens")
+    return bool(budget and out.get("finish") == "length" and (not valid_budget(asked) or asked < budget))
+
+
+def samples_to_ask(have: list, k: int, sha: str = None, budget: int = None) -> list:
+    """The sample indices to ask for a task whose earlier replies are `have` (outs in sample order, each with its own `prompt_sha`: `with_own_sha`): every index the list does not reach, every one whose reply is a
+    failed request, and every STALE one (`is_stale`: another prompt than `sha` or none known, or cut off at a smaller budget than `budget` or at an unknown one). A cut-off reply that was asked with the budget it has
+    now is an answer and is not asked again (it is rejected downstream, and asking again with the same seed and budget gives the same cut); with a longer budget it is a different reply, so it is asked."""
+    return [i for i in range(k) if i >= len(have) or is_failed(have[i]) or is_stale(have[i], sha, budget)]
+
+
+def pending(cfg: dict, task: dict, rec) -> list:
+    """The sample indices of `task` still to ask, given its earlier line `rec` (None when it has none): what the session does for it, and what it counts as complete."""
+    return samples_to_ask(with_own_sha(rec or {}, assumed(cfg, task)), cfg["k"], prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"]))
 
 
 def can_start(now: float, deadline: float, mean_secs: float) -> bool:
@@ -125,20 +207,29 @@ def can_start(now: float, deadline: float, mean_secs: float) -> bool:
     return now + mean_secs <= deadline
 
 
-def ask_one(cfg: dict, messages: list, i: int, base_url: str = URL, urlopen=None) -> dict:
-    """One reply: {"text", "finish", "tokens" (completion), "prompt_tokens", "secs"}. A request that fails is {"text": "[error ...]", "finish": "error"}: it is never scored, and a resume asks it again."""
+def request_timeout(cfg: dict, max_tokens: int = None) -> float:
+    """Seconds a request may take: `request_timeout_s` for a reply of the config's `max_tokens`, in proportion for a longer or shorter budget (a 8192-token reply at the same speed takes twice as long)."""
+    return cfg["request_timeout_s"] * max(1.0, (max_tokens or cfg["max_tokens"]) / cfg["max_tokens"])
+
+
+def ask_one(cfg: dict, messages: list, i: int, base_url: str = URL, urlopen=None, max_tokens: int = None) -> dict:
+    """One reply: {"text", "finish", "tokens" (completion), "prompt_tokens", "secs", "prompt_sha", "max_tokens"}: the last two say what the reply answers (the fingerprint of `messages`) and the budget it was asked
+    with, so that a later session can tell a reply to another prompt, or one cut off at a smaller budget, from one that stands. A request that fails is {"text": "[error ...]", "finish": "error"}: it is never
+    scored, and a resume asks it again. `max_tokens`: the budget of this task (`task_max_tokens`); the config's when not given."""
     urlopen = urlopen or urllib.request.urlopen
-    req = urllib.request.Request(base_url + "/v1/chat/completions", json.dumps(request_body(cfg, messages, i)).encode(), {"Content-Type": "application/json"})
+    max_tokens = max_tokens or cfg["max_tokens"]
+    asked = {"prompt_sha": prompt_sha(messages), "max_tokens": max_tokens}
+    req = urllib.request.Request(base_url + "/v1/chat/completions", json.dumps(request_body(cfg, messages, i, max_tokens)).encode(), {"Content-Type": "application/json"})
     start = time.time()
     try:
-        r = json.load(urlopen(req, timeout=cfg["request_timeout_s"]))
+        r = json.load(urlopen(req, timeout=request_timeout(cfg, max_tokens)))
         choice = r["choices"][0]
         msg = choice["message"]
         usage = r.get("usage") or {}
         return {"text": stored_text(msg.get("content"), msg.get("reasoning_content"), cfg["thinking"]), "finish": choice.get("finish_reason"), "tokens": usage.get("completion_tokens", 0),
-                "prompt_tokens": usage.get("prompt_tokens", 0), "secs": round(time.time() - start, 1)}
+                "prompt_tokens": usage.get("prompt_tokens", 0), "secs": round(time.time() - start, 1), **asked}
     except Exception as e:      # never scored downstream
-        return {"text": f"[error {type(e).__name__}: {e}]", "finish": "error", "tokens": 0, "prompt_tokens": 0, "secs": round(time.time() - start, 1)}
+        return {"text": f"[error {type(e).__name__}: {e}]", "finish": "error", "tokens": 0, "prompt_tokens": 0, "secs": round(time.time() - start, 1), **asked}
 
 
 def prompt_tokens(messages: list, base_url: str = URL, urlopen=None) -> int:
@@ -175,20 +266,23 @@ class Session:
 
 
 def ask_task(cfg: dict, task: dict, have: list, deadline: float, session: Session, base_url: str = URL, urlopen=None):
-    """The line to checkpoint for a task: its earlier replies `have`, with the missing and failed samples asked again, one after the other (a task occupies one slot). The deadline is checked before every
-    request; when it comes, the samples answered so far are kept and the rest left for the next session (the list simply ends: `samples_to_ask`). None when nothing was asked and nothing is known."""
-    outs = list(have) + [None] * (cfg["k"] - len(have))
-    for i in samples_to_ask(have, cfg["k"]):
+    """The line to checkpoint for a task: its earlier replies `have` (each with its own `prompt_sha`: `with_own_sha`; the ones with none are asked again), with the missing, failed and stale samples asked again, one after the other (a task occupies one
+    slot). The deadline is checked before every request; when it comes, the samples answered so far are kept and the rest left for the next session (the list simply ends: `samples_to_ask`). Every reply of the line
+    carries its own `prompt_sha`: a reply asked now has the task's prompt now (`ask_one`), a kept one keeps the one it has, and a kept one that has none is written with `"prompt_sha": null`, so the line's `prompt_sha`
+    (the task's prompt now) never speaks for a reply of another session (round 13, M1: `kaggle-score` reads such a reply as unchecked). None when nothing was asked and nothing is known."""
+    sha, budget = prompt_sha(task["messages"]), task_max_tokens(cfg, task["kind"])
+    outs = [{"prompt_sha": None, **o} if isinstance(o, dict) else o for o in have] + [None] * (cfg["k"] - len(have))
+    for i in samples_to_ask(have, cfg["k"], sha, budget):
         if not can_start(time.time(), deadline, session.mean_secs()):
             session.stopped_by_deadline = True
             break
-        outs[i] = ask_one(cfg, task["messages"], i, base_url, urlopen)
+        outs[i] = ask_one(cfg, task["messages"], i, base_url, urlopen, budget)
         session.add(outs[i])
     while outs and outs[-1] is None:
         outs.pop()
     if not outs:
         return None
-    return {"id": task["id"], "kind": task["kind"], "prompt_sha": prompt_sha(task["messages"]), "outs": outs}
+    return {"id": task["id"], "kind": task["kind"], "prompt_sha": sha, "outs": outs}
 
 
 # ---- the checkpoint and the resume -----------------------------------------------------------------------------------------------------------
@@ -221,23 +315,40 @@ def find_previous(root: pathlib.Path = INPUT) -> list:
 
 
 def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path, deadline: float, base_url: str = URL, urlopen=None, log_fn=print) -> dict:
-    """Ask what is left. `previous` = {id: record} from earlier sessions: they are copied to `checkpoint` first (so a session that asks nothing loses nothing), a task with every sample answered is skipped,
-    a task with missing or failed samples is asked for those only. A task whose prompt and `max_tokens` do not fit a slot is not asked (`skipped_too_long`). Each finished task is appended and flushed.
-    Returns the counters for run.json."""
+    """Ask what is left. `previous` = {id: record} from earlier sessions: they are copied to `checkpoint` first (so a session that asks nothing loses nothing; with `trust_unfingerprinted` the line of every task of
+    this run is written with the fingerprint and budget the owner's word gives its replies, `with_own_sha(rec, assumed(...))`, asked again or not), a task with every sample answered is skipped,
+    a task with missing, failed or stale samples (`samples_to_ask`: another prompt or none known, or cut off at a smaller budget than the task's now or an unknown one) is asked for those only, and each of them
+    replaces the earlier reply. A task whose prompt and own budget (`task_max_tokens`) do not fit a slot is not asked (`skipped_too_long`). Each finished task is appended and flushed. Returns the counters for
+    run.json (`stale`: the earlier replies that were asked again for being stale; `unfingerprinted`: how many of those had no fingerprint, `trust_unfingerprinted` keeps them)."""
     session = Session()
     checkpoint = pathlib.Path(checkpoint)
-    checkpoint.write_text("".join(json.dumps(r) + "\n" for r in previous.values()))
-    todo, too_long = [], []
+    by_id = {t["id"]: t for t in tasks}
+    carried = lambda rec: {**rec, "outs": with_own_sha(rec, assumed(cfg, by_id[rec["id"]]))} if rec["id"] in by_id and cfg.get("trust_unfingerprinted") else rec
+    checkpoint.write_text("".join(json.dumps(carried(r)) + "\n" for r in previous.values()))
+    todo, too_long, complete, stale, unfingerprinted = [], [], 0, 0, 0
     for t in tasks:
-        have = previous.get(t["id"], {}).get("outs", [])
-        if not samples_to_ask(have, cfg["k"]):
+        rec = previous.get(t["id"])
+        have = with_own_sha(rec or {}, assumed(cfg, t))
+        ask = pending(cfg, t, rec)
+        if not ask:
+            complete += 1
             continue
-        if prompt_tokens(t["messages"], base_url, urlopen) + cfg["max_tokens"] > cfg["ctx_per_slot"]:
+        if prompt_tokens(t["messages"], base_url, urlopen) + task_max_tokens(cfg, t["kind"]) > cfg["ctx_per_slot"]:
             too_long.append(t["id"])
             continue
+        answered = [i for i in ask if i < len(have) and not is_failed(have[i])]
+        stale += len(answered)
+        unfingerprinted += sum(not have[i].get("prompt_sha") for i in answered if isinstance(have[i], dict))
         todo.append((t, have))
-    log_fn(f"{len(tasks)} tasks, {sum(1 for t in tasks if not samples_to_ask(previous.get(t['id'], {}).get('outs', []), cfg['k']))} complete already, {len(todo)} to ask, "
-           f"{len(too_long)} skipped (prompt + max_tokens {cfg['max_tokens']} over {cfg['ctx_per_slot']} tokens)")
+    own = " or its family's" if cfg.get("max_tokens_by_family") else ""
+    log_fn(f"{len(tasks)} tasks, {complete} complete already, {len(todo)} to ask, "
+           f"{len(too_long)} skipped (prompt + the task's max_tokens, {cfg['max_tokens']}{own}, over {cfg['ctx_per_slot']} tokens)")
+    if stale:
+        log_fn(f"{stale} earlier reply(ies) are asked again: they answered another prompt than the task's now, carry no fingerprint (the prompt they answered is not known), or were cut off at a smaller "
+               f"budget than its own or at one they do not say")
+    if unfingerprinted:
+        log_fn(f"{unfingerprinted} of them carry no fingerprint at all (a file of an older kernel): kept only with \"trust_unfingerprinted\": true in config.json (build_tasks --trust-unfingerprinted), "
+               f"the owner's word that it was asked under this prompt and max_tokens {cfg['max_tokens']}")
     start = time.time()
     with ThreadPoolExecutor(cfg["slots"]) as ex, open(checkpoint, "a") as ck:
         for rec in ex.map(lambda item: ask_task(cfg, item[0], item[1], deadline, session, base_url, urlopen), todo):
@@ -251,7 +362,7 @@ def run_session(cfg: dict, tasks: list, previous: dict, checkpoint: pathlib.Path
                 log_fn(f"{session.tasks_done}/{len(todo)} tasks, {session.completion_tokens} tokens out, {session.completion_tokens / max(el, 1):.1f} tok/s aggregate, "
                        f"{session.cut_off} cut off, {session.failed} failed")
     el = time.time() - start
-    return {"tasks": len(tasks), "asked": len(todo), "tasks_written": session.tasks_done, "skipped_too_long": too_long, "requests": session.requests, "completion_tokens": session.completion_tokens,
+    return {"tasks": len(tasks), "asked": len(todo), "stale": stale, "unfingerprinted": unfingerprinted, "tasks_written": session.tasks_done, "skipped_too_long": too_long, "requests": session.requests, "completion_tokens": session.completion_tokens,
             "cut_off": session.cut_off, "failed": session.failed, "seconds": round(el), "tok_per_s": round(session.completion_tokens / max(el, 1e-9), 1),
             "deadline_hit": session.stopped_by_deadline}
 
@@ -269,16 +380,22 @@ def find_libcuda(patterns=LIBCUDA_PATTERNS):
 
 
 def find_prebuilt(root: pathlib.Path = INPUT):
-    """A llama-server saved by an earlier run (its `llama-bin` folder attached as a dataset), or None: it saves the 30-minute build. It must sit beside its shared libraries."""
+    """The llama-server of an earlier run, or None: `llama-bin/llama-server` in what is attached under `root` (a previous kernel's output, or a dataset made from its `llama-bin` folder), or a `llama-server`
+    file anywhere else under it (a dataset that holds the folder's files at its root); a `llama-bin` one first. It saves the 30-minute build. It must sit beside its shared libraries."""
     root = pathlib.Path(root)
-    return next(iter(sorted(root.rglob("llama-server"))), None) if root.exists() else None
+    if not root.exists():
+        return None
+    return next(iter(sorted((p for p in root.rglob("llama-server") if p.is_file()), key=lambda p: (p.parent.name != "llama-bin", str(p)))), None)
 
 
 def prepare_prebuilt(binary: pathlib.Path, dest: pathlib.Path = pathlib.Path("/tmp/llama-prebuilt")) -> pathlib.Path:
-    """Copy the folder of an attached llama-server (its shared libraries beside it) to `dest` and make the server executable: an attached dataset or kernel output is a read-only mount that does not
-    have to keep the executable bit. Returns the path of the copy."""
+    """Copy an attached llama-server and its shared libraries (`llama-server`, `*.so*` of its folder, nothing else) to `dest` and make the server executable: an attached dataset or kernel output is a
+    read-only mount that does not have to keep the executable bit, and a dataset that holds the files at its root holds other files too. Returns the path of the copy."""
     shutil.rmtree(dest, ignore_errors=True)
-    shutil.copytree(binary.parent, dest)
+    dest.mkdir(parents=True)
+    for f in sorted(binary.parent.iterdir()):
+        if f.is_file() and (f.name == binary.name or ".so" in f.name):
+            shutil.copyfile(f, dest / f.name)
     new = dest / binary.name
     new.chmod(0o755)
     return new
@@ -290,6 +407,22 @@ def binary_works(binary, env=None) -> bool:
         return subprocess.run([str(binary), "--version"], capture_output=True, timeout=120, env=env).returncode == 0
     except (OSError, subprocess.SubprocessError):
         return False
+
+
+def use_prebuilt(found: pathlib.Path, dest: pathlib.Path = pathlib.Path("/tmp/llama-prebuilt"), environ=os.environ):
+    """The copy of the attached server `found` (`find_prebuilt`) in `dest`, ready to start, or None. LD_LIBRARY_PATH of `environ` starts with `dest`: the server's RUNPATH names the /tmp/llama.cpp/build/bin
+    of the run that built it, which does not exist here, and LD_LIBRARY_PATH is searched before RUNPATH. The copy is tried with `--version`; when it does not start (a library of that build is missing here), LD_LIBRARY_PATH
+    is put back as it was, so that nothing of it shadows the libraries of the build that follows, and None is returned."""
+    candidate = prepare_prebuilt(found, dest)
+    before = environ.get("LD_LIBRARY_PATH")
+    environ["LD_LIBRARY_PATH"] = str(dest) + (":" + before if before else "")
+    if binary_works(candidate, env=environ):
+        return candidate
+    if before is None:
+        environ.pop("LD_LIBRARY_PATH", None)
+    else:
+        environ["LD_LIBRARY_PATH"] = before
+    return None
 
 
 def build_llama(cfg: dict) -> pathlib.Path:
@@ -348,21 +481,23 @@ def main() -> None:
     data_dir = next(INPUT.rglob("tasks.jsonl")).parent
     user = json.loads((data_dir / "config.json").read_text()) if (data_dir / "config.json").exists() else {}
     cfg = resolve_config(user)
+    tasks = [json.loads(line) for line in (data_dir / "tasks.jsonl").read_text().splitlines() if line.strip()]
+    configured = (cfg["slots"], cfg["ctx_per_slot"])
+    cfg["slots"], cfg["ctx_per_slot"] = server_geometry(cfg, tasks)         # a family with a longer budget: fewer, longer slots, in the same total context
     log("config", cfg)
+    if (cfg["slots"], cfg["ctx_per_slot"]) != configured:
+        log(f"server: {cfg['slots']} slots x {cfg['ctx_per_slot']} tokens (the config says {configured[0]} x {configured[1]}; the longest budget of a task is "
+            f"{max(task_max_tokens(cfg, t['kind']) for t in tasks)} tokens, max_tokens {cfg['max_tokens']})")
     subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv || ls /dev/nvidia*", shell=True)
     binary, prebuilt = None, find_prebuilt()
     if prebuilt:
-        candidate = prepare_prebuilt(prebuilt)
-        os.environ["LD_LIBRARY_PATH"] = str(candidate.parent) + ":" + os.environ.get("LD_LIBRARY_PATH", "")
-        if binary_works(candidate):
-            binary = candidate
-            log("llama-server from an attached output:", prebuilt)
-        else:
-            log("the attached llama-server does not start here; building llama.cpp")
+        binary = use_prebuilt(prebuilt)
+        log(f"llama-server from an attached output: {prebuilt}" if binary else f"the attached llama-server {prebuilt} does not start here; building llama.cpp")
+    from_prebuilt = binary is not None
     if binary is None:
         binary = build_llama(cfg)
     sh(f"mkdir -p {OUT}/llama-bin && cp -n {binary.parent}/llama-server {binary.parent}/*.so* {OUT}/llama-bin/ 2>/dev/null || true")     # every session's output carries it: a later one attaches it and skips the build
-    commit = f"prebuilt {prebuilt}" if binary.parent == pathlib.Path("/tmp/llama-prebuilt") else subprocess.run("cd /tmp/llama.cpp && git log -1 --format='%h %cd' 2>/dev/null", shell=True, capture_output=True,
+    commit = f"prebuilt {prebuilt}" if from_prebuilt else subprocess.run("cd /tmp/llama.cpp && git log -1 --format='%h %cd' 2>/dev/null", shell=True, capture_output=True,
                                                                                                           text=True).stdout.strip()
     log("llama.cpp", commit)
 
@@ -377,14 +512,13 @@ def main() -> None:
     try:
         wait_for_server(srv)
         log("server up")
-        tasks = [json.loads(line) for line in open(data_dir / "tasks.jsonl") if line.strip()]
         previous = load_previous([*find_previous(), *([OUT / 'replies.jsonl'] if (OUT / 'replies.jsonl').exists() else [])])      # earlier sessions, then this one's own file if the kernel restarted
         log(len(previous), "tasks answered (fully or in part) by earlier sessions")
         summary = run_session(cfg, tasks, previous, OUT / "replies.jsonl", T0 + cfg["deadline_h"] * 3600, log_fn=log)
         log("finished", summary)
         gpus = subprocess.run("nvidia-smi --query-gpu=name,memory.total --format=csv,noheader", shell=True, capture_output=True, text=True).stdout.strip().splitlines()
         (OUT / "run.json").write_text(json.dumps({**cfg, **summary, "llama_cpp": commit, "gpus": gpus, "started": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(T0)),
-                                                  "session_seconds": round(time.time() - T0)}, indent=1))
+                                                  "session_seconds": round(time.time() - T0), "server": {"slots": cfg["slots"], "ctx_per_slot": cfg["ctx_per_slot"], "configured": list(configured)}}, indent=1))
     finally:
         srv.kill()
 

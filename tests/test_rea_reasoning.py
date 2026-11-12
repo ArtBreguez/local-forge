@@ -319,7 +319,7 @@ class ReasoningStage(StubbedSampleStage):
         part = [json.loads(l) for l in self.partial(self.rtag).read_text().splitlines()]
         self.assertEqual(len(part), len(self.tasks))
         for r in part:
-            self.assertEqual([ok for _o, ok in r["outs"]], [i % 2 == 0 for i in range(self.k)], r["id"])
+            self.assertEqual([o[1] for o in r["outs"]], [i % 2 == 0 for i in range(self.k)], r["id"])
 
     def test_a_failed_request_is_never_scored_in_reasoning_mode(self):
         self.fail = failing(lambda tid, i: True)
@@ -329,7 +329,7 @@ class ReasoningStage(StubbedSampleStage):
         self.assertEqual(st["reasoning"]["error"], n * self.k)
         self.assertEqual(st["reasoning"]["accepted"], 0)
         part = [json.loads(l) for l in self.partial(self.rtag).read_text().splitlines()]
-        self.assertTrue(all(scoring.is_error_reply(o) and not ok for r in part for o, ok in r["outs"]))
+        self.assertTrue(all(scoring.is_error_reply(o[0]) and not o[1] for r in part for o in r["outs"]))
 
     def test_a_reply_the_server_cut_off_is_rejected_and_counted(self):
         """finish_reason "length": the reply ends where max_tokens cut it; here the cut fell right after a correct Answer line."""
@@ -339,7 +339,7 @@ class ReasoningStage(StubbedSampleStage):
         self.assertEqual((res["sft"], res["stats"]["kept_tasks"]), ([], 0))
         self.assertEqual(res["stats"]["reasoning"]["truncated"], n * self.k)
         part = [json.loads(l) for l in self.partial(self.rtag).read_text().splitlines()]
-        self.assertTrue(all(o.endswith(rsn.TRUNCATED) for r in part for o, _ in r["outs"]), "the checkpoint says it was cut, so a re-score from the text rejects it too")
+        self.assertTrue(all(o[0].endswith(rsn.TRUNCATED) for r in part for o in r["outs"]), "the checkpoint says it was cut, so a re-score from the text rejects it too")
         self.assertIn("cut off at max_tokens", "\n".join(sft.reasoning_report(res["stats"])))
         self.assertTrue(any(l.startswith("WARNING") and "max_tokens" in l for l in sft.reasoning_report(res["stats"])))
 
@@ -354,7 +354,7 @@ class ReasoningStage(StubbedSampleStage):
         self.assertEqual(list((self.root / "data").glob("*.old-*")), [])
         self.assertTrue(self.partial(self.rtag).exists())
         self.assertEqual(outputs.sft_stem("m", self.rtag), f"sft-m-{self.tag}-reasoning")
-        self.assertTrue(all("Answer:" in o for r in map(json.loads, self.partial(self.rtag).read_text().splitlines()) for o, _ in r["outs"]))
+        self.assertTrue(all("Answer:" in o[0] for r in map(json.loads, self.partial(self.rtag).read_text().splitlines()) for o in r["outs"]))
         self.assertFalse(any("Answer:" in o for r in map(json.loads, phase_a.read_text().splitlines()) for o, _ in r["outs"]))
 
     def test_resume_of_a_reasoning_run_asks_only_what_failed_in_its_own_checkpoint(self):

@@ -129,7 +129,7 @@ def main(only: str = "", smoke: bool = False):
     dest = ROOT / "results" / "phase6" / ("modal-smoke" if smoke else "modal")
     dest.mkdir(parents=True, exist_ok=True)
     todo = [m for m in MODELS if not only or m[0] in only.split(",")]
-    calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, smoke), name) for name, repo, fname, gpu in todo]
+    calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, smoke), name) for name, repo, fname, gpu, *_ in todo]
     for call, name in calls:
         try:
             res = call.get()
