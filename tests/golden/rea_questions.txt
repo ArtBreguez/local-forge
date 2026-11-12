@@ -1,0 +1,103 @@
+# the question text of every variant (a number that takes more than 8 values is <N>); tests/test_rea_round8.py Questions
+alphabet | Give the 32-character alphabet string this decoder uses, in order.
+antidebug/env | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and which environment variable does it look at?
+antidebug/ptrace | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and what does proc return when the call shows that a debugger is attached (decimal)?
+antidebug/ptrace_raw | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and what does proc return when the call shows that a debugger is attached (decimal)?
+antidebug/timing_ns | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and above how many nanoseconds between the two clock readings does it report a debugger? Answer with a plain integer in nanoseconds: no separators, no other unit. (The code may test `>= N + 1`; N is the largest elapsed time it still lets pass.)
+antidebug/timing_us | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and above how many microseconds between the two clock readings does it report a debugger? Answer with a plain integer in microseconds: no separators, no other unit. (The code may test `>= N + 1`; N is the largest elapsed time it still lets pass.)
+antidebug/tracerpid | Which anti-debugging technique does proc implement (one of: ptrace, timing, env, tracerpid), and what does proc return when a tracer is attached (decimal)?
+bounds/char_class | How many different byte values (0 to 255) make proc return 1 (decimal)? The compiler may have rewritten the tests (a subtraction and a width, a bound one off); count what the source accepts.
+bounds/clamp | proc limits its argument to an interval. Give the lower and the upper bound of that interval (inclusive, decimal).
+bounds/index_limit | proc looks a byte up in a table and returns -1 for an index it rejects. Give the smallest and the largest index for which it returns a table value (decimal). The compiler may have rewritten the tests (a subtraction and a width, a bound one off); give the values the source intends.
+bounds/loop_iterations | What does proc return when it is called with <N> (decimal)?
+bounds/range_chain | For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal). The compiler may have rewritten the tests (a subtraction and a width, a bound one off); give the values the source intends.
+bounds/window | For which integers v does proc return 1? Give the lowest and the highest such value (inclusive, decimal). The compiler may have rewritten the tests (a subtraction and a width, a bound one off); give the values the source intends.
+cipher/chacha | This function expands a 256-bit key, a counter and a nonce into a 64-byte block. Which cipher family is it, and how many rounds does it run in total (a double round counts as 2, so a loop of N double rounds is 2N; the bound may show one off; decimal)?
+cipher/rc4 | This function transforms a buffer in place. Which cipher is it, and how many bytes long is its key (decimal)? A comparison may show the length one off (`> N - 1` for `>= N`, and `== N - 1` or `<= N - 1` where the code tests a counter that was already moved on).
+cipher/salsa | This function expands a 256-bit key, a counter and a nonce into a 64-byte block. Which cipher family is it, and how many rounds does it run in total (a double round counts as 2, so a loop of N double rounds is 2N; the bound may show one off; decimal)?
+cipher/tea_dec | This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off: `i <= N - 1` for `i < N`)?
+cipher/tea_enc | This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off: `i <= N - 1` for `i < N`)?
+cipher/xtea_dec | This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off: `i <= N - 1` for `i < N`)?
+cipher/xtea_enc | This function transforms an 8-byte block (two 32-bit words) with a 128-bit key and returns a number. Which cipher is it, does it encrypt or decrypt, and how many iterations does its main loop run (decimal; a loop test may show the bound one off: `i <= N - 1` for `i < N`)?
+crc/bitwise_init | This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?
+crc/bitwise_init | This function computes a 32-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffffffff even where the code loads a wider -1)?
+crc/bitwise_poly | This function computes a 16-bit CRC. Give the polynomial constant exactly as it appears in the code (hex), and say whether the algorithm is 'reflected' (shifts right, LSB first) or 'normal' (shifts left, MSB first).
+crc/bitwise_poly | This function computes a 32-bit CRC. Give the polynomial constant exactly as it appears in the code (hex), and say whether the algorithm is 'reflected' (shifts right, LSB first) or 'normal' (shifts left, MSB first).
+crc/bitwise_xorout | This function computes a 16-bit CRC. What value is XORed into the register after the last byte (hex, written at the CRC's width: an all-ones value is 0xffff)? Answer 0 if nothing is XORed.
+crc/bitwise_xorout | This function computes a 32-bit CRC. What value is XORed into the register after the last byte (hex, written at the CRC's width: an all-ones value is 0xffffffff)? Answer 0 if nothing is XORed.
+crc/table_init | This function computes a 16-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffff even where the code loads a wider -1)?
+crc/table_init | This function computes a 32-bit CRC. What is the initial value that the code loads into the CRC register before the first byte (hex, exactly as the code writes it, at the CRC's width: an all-ones value is 0xffffffff even where the code loads a wider -1)?
+crc/table_poly | This function computes a 16-bit CRC. Give the polynomial constant exactly as it appears in the code (hex), and say whether the algorithm is 'reflected' (shifts right, LSB first) or 'normal' (shifts left, MSB first).
+crc/table_poly | This function computes a 32-bit CRC. Give the polynomial constant exactly as it appears in the code (hex), and say whether the algorithm is 'reflected' (shifts right, LSB first) or 'normal' (shifts left, MSB first).
+crc/table_xorout | This function computes a 16-bit CRC. What value is XORed into the register after the last byte (hex, written at the CRC's width: an all-ones value is 0xffff)? Answer 0 if nothing is XORed.
+crc/table_xorout | This function computes a 32-bit CRC. What value is XORed into the register after the last byte (hex, written at the CRC's width: an all-ones value is 0xffffffff)? Answer 0 if nothing is XORed.
+encoding/base32_decode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base32_decode | Give the 32-character alphabet this function uses, in index order (the first character stands for the value 0).
+encoding/base32_encode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base32_encode | Give the 32-character alphabet this function uses, in index order (the first character stands for the value 0).
+encoding/base58_decode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base58_decode | Give the 58-character alphabet this function uses, in index order (the first character stands for the value 0).
+encoding/base58_encode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base58_encode | Give the 58-character alphabet this function uses, in index order (the first character stands for the value 0).
+encoding/base64_decode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base64_decode | Give the 64-character alphabet this function uses, in index order (the first character stands for the value 0).
+encoding/base64_encode | Does this function encode or decode, and which encoding does it implement (base32, base58 or base64)?
+encoding/base64_encode | Give the 64-character alphabet this function uses, in index order (the first character stands for the value 0).
+fsm/opcode_count | proc is an opcode dispatcher (a switch on its first argument). How many different opcodes does it handle, not counting the default (decimal)?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a & b?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a * b?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a + b?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a - b?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a << (b & 31)?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a >> (b & 31)?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a ^ b?
+fsm/opcode_value | proc is an opcode dispatcher (a switch on its first argument). Which opcode value (decimal) makes it return a | b?
+fsm/switch_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 4.
+fsm/switch_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 5.
+fsm/switch_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 6.
+fsm/switch_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 7.
+fsm/switch_states | This state machine starts in state 0 and proc returns the state it ends in. How many distinct states does it have (decimal)?
+fsm/table_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 4.
+fsm/table_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 5.
+fsm/table_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 6.
+fsm/table_input | This state machine starts in state 0 and proc returns the state it ends in. Give a shortest input string (letters only) for which proc returns 7.
+fsm/table_states | This state machine starts in state 0 and proc returns the state it ends in. How many distinct states does it have (decimal)?
+hash | Which well-known hash is this based on, and what constant is XORed at the end (hex)?
+keycount | This parses key=value lines. Which key does it count?
+lcg | This is a linear congruential generator. Give the multiplier (decimal) and the number of rounds.
+magic | What 32-bit magic value must the header start with (hex, the first four bytes read as a little-endian word), and what is the highest accepted version?
+multi/chain | proc calls a function that itself calls a third one; the pseudocode of all three is shown. What does proc return when it is called with <N> (decimal)?
+multi/decode_secret | proc calls another function (its pseudocode follows proc's) and uses the result. Which input string makes proc return 1?
+multi/eval_arith | proc calls another function (its pseudocode follows proc's) and uses the result. What does proc return when it is called with <N> (decimal)?
+multi/key_helper | proc calls another function (its pseudocode follows proc's) and uses the result. If proc is called with seed = <N>, which byte value (hex) does it XOR into every byte of the buffer?
+multi/limit_helper | proc calls another function (its pseudocode follows proc's) and uses the result. With mode = <N>, what is the longest string length (decimal) for which proc returns 1?
+password | Which input string makes this function return 1?
+pktsum/crc16 | proc validates a packet that ends with a 16-bit checksum. Is the checksum stored little-endian or big-endian in the packet? Answer 'little' or 'big'.
+pktsum/crc16 | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/fletcher16 | proc validates a packet that ends with a 16-bit checksum. Is the checksum stored little-endian or big-endian in the packet? Answer 'little' or 'big'.
+pktsum/fletcher16 | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/len_field | proc validates a packet with a length byte in its header; the checksum follows the payload. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/len_field | proc validates a packet with a length byte in its header; the checksum follows the payload. At which byte offset (decimal, counting from 0) is that length byte?
+pktsum/sum16_be | proc validates a packet that ends with a 16-bit checksum. Is the checksum stored little-endian or big-endian in the packet? Answer 'little' or 'big'.
+pktsum/sum16_be | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/sum16_le | proc validates a packet that ends with a 16-bit checksum. Is the checksum stored little-endian or big-endian in the packet? Answer 'little' or 'big'.
+pktsum/sum16_le | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/sum8 | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+pktsum/xor8 | proc validates a packet that ends with a checksum. At which byte offset (decimal, counting from 0) does the checksummed range start?
+rotate | Give the XOR constant (hex) and the left-rotation amount.
+skip | The checksum skips bytes with one specific value. Which value (hex)?
+strobf/alt_xor | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/reverse_xor | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/rot_n | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/stack_string | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/sub_const | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/xor_const | What string does proc write into its argument? Give it as plain ASCII text.
+strobf/xor_rolling | What string does proc write into its argument? Give it as plain ASCII text.
+structs/alloc_size | proc allocates memory for a structure (or, if it allocates several, an array of identical structures). What is the size in bytes (decimal) of one structure?
+structs/array_stride | proc walks an array of fixed-size records through its first argument. What is the size of one record in bytes (decimal)?
+structs/field_read | At which byte offset (hex, like 0x1c) of the structure is the value that proc returns? (proc reads a flag field, tests it against zero, then returns another field plus a constant.)
+structs/init_magic | At which byte offset (hex, like 0x1c) of the structure does proc store the constant <N>?
+structs/linked_next | At which byte offset (hex, like 0x1c) of the node is the pointer that proc follows to reach the next node of the list?
+structs/nested_offset | At which byte offset (hex, like 0x1c) of the outer structure is the value that proc returns? (the field lives inside a nested structure; count from the start of the outer one.)
+threshold | What are the lower and upper bounds (inclusive) for which this returns 0?
+xor-key | Recover the repeating XOR key as an ASCII string.

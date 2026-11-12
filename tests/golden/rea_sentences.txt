@@ -1,0 +1,644 @@
+structs/array_stride head[0] <n> bytes
+structs/array_stride head[1] <n>
+structs/array_stride head[2] The record size is <n> bytes.
+structs/array_stride head[3] Size: <n> bytes
+structs/array_stride sentence[0] A record that proc reads is <n> bytes long, so consecutive records start <n> bytes apart.
+structs/array_stride sentence[1] proc reads its input as a sequence of records of <n> bytes.
+structs/array_stride sentence[2] The distance between a field of one record and the same field of the next record is <n> bytes.
+structs/field_read head[0] <off:#x>
+structs/field_read head[1] Offset <off:#x>
+structs/field_read head[2] The offset is <off:#x>.
+structs/field_read head[3] byte offset <off:#x>
+structs/field_read sentence[0] Once its flag field is non-zero, proc returns the field at byte offset <off:#x> of the structure, plus a constant.
+structs/field_read sentence[1] The value that proc returns is the field at byte offset <off:#x>, plus a constant, when the flag field is non-zero.
+structs/field_read sentence[2] The field at byte offset <off:#x> of the structure is read by proc and, with a constant added, returned for a non-zero flag field.
+structs/init_magic head[0] <off:#x>
+structs/init_magic head[1] Offset <off:#x>
+structs/init_magic head[2] The offset is <off:#x>.
+structs/init_magic head[3] byte offset <off:#x>
+structs/init_magic sentence[0] After proc has run, the constant <magic:#x> is stored at byte offset <off:#x> of the structure.
+structs/init_magic sentence[1] proc writes <magic:#x> into the field at byte offset <off:#x>, together with the other fields that it initialises.
+structs/init_magic sentence[2] Among the fields that proc initialises, the field that receives <magic:#x> is at byte offset <off:#x>.
+structs/alloc_size head[0] <n> bytes
+structs/alloc_size head[1] <n>
+structs/alloc_size head[2] The structure is <n> bytes.
+structs/alloc_size head[3] Size: <n> bytes
+structs/alloc_size sentence[0] proc allocates memory for a structure of <n> bytes.
+structs/alloc_size sentence[1] A structure that proc allocates is <n> bytes long, whether it allocates a single structure or several.
+structs/alloc_size sentence[2] The memory that proc allocates is made of structures of <n> bytes.
+structs/nested_offset head[0] <off:#x>
+structs/nested_offset head[1] Offset <off:#x>
+structs/nested_offset head[2] The offset is <off:#x>.
+structs/nested_offset head[3] byte offset <off:#x>
+structs/nested_offset sentence[0] The value that proc returns is a field of a nested structure, and counted from the start of the outer structure it is at byte offset <off:#x>.
+structs/nested_offset sentence[1] proc returns a field of a nested structure, which is at byte offset <off:#x> of the outer structure.
+structs/nested_offset sentence[2] Adding the offset of the nested structure to the offset of the field inside it gives byte offset <off:#x> of the outer structure.
+structs/linked_next head[0] <off:#x>
+structs/linked_next head[1] Offset <off:#x>
+structs/linked_next head[2] The offset is <off:#x>.
+structs/linked_next head[3] byte offset <off:#x>
+structs/linked_next sentence[0] proc follows the pointer at byte offset <off:#x> of a node to reach the next node of the list, and stops at a node whose pointer is NULL.
+structs/linked_next sentence[1] The pointer to the next node is at byte offset <off:#x> of a node, and the list ends where that pointer is NULL.
+structs/linked_next sentence[2] A node leads to its successor through the pointer stored at byte offset <off:#x>.
+fsm/table_input head[0] <s>
+fsm/table_input head[1] Input: <s>
+fsm/table_input head[2] The input is <s>.
+fsm/table_input head[3] "<s>"
+fsm/table_input sentence[0] Starting in state 0, the <d> letters of this input take the machine to state <final>, which is what proc returns.
+fsm/table_input sentence[1] The machine reads the <d> letters of this string in turn and ends in state <final>.
+fsm/table_input sentence[2] This input of <d> letters moves the machine from state 0 to state <final>, and no shorter input does.
+fsm/switch_input head[0] <s>
+fsm/switch_input head[1] Input: <s>
+fsm/switch_input head[2] The input is <s>.
+fsm/switch_input head[3] "<s>"
+fsm/switch_input sentence[0] Starting in state 0, the <d> letters of this input take the machine to state <final>, which is what proc returns.
+fsm/switch_input sentence[1] The machine reads the <d> letters of this string in turn and ends in state <final>.
+fsm/switch_input sentence[2] This input of <d> letters moves the machine from state 0 to state <final>, and no shorter input does.
+fsm/table_states head[0] <n> states
+fsm/table_states head[1] <n>
+fsm/table_states head[2] <n> distinct states
+fsm/table_states head[3] There are <n> states.
+fsm/table_states sentence[0] The machine has <n> states, numbered from 0, and proc returns the state it ends in.
+fsm/table_states sentence[1] There are <n> distinct states, numbered 0 to <last>, and the machine starts in state 0.
+fsm/table_states sentence[2] Starting from state 0, the machine can reach all of its <n> states.
+fsm/switch_states head[0] <n> states
+fsm/switch_states head[1] <n>
+fsm/switch_states head[2] <n> distinct states
+fsm/switch_states head[3] There are <n> states.
+fsm/switch_states sentence[0] The machine has <n> states, numbered from 0, and proc returns the state it ends in.
+fsm/switch_states sentence[1] There are <n> distinct states, numbered 0 to <last>, and the machine starts in state 0.
+fsm/switch_states sentence[2] Starting from state 0, the machine can reach all of its <n> states.
+fsm/opcode_value head[0] <n>
+fsm/opcode_value head[1] opcode <n>
+fsm/opcode_value head[2] It is opcode <n>.
+fsm/opcode_value head[3] <n> (opcode)
+fsm/opcode_value sentence[0] proc returns <expr> when its first argument is <n>.
+fsm/opcode_value sentence[1] When the first argument is <n>, the function returns <expr>, and no other opcode does.
+fsm/opcode_value sentence[2] Opcode <n> is the opcode for which proc returns <expr>.
+fsm/opcode_count head[0] <n>
+fsm/opcode_count head[1] <n> opcodes
+fsm/opcode_count head[2] It is <n>.
+fsm/opcode_count head[3] <n> cases
+fsm/opcode_count sentence[0] proc handles <n> different opcodes, each with a result of its own, and returns <dflt> for the other values of the first argument.
+fsm/opcode_count sentence[1] Exactly <n> values of the first argument are handled by proc; the other values return <dflt>.
+fsm/opcode_count sentence[2] proc tells <n> different opcodes apart and gives <dflt> for the rest.
+crc/bitwise_poly head[0] <lit:#x>, <dir>
+crc/bitwise_poly head[1] <lit:#x> <dir>
+crc/bitwise_poly head[2] The polynomial is <lit:#x>, <dir>.
+crc/bitwise_poly head[3] polynomial <lit:#x>, <dir>
+crc/bitwise_poly sentence[0] proc computes a <w>-bit CRC with the polynomial constant <lit:#x>, in <dir> form.
+crc/bitwise_poly sentence[1] The <w>-bit CRC that proc returns is <dir>, and its polynomial constant is <lit:#x>.
+crc/bitwise_poly sentence[2] The polynomial of this <w>-bit CRC is given by the constant <lit:#x>, and the CRC is <dir>.
+crc/table_poly head[0] <lit:#x>, <dir>
+crc/table_poly head[1] <lit:#x> <dir>
+crc/table_poly head[2] The polynomial is <lit:#x>, <dir>.
+crc/table_poly head[3] polynomial <lit:#x>, <dir>
+crc/table_poly sentence[0] proc computes a <w>-bit CRC with the polynomial constant <lit:#x>, in <dir> form.
+crc/table_poly sentence[1] The <w>-bit CRC that proc returns is <dir>, and its polynomial constant is <lit:#x>.
+crc/table_poly sentence[2] The polynomial of this <w>-bit CRC is given by the constant <lit:#x>, and the CRC is <dir>.
+crc/bitwise_init head[0] <x:#x>
+crc/bitwise_init head[1] It is <x:#x>.
+crc/bitwise_init head[2] Answer: <x:#x>
+crc/bitwise_init head[3] value <x:#x>
+crc/bitwise_init sentence[0] The <w>-bit CRC register is loaded with <x:#x> before the first byte is processed.
+crc/bitwise_init sentence[1] proc starts the <w>-bit CRC computation from the register value <x:#x>.
+crc/bitwise_init sentence[2] Before the first byte is processed, the <w>-bit CRC register holds <x:#x>.
+crc/table_init head[0] <x:#x>
+crc/table_init head[1] It is <x:#x>.
+crc/table_init head[2] Answer: <x:#x>
+crc/table_init head[3] value <x:#x>
+crc/table_init sentence[0] The <w>-bit CRC register is loaded with <x:#x> before the first byte is processed.
+crc/table_init sentence[1] proc starts the <w>-bit CRC computation from the register value <x:#x>.
+crc/table_init sentence[2] Before the first byte is processed, the <w>-bit CRC register holds <x:#x>.
+crc/bitwise_xorout head[0] <x:#x>
+crc/bitwise_xorout head[1] It is <x:#x>.
+crc/bitwise_xorout head[2] Answer: <x:#x>
+crc/bitwise_xorout head[3] value <x:#x>
+crc/bitwise_xorout sentence[0] After the last byte, the <w>-bit CRC is XORed with <x:#x> before it is returned.
+crc/bitwise_xorout sentence[1] The final XOR value of this <w>-bit CRC is <x:#x>.
+crc/bitwise_xorout sentence[2] The result of the <w>-bit CRC computation is XORed with <x:#x> as its last step.
+crc/table_xorout head[0] <x:#x>
+crc/table_xorout head[1] It is <x:#x>.
+crc/table_xorout head[2] Answer: <x:#x>
+crc/table_xorout head[3] value <x:#x>
+crc/table_xorout sentence[0] After the last byte, the <w>-bit CRC is XORed with <x:#x> before it is returned.
+crc/table_xorout sentence[1] The final XOR value of this <w>-bit CRC is <x:#x>.
+crc/table_xorout sentence[2] The result of the <w>-bit CRC computation is XORed with <x:#x> as its last step.
+cipher/tea_enc head[0] <alg>, <dir>, <rounds>
+cipher/tea_enc head[1] <alg>, <dir>, <rounds> iterations
+cipher/tea_enc head[2] <dir>, <alg>, <rounds> iterations
+cipher/tea_enc head[3] <alg> <dir>, <rounds> iterations
+cipher/tea_enc sentence[0] proc <verb> a block of <block> bytes with a <key_bits>-bit key, in <rounds> iterations.
+cipher/tea_enc sentence[1] This <alg> implementation runs <rounds> iterations and uses the delta constant 0x<delta:08X>.
+cipher/tea_enc sentence[2] The block of <block> bytes is <done> with the <key_bits>-bit key over <rounds> iterations, and the delta constant is 0x<delta:08X>.
+cipher/tea_dec head[0] <alg>, <dir>, <rounds>
+cipher/tea_dec head[1] <alg>, <dir>, <rounds> iterations
+cipher/tea_dec head[2] <dir>, <alg>, <rounds> iterations
+cipher/tea_dec head[3] <alg> <dir>, <rounds> iterations
+cipher/tea_dec sentence[0] proc <verb> a block of <block> bytes with a <key_bits>-bit key, in <rounds> iterations.
+cipher/tea_dec sentence[1] This <alg> implementation runs <rounds> iterations and uses the delta constant 0x<delta:08X>.
+cipher/tea_dec sentence[2] The block of <block> bytes is <done> with the <key_bits>-bit key over <rounds> iterations, and the delta constant is 0x<delta:08X>.
+cipher/xtea_enc head[0] <alg>, <dir>, <rounds>
+cipher/xtea_enc head[1] <alg>, <dir>, <rounds> iterations
+cipher/xtea_enc head[2] <dir>, <alg>, <rounds> iterations
+cipher/xtea_enc head[3] <alg> <dir>, <rounds> iterations
+cipher/xtea_enc sentence[0] proc <verb> a block of <block> bytes with a <key_bits>-bit key, in <rounds> iterations.
+cipher/xtea_enc sentence[1] This <alg> implementation runs <rounds> iterations and uses the delta constant 0x<delta:08X>.
+cipher/xtea_enc sentence[2] The block of <block> bytes is <done> with the <key_bits>-bit key over <rounds> iterations, and the delta constant is 0x<delta:08X>.
+cipher/xtea_dec head[0] <alg>, <dir>, <rounds>
+cipher/xtea_dec head[1] <alg>, <dir>, <rounds> iterations
+cipher/xtea_dec head[2] <dir>, <alg>, <rounds> iterations
+cipher/xtea_dec head[3] <alg> <dir>, <rounds> iterations
+cipher/xtea_dec sentence[0] proc <verb> a block of <block> bytes with a <key_bits>-bit key, in <rounds> iterations.
+cipher/xtea_dec sentence[1] This <alg> implementation runs <rounds> iterations and uses the delta constant 0x<delta:08X>.
+cipher/xtea_dec sentence[2] The block of <block> bytes is <done> with the <key_bits>-bit key over <rounds> iterations, and the delta constant is 0x<delta:08X>.
+cipher/rc4 head[0] <alg>, <n>
+cipher/rc4 head[1] <alg>, <n> bytes
+cipher/rc4 head[2] <alg>: <n> bytes
+cipher/rc4 head[3] It is <alg>, <n> bytes.
+cipher/rc4 sentence[0] proc applies <alg> with a key of <n> bytes to its buffer.
+cipher/rc4 sentence[1] The key of this <alg> implementation is <n> bytes long.
+cipher/rc4 sentence[2] The keystream comes from a key of <n> bytes and a state of <state> byte values.
+cipher/chacha head[0] <alg>, <rounds>
+cipher/chacha head[1] <alg>, <rounds> rounds
+cipher/chacha head[2] <alg>: <rounds> rounds
+cipher/chacha head[3] It is <alg>, <rounds> rounds.
+cipher/chacha sentence[0] proc computes the <alg> block function with <rounds> rounds, which is <half> double rounds.
+cipher/chacha sentence[1] The function expands a <key_bits>-bit key into a block of <block> bytes with <rounds> rounds of <alg>.
+cipher/chacha sentence[2] The rotation amounts are <rot[0]>, <rot[1]>, <rot[2]> and <rot[3]> bits, as in <alg>, and the function runs <rounds> rounds.
+cipher/salsa head[0] <alg>, <rounds>
+cipher/salsa head[1] <alg>, <rounds> rounds
+cipher/salsa head[2] <alg>: <rounds> rounds
+cipher/salsa head[3] It is <alg>, <rounds> rounds.
+cipher/salsa sentence[0] proc computes the <alg> block function with <rounds> rounds, which is <half> double rounds.
+cipher/salsa sentence[1] The function expands a <key_bits>-bit key into a block of <block> bytes with <rounds> rounds of <alg>.
+cipher/salsa sentence[2] The rotation amounts are <rot[0]>, <rot[1]>, <rot[2]> and <rot[3]> bits, as in <alg>, and the function runs <rounds> rounds.
+encoding/base64_encode head[0] <dir>, <base>
+encoding/base64_encode head[1] <base>, <dir>
+encoding/base64_encode head[2] <base> <dir>
+encoding/base64_encode head[3] <Dir>s <base>
+encoding/base64_encode sentence[0] <gin> input bytes become <gout> output characters, chosen from an alphabet of <radix> characters.
+encoding/base64_encode sentence[1] proc turns groups of <gin> bytes into <gout> characters of a <radix>-character alphabet.
+encoding/base64_encode sentence[2] An output character stands for <bits> bits of the input and comes from an alphabet of <radix> characters.
+encoding/base64_decode head[0] <dir>, <base>
+encoding/base64_decode head[1] <base>, <dir>
+encoding/base64_decode head[2] <base> <dir>
+encoding/base64_decode head[3] <Dir>s <base>
+encoding/base64_decode sentence[0] proc turns an input character back into its value in a <radix>-character alphabet and packs the values into bytes.
+encoding/base64_decode sentence[1] An input character stands for <bits> bits of the decoded data, and the characters come from an alphabet of <radix> characters.
+encoding/base64_decode sentence[2] The decoded bytes are packed from the values of characters of a <radix>-character alphabet, <bits> bits per character.
+encoding/base32_encode head[0] <dir>, <base>
+encoding/base32_encode head[1] <base>, <dir>
+encoding/base32_encode head[2] <base> <dir>
+encoding/base32_encode head[3] <Dir>s <base>
+encoding/base32_encode sentence[0] <gin> input bytes become <gout> output characters, chosen from an alphabet of <radix> characters.
+encoding/base32_encode sentence[1] proc turns groups of <gin> bytes into <gout> characters of a <radix>-character alphabet.
+encoding/base32_encode sentence[2] An output character stands for <bits> bits of the input and comes from an alphabet of <radix> characters.
+encoding/base32_decode head[0] <dir>, <base>
+encoding/base32_decode head[1] <base>, <dir>
+encoding/base32_decode head[2] <base> <dir>
+encoding/base32_decode head[3] <Dir>s <base>
+encoding/base32_decode sentence[0] proc turns an input character back into its value in a <radix>-character alphabet and packs the values into bytes.
+encoding/base32_decode sentence[1] An input character stands for <bits> bits of the decoded data, and the characters come from an alphabet of <radix> characters.
+encoding/base32_decode sentence[2] The decoded bytes are packed from the values of characters of a <radix>-character alphabet, <bits> bits per character.
+encoding/base58_encode head[0] <dir>, <base>
+encoding/base58_encode head[1] <base>, <dir>
+encoding/base58_encode head[2] <base> <dir>
+encoding/base58_encode head[3] <Dir>s <base>
+encoding/base58_encode sentence[0] proc converts its input to base <radix> and writes the digits as single characters of an alphabet of <radix> characters.
+encoding/base58_encode sentence[1] The output is the input written in radix <radix>, and the digits are characters of an alphabet of <radix> characters.
+encoding/base58_encode sentence[2] The result has digits of radix <radix>, which are characters of an alphabet of <radix> characters.
+encoding/base58_decode head[0] <dir>, <base>
+encoding/base58_decode head[1] <base>, <dir>
+encoding/base58_decode head[2] <base> <dir>
+encoding/base58_decode head[3] <Dir>s <base>
+encoding/base58_decode sentence[0] proc reads its input as a number written in base <radix>, a single character of an alphabet of <radix> characters per digit, and writes the bytes of that number into its second argument.
+encoding/base58_decode sentence[1] An input character is a digit of radix <radix>, taken from an alphabet of <radix> characters.
+encoding/base58_decode sentence[2] The decoded number has the characters of the input as its digits in radix <radix>, and the characters come from an alphabet of <radix> characters.
+encoding/base64_encode#alphabet head[0] <s>
+encoding/base64_encode#alphabet head[1] The alphabet is: <s>
+encoding/base64_encode#alphabet head[2] Alphabet: <s>
+encoding/base64_encode#alphabet head[3] "<s>"
+encoding/base64_encode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base64_encode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base64_encode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+encoding/base64_decode#alphabet head[0] <s>
+encoding/base64_decode#alphabet head[1] The alphabet is: <s>
+encoding/base64_decode#alphabet head[2] Alphabet: <s>
+encoding/base64_decode#alphabet head[3] "<s>"
+encoding/base64_decode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base64_decode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base64_decode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+encoding/base32_encode#alphabet head[0] <s>
+encoding/base32_encode#alphabet head[1] The alphabet is: <s>
+encoding/base32_encode#alphabet head[2] Alphabet: <s>
+encoding/base32_encode#alphabet head[3] "<s>"
+encoding/base32_encode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base32_encode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base32_encode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+encoding/base32_decode#alphabet head[0] <s>
+encoding/base32_decode#alphabet head[1] The alphabet is: <s>
+encoding/base32_decode#alphabet head[2] Alphabet: <s>
+encoding/base32_decode#alphabet head[3] "<s>"
+encoding/base32_decode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base32_decode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base32_decode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+encoding/base58_encode#alphabet head[0] <s>
+encoding/base58_encode#alphabet head[1] The alphabet is: <s>
+encoding/base58_encode#alphabet head[2] Alphabet: <s>
+encoding/base58_encode#alphabet head[3] "<s>"
+encoding/base58_encode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base58_encode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base58_encode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+encoding/base58_decode#alphabet head[0] <s>
+encoding/base58_decode#alphabet head[1] The alphabet is: <s>
+encoding/base58_decode#alphabet head[2] Alphabet: <s>
+encoding/base58_decode#alphabet head[3] "<s>"
+encoding/base58_decode#alphabet sentence[0] This is the alphabet of <alen> characters that the <agent> uses, in index order starting at the value 0.
+encoding/base58_decode#alphabet sentence[1] The <agent> works with this string of <alen> characters as its alphabet: its first character stands for the value 0, and the characters after it stand for the following values in order.
+encoding/base58_decode#alphabet sentence[2] The <alen> characters are listed in index order: the first character stands for the value 0.
+strobf/stack_string head[0] <s>
+strobf/stack_string head[1] The string is: <s>
+strobf/stack_string head[2] It writes: <s>
+strobf/stack_string head[3] Plaintext: <s>
+strobf/stack_string sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/stack_string sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/stack_string sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/xor_const head[0] <s>
+strobf/xor_const head[1] The string is: <s>
+strobf/xor_const head[2] It writes: <s>
+strobf/xor_const head[3] Plaintext: <s>
+strobf/xor_const sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/xor_const sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/xor_const sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/xor_rolling head[0] <s>
+strobf/xor_rolling head[1] The string is: <s>
+strobf/xor_rolling head[2] It writes: <s>
+strobf/xor_rolling head[3] Plaintext: <s>
+strobf/xor_rolling sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/xor_rolling sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/xor_rolling sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/alt_xor head[0] <s>
+strobf/alt_xor head[1] The string is: <s>
+strobf/alt_xor head[2] It writes: <s>
+strobf/alt_xor head[3] Plaintext: <s>
+strobf/alt_xor sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/alt_xor sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/alt_xor sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/sub_const head[0] <s>
+strobf/sub_const head[1] The string is: <s>
+strobf/sub_const head[2] It writes: <s>
+strobf/sub_const head[3] Plaintext: <s>
+strobf/sub_const sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/sub_const sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/sub_const sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/reverse_xor head[0] <s>
+strobf/reverse_xor head[1] The string is: <s>
+strobf/reverse_xor head[2] It writes: <s>
+strobf/reverse_xor head[3] Plaintext: <s>
+strobf/reverse_xor sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/reverse_xor sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/reverse_xor sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+strobf/rot_n head[0] <s>
+strobf/rot_n head[1] The string is: <s>
+strobf/rot_n head[2] It writes: <s>
+strobf/rot_n head[3] Plaintext: <s>
+strobf/rot_n sentence[0] proc writes this string of <len> characters into its argument, followed by a terminating NUL byte.
+strobf/rot_n sentence[1] The <len> characters of this string, followed by a NUL byte, are what proc writes into its argument.
+strobf/rot_n sentence[2] After proc has run, its argument holds exactly this string of <len> characters and a terminating NUL byte.
+pktsum/sum8 head[0] <e>
+pktsum/sum8 head[1] <e>-endian
+pktsum/sum8 head[2] It is <e>-endian.
+pktsum/sum8 head[3] <e> endian
+pktsum/sum8 head[4] <n>
+pktsum/sum8 head[5] Offset <n>
+pktsum/sum8 head[6] It is <n>.
+pktsum/sum8 head[7] byte <n>
+pktsum/sum8 head[8] <n>
+pktsum/sum8 head[9] Offset <n>
+pktsum/sum8 head[10] It is at offset <n>.
+pktsum/sum8 head[11] byte <n>
+pktsum/sum8 sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/sum8 sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/sum8 sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/sum8 sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/sum8 sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/sum8 sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/sum8 sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/sum8 sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/sum8 sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/xor8 head[0] <e>
+pktsum/xor8 head[1] <e>-endian
+pktsum/xor8 head[2] It is <e>-endian.
+pktsum/xor8 head[3] <e> endian
+pktsum/xor8 head[4] <n>
+pktsum/xor8 head[5] Offset <n>
+pktsum/xor8 head[6] It is <n>.
+pktsum/xor8 head[7] byte <n>
+pktsum/xor8 head[8] <n>
+pktsum/xor8 head[9] Offset <n>
+pktsum/xor8 head[10] It is at offset <n>.
+pktsum/xor8 head[11] byte <n>
+pktsum/xor8 sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/xor8 sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/xor8 sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/xor8 sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/xor8 sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/xor8 sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/xor8 sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/xor8 sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/xor8 sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/sum16_le head[0] <e>
+pktsum/sum16_le head[1] <e>-endian
+pktsum/sum16_le head[2] It is <e>-endian.
+pktsum/sum16_le head[3] <e> endian
+pktsum/sum16_le head[4] <n>
+pktsum/sum16_le head[5] Offset <n>
+pktsum/sum16_le head[6] It is <n>.
+pktsum/sum16_le head[7] byte <n>
+pktsum/sum16_le head[8] <n>
+pktsum/sum16_le head[9] Offset <n>
+pktsum/sum16_le head[10] It is at offset <n>.
+pktsum/sum16_le head[11] byte <n>
+pktsum/sum16_le sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/sum16_le sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/sum16_le sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/sum16_le sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/sum16_le sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/sum16_le sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/sum16_le sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/sum16_le sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/sum16_le sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/sum16_be head[0] <e>
+pktsum/sum16_be head[1] <e>-endian
+pktsum/sum16_be head[2] It is <e>-endian.
+pktsum/sum16_be head[3] <e> endian
+pktsum/sum16_be head[4] <n>
+pktsum/sum16_be head[5] Offset <n>
+pktsum/sum16_be head[6] It is <n>.
+pktsum/sum16_be head[7] byte <n>
+pktsum/sum16_be head[8] <n>
+pktsum/sum16_be head[9] Offset <n>
+pktsum/sum16_be head[10] It is at offset <n>.
+pktsum/sum16_be head[11] byte <n>
+pktsum/sum16_be sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/sum16_be sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/sum16_be sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/sum16_be sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/sum16_be sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/sum16_be sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/sum16_be sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/sum16_be sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/sum16_be sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/fletcher16 head[0] <e>
+pktsum/fletcher16 head[1] <e>-endian
+pktsum/fletcher16 head[2] It is <e>-endian.
+pktsum/fletcher16 head[3] <e> endian
+pktsum/fletcher16 head[4] <n>
+pktsum/fletcher16 head[5] Offset <n>
+pktsum/fletcher16 head[6] It is <n>.
+pktsum/fletcher16 head[7] byte <n>
+pktsum/fletcher16 head[8] <n>
+pktsum/fletcher16 head[9] Offset <n>
+pktsum/fletcher16 head[10] It is at offset <n>.
+pktsum/fletcher16 head[11] byte <n>
+pktsum/fletcher16 sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/fletcher16 sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/fletcher16 sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/fletcher16 sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/fletcher16 sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/fletcher16 sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/fletcher16 sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/fletcher16 sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/fletcher16 sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/crc16 head[0] <e>
+pktsum/crc16 head[1] <e>-endian
+pktsum/crc16 head[2] It is <e>-endian.
+pktsum/crc16 head[3] <e> endian
+pktsum/crc16 head[4] <n>
+pktsum/crc16 head[5] Offset <n>
+pktsum/crc16 head[6] It is <n>.
+pktsum/crc16 head[7] byte <n>
+pktsum/crc16 head[8] <n>
+pktsum/crc16 head[9] Offset <n>
+pktsum/crc16 head[10] It is at offset <n>.
+pktsum/crc16 head[11] byte <n>
+pktsum/crc16 sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/crc16 sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/crc16 sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/crc16 sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/crc16 sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/crc16 sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/crc16 sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/crc16 sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/crc16 sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+pktsum/len_field head[0] <e>
+pktsum/len_field head[1] <e>-endian
+pktsum/len_field head[2] It is <e>-endian.
+pktsum/len_field head[3] <e> endian
+pktsum/len_field head[4] <n>
+pktsum/len_field head[5] Offset <n>
+pktsum/len_field head[6] It is <n>.
+pktsum/len_field head[7] byte <n>
+pktsum/len_field head[8] <n>
+pktsum/len_field head[9] Offset <n>
+pktsum/len_field head[10] It is at offset <n>.
+pktsum/len_field head[11] byte <n>
+pktsum/len_field sentence[0] proc accepts the packet when its last two bytes hold the checksum as a 16-bit value stored <e>-endian, with the <first> byte first.
+pktsum/len_field sentence[1] The stored 16-bit checksum is read <e>-endian: the <first> byte comes first.
+pktsum/len_field sentence[2] The checksum that the function accepts is stored <e>-endian, with the <first> byte first.
+pktsum/len_field sentence[3] The checksummed range starts at byte offset <n> of the packet and runs up to the stored checksum.
+pktsum/len_field sentence[4] The bytes before offset <n> do not take part in the checksum.
+pktsum/len_field sentence[5] The bytes from offset <n> up to the stored checksum are the bytes that the checksum is computed over.
+pktsum/len_field sentence[6] The length byte is read from offset <n> of the packet, and the checksum follows that many payload bytes.
+pktsum/len_field sentence[7] The payload length is stored in the byte at offset <n>, and the checksum comes right after the payload.
+pktsum/len_field sentence[8] The byte at offset <n> says how many bytes the checksum covers, and the checksum is stored behind them.
+bounds/range_chain head[0] <lo> to <hi>
+bounds/range_chain head[1] lowest <lo>, highest <hi>
+bounds/range_chain head[2] [<lo>, <hi>]
+bounds/range_chain head[3] from <lo> to <hi>
+bounds/range_chain sentence[0] proc returns 1 for every integer from <lo> to <hi>, both included, and for no other integer.
+bounds/range_chain sentence[1] The function accepts exactly the integers between <lo> and <hi> inclusive and returns 1 for them.
+bounds/range_chain sentence[2] The lowest integer for which proc returns 1 is <lo>, and the highest is <hi>.
+bounds/window head[0] <lo> to <hi>
+bounds/window head[1] lowest <lo>, highest <hi>
+bounds/window head[2] [<lo>, <hi>]
+bounds/window head[3] from <lo> to <hi>
+bounds/window sentence[0] proc returns 1 for a window of <w> consecutive integers: it starts at <lo> and ends at <hi>.
+bounds/window sentence[1] The accepted values begin at <lo>, end at <hi> and make up <w> integers.
+bounds/window sentence[2] proc returns 1 for the <w> integers from <lo> to <hi>, and for no other integer.
+bounds/index_limit head[0] <lo> to <hi>
+bounds/index_limit head[1] lowest <lo>, highest <hi>
+bounds/index_limit head[2] [<lo>, <hi>]
+bounds/index_limit head[3] from <lo> to <hi>
+bounds/index_limit sentence[0] proc returns -1 for every index outside the range from <lo> to <hi>, and a non-negative value for every index inside it.
+bounds/index_limit sentence[1] The indexes from <lo> to <hi> are accepted: for them proc returns a byte value, and the other indexes give -1.
+bounds/index_limit sentence[2] The smallest index for which proc returns something other than -1 is <lo>, and the largest is <hi>.
+bounds/clamp head[0] <lo> to <hi>
+bounds/clamp head[1] lowest <lo>, highest <hi>
+bounds/clamp head[2] [<lo>, <hi>]
+bounds/clamp head[3] from <lo> to <hi>
+bounds/clamp sentence[0] proc limits its argument to the interval from <lo> to <hi>, both included.
+bounds/clamp sentence[1] A value below <lo> becomes <lo> and a value above <hi> becomes <hi>.
+bounds/clamp sentence[2] The result lies between the lower bound <lo> and the upper bound <hi>.
+bounds/loop_iterations head[0] <n>
+bounds/loop_iterations head[1] It returns <n>.
+bounds/loop_iterations head[2] returns <n>
+bounds/loop_iterations head[3] Answer: <n>
+bounds/loop_iterations sentence[0] For the argument <n0>, proc returns <n>.
+bounds/loop_iterations sentence[1] Calling proc with <n0> gives the return value <n>.
+bounds/loop_iterations sentence[2] The value that proc returns when it is called with <n0> is <n>.
+bounds/char_class head[0] <n>
+bounds/char_class head[1] <n> values
+bounds/char_class head[2] It is <n>.
+bounds/char_class head[3] <n> byte values
+bounds/char_class sentence[0] proc returns 1 for <n> of the <total> possible byte values.
+bounds/char_class sentence[1] Counting the byte values from 0 to <top> for which proc returns 1 gives <n>.
+bounds/char_class sentence[2] Exactly <n> byte values make proc return 1; for the other byte values it does not.
+antidebug/ptrace head[0] <tech>, <rv>
+antidebug/ptrace head[1] <tech>, returns <rv>
+antidebug/ptrace head[2] It is a <tech> check; returns <rv>.
+antidebug/ptrace head[3] <tech> check, <rv>
+antidebug/ptrace sentence[0] proc asks to be traced by its parent with ptrace(PTRACE_TRACEME) and returns <rv> when that request fails, which shows that a debugger is attached.
+antidebug/ptrace sentence[1] The check is a ptrace request to be traced by the parent, and the function returns <rv> if the request is refused.
+antidebug/ptrace sentence[2] When ptrace(PTRACE_TRACEME) fails because a debugger is already attached, proc returns <rv>.
+antidebug/ptrace_raw head[0] <tech>, <rv>
+antidebug/ptrace_raw head[1] <tech>, returns <rv>
+antidebug/ptrace_raw head[2] It is a <tech> check; returns <rv>.
+antidebug/ptrace_raw head[3] <tech> check, <rv>
+antidebug/ptrace_raw sentence[0] proc asks to be traced by its parent with ptrace(PTRACE_TRACEME) and returns <rv> when that request fails, which shows that a debugger is attached.
+antidebug/ptrace_raw sentence[1] The check is a ptrace request to be traced by the parent, and the function returns <rv> if the request is refused.
+antidebug/ptrace_raw sentence[2] When ptrace(PTRACE_TRACEME) fails because a debugger is already attached, proc returns <rv>.
+antidebug/tracerpid head[0] <tech>, <rv>
+antidebug/tracerpid head[1] <tech>, returns <rv>
+antidebug/tracerpid head[2] It is a <tech> check; returns <rv>.
+antidebug/tracerpid head[3] <tech> check, <rv>
+antidebug/tracerpid sentence[0] proc reads the TracerPid line of /proc/self/status and returns <rv> when it names a tracer.
+antidebug/tracerpid sentence[1] The function reads the status file of its own process for TracerPid, and a tracer makes it return <rv>.
+antidebug/tracerpid sentence[2] A TracerPid that shows a tracer makes proc return <rv>.
+antidebug/env head[0] <tech>, <NAME>
+antidebug/env head[1] <tech> check, <NAME>
+antidebug/env head[2] <NAME>, <tech>
+antidebug/env head[3] getenv, <NAME>
+antidebug/env sentence[0] proc looks at the environment variable <NAME>.
+antidebug/env sentence[1] The value that proc returns depends on the environment variable <NAME>.
+antidebug/env sentence[2] The check reads the environment variable <NAME>, and that is what makes it an environment-based test.
+antidebug/timing_ns head[0] <tech>, <thr>
+antidebug/timing_ns head[1] <tech>: <thr>
+antidebug/timing_ns head[2] <tech> check, <thr>
+antidebug/timing_ns head[3] <tech> check: <thr>
+antidebug/timing_ns sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> nanoseconds.
+antidebug/timing_ns sentence[1] A debugger is reported when more than <thr> nanoseconds pass between the two clock readings.
+antidebug/timing_ns sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> nanoseconds.
+antidebug/timing_us head[0] <tech>, <thr>
+antidebug/timing_us head[1] <tech>: <thr>
+antidebug/timing_us head[2] <tech> check, <thr>
+antidebug/timing_us head[3] <tech> check: <thr>
+antidebug/timing_us sentence[0] proc measures the time between two clock readings and reports a debugger when it is above <thr> microseconds.
+antidebug/timing_us sentence[1] A debugger is reported when more than <thr> microseconds pass between the two clock readings.
+antidebug/timing_us sentence[2] The largest time between the two clock readings that proc still lets pass is <thr> microseconds.
+multi/eval_arith head[0] <n>
+multi/eval_arith head[1] It is <n>.
+multi/eval_arith head[2] Answer: <n>
+multi/eval_arith head[3] <n>.
+multi/eval_arith sentence[0] For the argument <n0>, proc returns <n>.
+multi/eval_arith sentence[1] Calling proc with <n0> gives <n>.
+multi/eval_arith sentence[2] The value that proc returns when it is called with <n0> is <n>.
+multi/key_helper head[0] <k:#x>
+multi/key_helper head[1] It is <k:#x>.
+multi/key_helper head[2] Answer: <k:#x>
+multi/key_helper head[3] The value is <k:#x>.
+multi/key_helper sentence[0] When it is called with the seed <seed>, proc XORs the byte <k:#x> into every byte of the buffer.
+multi/key_helper sentence[1] The byte that proc XORs into each byte of the buffer for the seed <seed> is <k:#x>.
+multi/key_helper sentence[2] For the seed <seed>, every byte of the buffer is XORed with <k:#x>.
+multi/decode_secret head[0] <s>
+multi/decode_secret head[1] The string is: <s>
+multi/decode_secret head[2] Input: <s>
+multi/decode_secret head[3] The input is: <s>
+multi/decode_secret sentence[0] proc returns 1 when its input is exactly this string of <len> characters, and for other inputs it does not.
+multi/decode_secret sentence[1] Only this string of <len> characters makes proc return 1.
+multi/decode_secret sentence[2] The secret that proc accepts has <len> characters, and it is this string.
+multi/chain head[0] <n>
+multi/chain head[1] It is <n>.
+multi/chain head[2] Answer: <n>
+multi/chain head[3] <n>.
+multi/chain sentence[0] For the argument <n0>, proc returns <n>.
+multi/chain sentence[1] Calling proc with <n0> gives <n>.
+multi/chain sentence[2] The value that proc returns when it is called with <n0> is <n>.
+multi/limit_helper head[0] <n>
+multi/limit_helper head[1] <n> characters
+multi/limit_helper head[2] It is <n>.
+multi/limit_helper head[3] <n> chars
+multi/limit_helper sentence[0] With the mode <mode>, proc returns 1 for strings of up to <n> characters and does not for longer ones.
+multi/limit_helper sentence[1] proc accepts a string with the mode <mode> only while its length is at most <n> characters.
+multi/limit_helper sentence[2] The longest string that passes with the mode <mode> has <n> characters.
+xor-key head[0] <s>
+xor-key head[1] The key is: <s>
+xor-key head[2] Key: <s>
+xor-key head[3] The key string is: <s>
+xor-key sentence[0] The function XORs every byte of the buffer with this key, and the key repeats every <len> bytes.
+xor-key sentence[1] Each byte of the buffer is XORed with a character of the key string, taken in turn.
+xor-key sentence[2] The key is a string of <len> characters that is repeated along the whole buffer.
+password head[0] <s>
+password head[1] The string is: <s>
+password head[2] Input: <s>
+password head[3] The input is: <s>
+password sentence[0] The function returns 1 only when its argument is equal to this string.
+password sentence[1] Only an input of exactly <len> characters that equals this string makes the function return 1.
+password sentence[2] The password check succeeds for this string and for no other input.
+keycount head[0] <s>
+keycount head[1] The key is: <s>
+keycount head[2] Key: <s>
+keycount head[3] The counted key is: <s>
+keycount sentence[0] The function counts the lines that start with this key followed by an equals sign and a value that is not empty, and it skips comment lines.
+keycount sentence[1] A line is counted when it begins with this key and an equals sign and has something after it.
+keycount sentence[2] The lines that are counted begin with this <len>-character key and an equals sign, and have something after it.
+alphabet head[0] <s>
+alphabet head[1] The alphabet is: <s>
+alphabet head[2] Alphabet: <s>
+alphabet head[3] "<s>"
+alphabet sentence[0] The decoder returns the position of its argument in this string of <len> characters, or <miss> for any other printable character.
+alphabet sentence[1] The index that the function returns is the position in this alphabet of <len> characters.
+alphabet sentence[2] The position of a character in this string of <len> characters is the value that proc returns for it.
+magic head[0] 0x<m:08x>, <v>
+magic head[1] 0x<m:08x> and <v>
+magic head[2] 0x<m:08x>; <v>
+magic head[3] 0x<m:08x> / <v>
+magic sentence[0] A header is valid only if its first four bytes, read as a little-endian 32-bit word, are 0x<m:08x>, and a version above <v> is rejected.
+magic sentence[1] The 32-bit magic word at the start of the header, read little-endian, must be 0x<m:08x>, and the highest version that proc accepts is <v>.
+magic sentence[2] A header is valid when its first four bytes, read as a little-endian 32-bit value, are 0x<m:08x> and its version is at most <v>.
+lcg head[0] <a>, <r>
+lcg head[1] <a> and <r> rounds
+lcg head[2] <a>, <r> rounds
+lcg head[3] <a>; <r> rounds
+lcg sentence[0] The seed goes through <r> rounds of a linear congruential step with the multiplier <a>, masked with 0x<mask:08x>.
+lcg sentence[1] A new seed is computed from the previous seed in <r> rounds, with the multiplier <a> and the mask 0x<mask:08x> that keeps the low bits.
+lcg sentence[2] This is a linear congruential generator with the multiplier <a>, applied <r> times.
+hash head[0] <name>, 0x<c:08x>
+hash head[1] <name> and 0x<c:08x>
+hash head[2] It is <name>, 0x<c:08x>.
+hash head[3] <name>: 0x<c:08x>
+hash sentence[0] The hash starts from the value <init:#x>, and the result is XORed with 0x<c:08x> before it is returned.
+hash sentence[1] The hash is <name>, and the final step XORs the result with the constant 0x<c:08x>.
+hash sentence[2] The function returns the hash of its input string XORed with 0x<c:08x>.
+skip head[0] 0x<b:02x>
+skip head[1] It is 0x<b:02x>.
+skip head[2] The value is 0x<b:02x>.
+skip head[3] Answer: 0x<b:02x>
+skip sentence[0] The checksum adds up every byte of the input except those equal to 0x<b:02x>, and then adds the length.
+skip sentence[1] Bytes with the value 0x<b:02x> are left out of the sum, and the length of the input is added at the end.
+skip sentence[2] The test leaves exactly one byte value out of the sum, and it is 0x<b:02x>.
+rotate head[0] 0x<k:08x>, <r>
+rotate head[1] 0x<k:08x> and <r>
+rotate head[2] 0x<k:08x>; <r>
+rotate head[3] 0x<k:08x>, <r> bits
+rotate sentence[0] The function XORs its argument with 0x<k:08x> and then rotates the result left by <r> bits.
+rotate sentence[1] The constant 0x<k:08x> is XORed in first, and the left rotation that follows is by <r> bits.
+rotate sentence[2] A rotation to the left by <r> bits comes after the XOR with 0x<k:08x>.
+threshold head[0] <lo> to <hi>
+threshold head[1] lowest <lo>, highest <hi>
+threshold head[2] [<lo>, <hi>]
+threshold head[3] from <lo> to <hi>
+threshold sentence[0] The function returns <inside> for every v from <lo> to <hi>, <below> for a smaller v and <above> for a larger v.
+threshold sentence[1] Below <lo> it returns <below>, above <hi> it returns <above>, and in between, both bounds included, it returns <inside>.
+threshold sentence[2] The lower bound is <lo> and the upper bound is <hi>, both inclusive.

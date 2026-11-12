@@ -6,7 +6,13 @@ Two arms per model, on 10 questions about 8 functions in one stripped Linux bina
            the model answers. Measures reading ability, which is what REA needs from a model.
   agent  : the model gets a shell with `rea`, the binary and the question, and must find the function itself (up to 8 tool
            calls, JSON tool protocol enforced by the harness). Measures tool use.
-Scoring is exact/any/all substring match, recorded with the full transcript in results/phase6/rea/<model>.jsonl.
+Scoring is rea_bench.scoring.score, the EVALUATION scorer: the frozen whole-reply substring modes for the fixed questions and the legacy templates (so 34/60 -> 50/60 stays
+comparable), the whitelist headline grammar for the generated families. The data path (modal_rea_data.py --stage sample) does not use it: it scores every family, legacy
+included, with rea_bench.scoring.score_strict. Recorded with the full transcript in results/phase6/rea/<model>.jsonl.
+The generated held-out set (seed 1001) is a third arm, reported on its own line and never added to the fixed 10: each record has `pass` (strict:
+the HEADLINE of the reply is the answer) and `pass_any_line` (a format-insensitive control: any line of the reply is). A base model that
+thinks aloud on line 1 scores 0 strict and, if it answers later, 1 on the control; the gain of a fine-tune on the strict score is only
+trustworthy as far as the control moves with it.
 
     modal run tools/modal_rea.py --only heretic-9b,qwen35-35b-a3b-heretic
 """
@@ -24,7 +30,12 @@ import modal
 _HERE = pathlib.Path(__file__).resolve()
 ROOT = _HERE.parents[2] if len(_HERE.parents) > 2 else _HERE.parent  # inside the Modal container the file sits at /root
 import sys; sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+RB = ROOT / "tools" / "rea-bench"          # the generator package; inside the container it is mounted at /root/rea_bench
+if (RB / "rea_bench").is_dir():
+    sys.path.insert(0, str(RB))
 from modal_qbench import MODELS, LLAMA_DIGEST, models_vol  # noqa: E402  (same files, same volume)
+from rea_bench import dedupe, outputs  # noqa: E402  (stdlib only)
+from rea_bench.scoring import check_mode, score, score_any_line  # noqa: E402  (stdlib only; the EVALUATION scorers: the data pipeline scores with score_strict, see modal_rea_data.py)
 lora_vol = modal.Volume.from_name("lf-lora", create_if_missing=True)
 # Our own GGUFs (base and LoRA quantized by the same path, tools/modal_lora.py): repo "vol:" = file inside the lf-lora volume
 LOCAL_MODELS = [
@@ -43,7 +54,7 @@ REA_PKG = "rea-agents@6.8.0"   # same version as the host install (tools/rea-ins
 image = (
     modal.Image.from_registry(f"ghcr.io/ggml-org/llama.cpp@{LLAMA_DIGEST}", add_python="3.11")
     .entrypoint([])
-    .apt_install("curl", "unzip", "xz-utils", "gcc", "binutils", "ca-certificates")
+    .apt_install("curl", "unzip", "xz-utils", "gcc", "clang", "binutils", "ca-certificates")
     .run_commands(
         f"curl -fsSL -o /tmp/jdk.tgz {JDK_URL} && echo '{JDK_SHA}  /tmp/jdk.tgz' | sha256sum -c - && mkdir -p /opt/jdk && tar -xzf /tmp/jdk.tgz -C /opt/jdk --strip-components=1 && rm /tmp/jdk.tgz",
         f"curl -fsSL -o /tmp/ghidra.zip {GHIDRA_URL} && echo '{GHIDRA_SHA}  /tmp/ghidra.zip' | sha256sum -c - && unzip -q /tmp/ghidra.zip -d /opt && mv /opt/ghidra_12.1.4_PUBLIC /opt/ghidra && rm /tmp/ghidra.zip",
@@ -56,6 +67,8 @@ image = (
     .add_local_dir(ROOT / "tools" / "modal" / "rea-bench", "/bench")
     .add_local_python_source("modal_qbench")
 )
+if (RB / "rea_bench").is_dir():
+    image = image.add_local_dir(str(RB / "rea_bench"), "/root/rea_bench")   # last layer, like modal_rea_data.py had it
 app = modal.App("lf-rea", image=image)
 
 SYSTEM_RECIPE = ("You are a reverse engineer. You are given decompiled C pseudocode of one function from a stripped binary and a "
@@ -82,31 +95,8 @@ def chat(messages, max_tokens=400, temperature=0.0):
     return txt, d.get("usage", {})
 
 
-def _variants(x: str) -> list:
-    """An integer answer may be given in decimal or hex, signed or as the 32-bit pattern (0x97c59b7a == -0x683a6486); accept all."""
-    out = [x]
-    m = re.fullmatch(r"-?\d+", x)
-    if m:
-        v = int(x)
-        if abs(v) > 9:
-            out += [format(abs(v), "x") if v > 0 else "-0x" + format(-v, "x"), "0x" + format(v & 0xffffffff, "x")]
-            if v > 0:
-                out.append("0x" + format(v, "x"))
-    elif re.fullmatch(r"[0-9a-f]{8}", x):
-        v = int(x, 16)
-        if v >= 0x80000000:
-            out.append("-0x" + format(0x100000000 - v, "x"))
-    return out
-
-
-def score(answer: str, task: dict) -> bool:
-    a = re.sub(r"\s+", "", answer.lower())
-    if task["score"] == "all_groups":
-        return all(any(re.sub(r"\s+", "", x.lower()) in a for x in g) for g in task["accept"])
-    acc = [[re.sub(r"\s+", "", v.lower()) for v in _variants(x)] for x in task["accept"]]
-    if task["score"] == "all":
-        return all(any(v in a for v in g) for g in acc)
-    return any(v in a for g in acc for v in g)
+# `score` is rea_bench.scoring.score (imported above): legacy modes for the 10 fixed questions and the old templates, headline modes for
+# the generated families. An unknown mode raises, so main() checks every task before a GPU is rented.
 
 
 def sh(cmd: str, timeout=300) -> str:
@@ -131,6 +121,22 @@ def decompile_all(binary: str) -> dict:
         m = re.search(r'"normalized_result"\s*:\s*"((?:[^"\\]|\\.)*)"', j)
         code = json.loads('"' + m.group(1) + '"') if m else j[-1500:]
         out[name] = code
+    return out
+
+
+def run_heldout(tasks: list, ask) -> list:
+    """The held-out arm: one record per task with the strict score (`pass`: the headline is the answer) and the control (`pass_any_line`).
+    `ask(messages) -> (reply, usage)`. A call that raises is recorded as an error and the run goes on."""
+    out = []
+    for t in tasks:
+        extra = f"\n\nData referenced by the function (bytes at those addresses):\n{t['refs']}" if t.get("refs") else ""
+        try:
+            ans, _usage = ask([{"role": "system", "content": SYSTEM_RECIPE},
+                               {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}])
+            rec = {"pass": score(ans, t), "pass_any_line": score_any_line(ans, t), "answer": ans[:600]}
+        except Exception as e:      # one timeout must not lose the whole model run (the fixed arms and the agent arm)
+            rec = {"pass": False, "pass_any_line": False, "answer": "", "error": repr(e)[:300]}
+        out.append({"arm": "heldout", "task": t["id"], "kind": t["kind"], **rec})
     return out
 
 
@@ -169,11 +175,7 @@ def run_model(name: str, repo: str, fname: str, heldout: list | None = None) -> 
             ans, usage = chat([{"role": "system", "content": SYSTEM_RECIPE},
                                {"role": "user", "content": f"```c\n{code}\n```{extra}\n\nQuestion: {t['question']}"}])
             records.append({"arm": "recipe", "task": t["id"], "pass": score(ans, t), "answer": ans[:600], "usage": usage})
-        for t in heldout or []:   # generated held-out set (seed 1001), never used for training
-            extra = f"\n\nData referenced by the function (bytes at those addresses):\n{t['refs']}" if t.get("refs") else ""
-            ans, usage = chat([{"role": "system", "content": SYSTEM_RECIPE},
-                               {"role": "user", "content": f"```c\n{t['pseudocode']}\n```{extra}\n\nQuestion: {t['question']}"}])
-            records.append({"arm": "heldout", "task": t["id"], "kind": t["kind"], "pass": score(ans, t), "answer": ans[:600]})
+        records += run_heldout(heldout or [], chat)      # generated held-out set (seed 1001), never used for training
         for t in tasks:
             msgs = [{"role": "system", "content": SYSTEM_AGENT},
                     {"role": "user", "content": f"Binary: /work/target (stripped ELF x86-64). Question: {t['question']} "
@@ -228,9 +230,14 @@ def main(only: str = ""):
     dest = ROOT / "results" / "phase6" / "rea"
     dest.mkdir(parents=True, exist_ok=True)
     todo = [m for m in MODELS + LOCAL_MODELS if not only or m[0] in only.split(",")]
-    hf = dest.parent / "rea-data" / "decompiled-seed1001.jsonl"
-    heldout = [json.loads(l) for l in open(hf) if l.strip()] if hf.exists() else []
-    heldout = [t for t in heldout if "pseudocode" in t]
+    heldout = outputs.load_tasks(outputs.heldout_files(dest.parent / "rea-data"))   # decompiled-seed1001*.jsonl, one per family run
+    over = dedupe.heldout_overflow(heldout)
+    if over:
+        raise SystemExit(f"the held-out files hold more tasks than the pinned held-out list covers ({dedupe.HELDOUT_N} per family): "
+                         f"{', '.join(f'{f} {c}' for f, c in over.items())}. Tasks beyond the list may be in training data; regenerate with "
+                         f"`--seed {dedupe.HELDOUT_SEED} --n <= {dedupe.HELDOUT_N}` per family")
+    for t in json.loads((ROOT / "tools" / "modal" / "rea-bench" / "rea-tasks.json").read_text())["tasks"] + heldout:
+        check_mode(t)       # ValueError on an unknown score mode now, not half way through a paid run
     calls = [((run_l40s if gpu == "L40S" else run_l4).spawn(name, repo, fname, heldout), name) for name, repo, fname, gpu in todo]
     for call, name in calls:
         try:
@@ -241,6 +248,14 @@ def main(only: str = ""):
         (dest / f"{name}.meta.json").write_text(json.dumps(res["meta"], indent=1))
         (dest / "pseudocode.json").write_text(json.dumps(res["pseudocode"], indent=1))
         rec = [r for r in res["records"] if r["arm"] == "recipe"]; ag = [r for r in res["records"] if r["arm"] == "agent"]
-        ho = [r for r in res["records"] if r["arm"] == "heldout"]
-        print(f"{name}: heldout {sum(r['pass'] for r in ho)}/{len(ho)}  recipe {sum(r['pass'] for r in rec)}/{len(rec)}  agent {sum(r['pass'] for r in ag)}/{len(ag)}  "
+        print(f"{name}: fixed questions: recipe {sum(r['pass'] for r in rec)}/{len(rec)}  agent {sum(r['pass'] for r in ag)}/{len(ag)}  "
               f"invalid {sum(r['invalid_tool_calls'] for r in ag)}  {res['meta']['gpu']} {res['meta']['wall_s']}s")
+        hs = outputs.heldout_summary(res["records"])
+        (dest / f"{name}.heldout.json").write_text(json.dumps(hs, indent=1))
+        if hs:
+            a = hs["ALL"]
+            print(f"{name}: generated held-out set (separate from the fixed questions): strict {a['strict']}/{a['n']}  "
+                  f"format-insensitive control {a['control']}/{a['n']}  errors {a['errors']}")
+            for kind, row in sorted(hs.items()):
+                if kind != "ALL":
+                    print(f"    {kind:10s} strict {row['strict']:3d}/{row['n']:<3d} control {row['control']:3d}/{row['n']:<3d}" + (f"  errors {row['errors']}" if row["errors"] else ""))

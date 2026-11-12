@@ -1,24 +1,16 @@
-"""Generate reverse-engineering training/eval tasks with automatic ground truth.
+"""The original ten templates (family `legacy`), frozen.
 
-Each task is a small C program built from templates with random parameters (keys, constants, algorithms, flags). The answer
-is known from the parameters, so no human writes labels. Programs are compiled stripped at -O1/-O2 by the consumer
-(tools/modal_rea_data.py). Nothing here is copied from any public dataset.
-
-    python3 gen_rea_tasks.py --n 300 --seed 7 --out /tmp/rea-tasks   # writes <id>.c and <id>.json per task
+The 3,646-pair SFT set and the held-out split (seed 1001) came from these, so nothing here may change what a seed produces:
+tests/test_rea_bench.py pins the SHA-256 of the output for seeds 1001 and 7. Each template returns
+(C body defining `proc`, question, truth dict, kind). New families live in their own modules and use the richer Task schema.
 """
 from __future__ import annotations
 
-import argparse
-import json
-import pathlib
 import random
 import string
 
-HDR = "#include <stdio.h>\n#include <stdlib.h>\n#include <string.h>\n#include <stdint.h>\n\n"
+from .core import Task, rword
 
-
-def rword(rng, n):
-    return "".join(rng.choice(string.ascii_lowercase + string.digits) for _ in range(n))
 
 
 def t_xor_key(rng):
@@ -55,7 +47,7 @@ def t_magic(rng):
     uint32_t ver; memcpy(&ver, hdr + 4, 4);
     return ver > {maxv} ? -3 : (int)ver;
 }}'''
-    return body, "What 32-bit magic value must the header start with (hex), and what is the highest accepted version?", {"score": "all", "accept": [f"{magic:08x}", str(maxv)]}, "magic"
+    return body, "What 32-bit magic value must the header start with (hex, the first four bytes read as a little-endian word), and what is the highest accepted version?", {"score": "all", "accept": [f"{magic:08x}", str(maxv)]}, "magic"
 
 
 def t_lcg(rng):
@@ -147,24 +139,16 @@ def t_threshold(rng):
 TEMPLATES = [t_xor_key, t_password, t_magic, t_lcg, t_hash, t_skip, t_keycount, t_alphabet, t_rotate, t_threshold]
 
 
-def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--n", type=int, default=200)
-    ap.add_argument("--seed", type=int, default=1)
-    ap.add_argument("--out", type=pathlib.Path, required=True)
-    a = ap.parse_args()
-    rng = random.Random(a.seed)
-    a.out.mkdir(parents=True, exist_ok=True)
-    for i in range(a.n):
-        fn = TEMPLATES[i % len(TEMPLATES)]
-        body, q, truth, kind = fn(rng)
+FAMILY = "legacy"
+VARIANTS = {fn.__name__[2:]: fn for fn in TEMPLATES}
+
+
+def generate(n: int, seed: int, cc: str = "mix") -> list:
+    """One shared rng for the whole run and the old -O1/-O2/-Os draw, exactly as before; `cc` is ignored (no `cc` field)."""
+    rng = random.Random(seed)
+    out = []
+    for i in range(n):
+        body, q, truth, kind = TEMPLATES[i % len(TEMPLATES)](rng)
         opt = rng.choice(["-O1", "-O2", "-Os"])
-        tid = f"{kind}-{a.seed}-{i:04d}"
-        src = HDR + body + '\n\nint main(int argc, char **argv) { (void)argc; (void)argv; puts("ok"); return 0; }\n'
-        (a.out / f"{tid}.c").write_text(src)
-        (a.out / f"{tid}.json").write_text(json.dumps({"id": tid, "kind": kind, "question": q, "opt": opt, "function": "proc", **truth}))
-    print(f"{a.n} tasks -> {a.out}")
-
-
-if __name__ == "__main__":
-    main()
+        out.append(Task(kind=kind, variant="", body=body, question=q, truth=truth, id=f"{kind}-{seed}-{i:04d}", opt=opt, cc=None))
+    return out
