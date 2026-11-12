@@ -22,7 +22,7 @@ import time
 from .. import config, outputs, records, traces
 from ..config import MAX_LEN  # noqa: F401  (the training window: one number for the length rule of the sample stage and of the training run)
 from ..domain import mode_of
-from ..traces import DEFAULT_MAX_TRACES
+from ..traces import DEFAULT_MAX_TRACES, is_error_reply
 
 
 def _server_token_count(text: str) -> int:
@@ -80,7 +80,9 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
     """The sample stage, for any subject: `domain` supplies the tasks (`domain.load_tasks(tasks_source)`: for REA the directory of the volume the decompile stage wrote), the messages, the verdict and the truth; `data_vol` is the Modal
     Volume mounted at /data (`reload` and `commit` are called on it); the model is read from /models. The wrapper of a subject (tools/modal/modal_rea_data.py for REA) registers this function with Modal and gives it its own.
     K replies per task, checkpointed task by task on the volume (`<sft stem>.partial.jsonl`): a run that hits the timeout is continued
-    with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those. The SFT
+    with resume=True instead of paid for twice; a resume asks again the samples that failed (`[error ...]`) or are missing, and only those; in a reasoning run also the STALE ones: a reply carries
+    the fingerprint of the prompt it answered and the budget it was asked with (`outputs.out_meta`), and one that answered another prompt than the task's now, or was cut off at a smaller budget than
+    the task's now (`max_tokens_by_family` grew), is asked again; a reply of an older checkpoint has no fingerprint (it is kept) and counts as asked with `max_tokens`. The SFT
     records are built at the end from all replies (`distill.records`: the teacher's answer is a filter, the stored text is rendered from the truth, a
     task that `domain.needs_agreement` needs two right samples); the stats come per family.
     `reasoning` (round 11, `distill.traces`): the teacher is asked for the steps and a last `Answer:` line, `max_tokens` defaults to 768 (300 otherwise), the final answer is the filter and a kept
@@ -121,11 +123,17 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         domain.check_task(t)    # a task the domain cannot score, or whose truth its own verify rejects, must stop the run before the model download and the server start
     partial = pathlib.Path(f"/data/{outputs.sft_stem(name, run_tag)}.partial.jsonl")
     results = outputs.load_partial(partial, resume)
-    todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k)) for t in tasks]
+    # a reasoning run's replies carry the prompt they answered and the budget they were asked with: a resume asks again what is stale (another prompt, or cut off at a smaller budget than the task's now); a default run's
+    # checkpoint keeps its two-element replies (its record is rendered from the truth, the teacher's text is not stored)
+    prompt_of = lambda t: outputs.prompt_sha(domain.messages(t, mode))
+    stale_args = lambda t: (prompt_of(t), budget(t), max_tokens) if reasoning else ()
+    todo = [(t, outputs.samples_to_ask(results.get(t["id"]), k, *stale_args(t))) for t in tasks]
     todo = [(t, ask) for t, ask in todo if ask]
     if results:
         redo = sum(len(ask) for t, ask in todo if t["id"] in results)
-        print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask ({redo} failed or missing samples of checkpointed tasks)")
+        stale = sum(1 for t, ask in todo if t["id"] in results for i in ask if i < len(results[t["id"]]["outs"]) and not is_error_reply(results[t["id"]]["outs"][i][0]))
+        print(f"resuming: {len(tasks) - len(todo)} of {len(tasks)} tasks complete, {len(todo)} to ask (" + (f"{redo} failed or missing samples of checkpointed tasks)" if not stale else
+              f"{redo - stale} failed or missing and {stale} stale samples of checkpointed tasks: a stale one answered another prompt than the task's now, or was cut off at a smaller budget than its own)"))
     path = hf_hub_download(repo, fname, cache_dir="/models")
     server_log = open("/tmp/server.log", "w")
     srv = subprocess.Popen(["/app/llama-server", "-m", path, "--host", "127.0.0.1", "--port", "8080", "-ngl", "999", "-c", str(slots * slot_ctx),
@@ -158,6 +166,7 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
         msgs = domain.messages(t, mode)
         outs = [tuple(o) for o in results[t["id"]]["outs"]] if t["id"] in results else []
         outs += [("", False)] * (k - len(outs))                    # a checkpointed task keeps its answers; only the samples in `ask` are asked
+        meta = {"prompt_sha": outputs.prompt_sha(msgs), "max_tokens": budget(t)}       # what a reasoning run's reply answers and was asked with (`outputs.out_meta`)
         for i in ask:
             try:
                 body_seed = SEED_BASE + i
@@ -179,9 +188,10 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
                 ok = score(txt, t)
             except Exception as e:
                 txt, ok = f"[error {e!r}]", False       # the text of a failed request is never scored (B1) and never stored; stats count it; --resume asks it again
-            outs[i] = (txt, ok)
+            outs[i] = (txt, ok, meta) if reasoning else (txt, ok)
         return t, outs
 
+    by_id = {t["id"]: t for t in tasks}
     t_start = time.time()
     try:
         with ThreadPoolExecutor(slots) as ex, open(partial, "a") as ck:
@@ -193,6 +203,8 @@ def sample_answers(domain, data_vol, tasks_source, name: str, repo: str, fname: 
                 if i % 20 == 0:
                     data_vol.commit()
         wall = max(time.time() - t_start, 1e-9)
+        if reasoning:           # a reply to another prompt that could not be asked again (its task does not fit the slot now) is not stored under the task's prompt
+            results = {tid: {**rec, "outs": outputs.current_outs(rec["outs"], prompt_of(by_id[tid]))} if tid in by_id else rec for tid, rec in results.items()}
         kept, stats = records.assemble(tasks, results, name, lambda t: domain.messages(t, mode), reasoning, thinking, max_traces, domain=domain)
         if reasoning:           # this call's own throughput, next to the cost line's assumption (a resumed run reports only the replies it asked)
             stats["perf"] = {**perf, "wall_s": round(wall), "tok_per_s": round(perf["completion_tokens"] / wall, 1), "s_per_request": round(wall / max(perf["requests"], 1), 2)}

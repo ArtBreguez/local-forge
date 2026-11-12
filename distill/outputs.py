@@ -12,7 +12,7 @@ import json
 import os
 import pathlib
 
-from .traces import is_error_reply
+from .traces import is_error_reply, is_truncated
 
 
 REASONING_SUFFIX = "-reasoning"
@@ -84,14 +84,39 @@ def load_partial(path: pathlib.Path, resume: bool) -> dict:
     return out
 
 
-def samples_to_ask(rec, k: int) -> list:
+def out_meta(out) -> dict:
+    """What a reasoning run's checkpoint says about one reply beyond its text and flag: the third element of an out, `{"prompt_sha", "max_tokens"}` (the fingerprint of the messages it answered and the budget it
+    was asked with); {} for the two-element outs of a default run and of an older checkpoint."""
+    return out[2] if len(out) > 2 and isinstance(out[2], dict) else {}
+
+
+def is_stale(out, prompt: str = None, budget: int = None, old_budget: int = None) -> bool:
+    """True when an answered reply no longer stands for its task: it answered another prompt than `prompt` (fingerprints compared when both are known), or it was cut off at `max_tokens` (it ends in the TRUNCATED
+    marker) at a smaller budget than the task's `budget` now (`old_budget` for a reply that does not say what it was asked with: an older checkpoint had one budget for all). Without `prompt` and `budget`
+    nothing is stale."""
+    meta = out_meta(out)
+    if prompt and meta.get("prompt_sha") and meta["prompt_sha"] != prompt:
+        return True
+    asked = meta.get("max_tokens")
+    if not isinstance(asked, int) or isinstance(asked, bool) or asked < 1:        # not a budget (a hand-edited file): the old one
+        asked = old_budget
+    return bool(budget and asked and asked < budget and is_truncated(out[0]))
+
+
+def current_outs(outs: list, prompt: str) -> list:
+    """The replies of a checkpointed task that answered the task's prompt `prompt` (or do not say which: an older checkpoint): a reply to another prompt is left out, so that it is never stored under this one."""
+    return [o for o in outs if not (out_meta(o).get("prompt_sha") and out_meta(o)["prompt_sha"] != prompt)]
+
+
+def samples_to_ask(rec, k: int, prompt: str = None, budget: int = None, old_budget: int = None) -> list:
     """The sample indexes (0..k-1) of one task that a resumed sample stage must ask: all of them for a task that is not in the checkpoint (`rec` is None),
-    otherwise the samples that failed (`[error ...]`, a dead server or a timeout) or are missing. A failed request is checkpointed like an answer so that the
+    otherwise the samples that failed (`[error ...]`, a dead server or a timeout), are missing, or are STALE (`is_stale`: a reply to another prompt than `prompt`, or one cut off at a smaller budget than the
+    task's `budget` now: a longer budget gives a different reply, not the same cut). A failed request is checkpointed like an answer so that the
     run can finish and count it, but it is not an answer: `--resume` is the remedy the failure warning prints, so it must ask again (round 4, M3)."""
     if rec is None:
         return list(range(k))
     outs = rec["outs"]
-    return [i for i in range(k) if i >= len(outs) or is_error_reply(outs[i][0])]
+    return [i for i in range(k) if i >= len(outs) or is_error_reply(outs[i][0]) or is_stale(outs[i], prompt, budget, old_budget)]
 
 
 def prompt_sha(messages: list) -> str:

@@ -165,7 +165,8 @@ class EndToEnd(unittest.TestCase):
             self.assertEqual(sorted(line), ["id", "kind", "outs", "prompt_sha"])
             self.assertEqual(line["prompt_sha"], rsn.prompt_sha(rsn.messages(by_id[line["id"]])))
             for i, o in enumerate(line["outs"]):
-                self.assertEqual(sorted(o), ["finish", "prompt_tokens", "secs", "text", "tokens"])
+                self.assertEqual(sorted(o), ["finish", "max_tokens", "prompt_sha", "prompt_tokens", "secs", "text", "tokens"])
+                self.assertEqual((o["prompt_sha"], o["max_tokens"]), (line["prompt_sha"], 4096), "a reply says what it answered and the budget it was asked with")
                 self.assertTrue(o["text"].startswith(f"<think>\nLet me think about {line['id']}, sample {i}."), o["text"])
                 self.assertIn("\n</think>\n\n", o["text"])
                 self.assertTrue(o["text"].endswith(f"Answer: {right(by_id[line['id']])}"))
@@ -404,7 +405,7 @@ class Checkpoint(unittest.TestCase):
 
     def test_the_session_counts_what_it_did_for_run_json(self):
         summary, _ = self.session()
-        self.assertEqual(sorted(summary), sorted(["asked", "cut_off", "deadline_hit", "failed", "completion_tokens", "requests", "seconds", "skipped_too_long", "tasks", "tasks_written", "tok_per_s"]))
+        self.assertEqual(sorted(summary), sorted(["asked", "cut_off", "deadline_hit", "failed", "completion_tokens", "requests", "seconds", "skipped_too_long", "stale", "tasks", "tasks_written", "tok_per_s"]))
         self.assertEqual((summary["tasks"], summary["completion_tokens"]), (5, 5 * (40 + 41)))
 
     def test_read_lines_skips_a_line_cut_off_by_a_timeout_and_the_last_line_of_an_id_wins(self):

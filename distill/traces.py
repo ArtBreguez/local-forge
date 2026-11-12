@@ -51,12 +51,17 @@ def final_answer(reply: str):
     return _ANSWER_LINE.match(lines[-1]).group("rest").strip() or None
 
 
+def is_truncated(reply: str) -> bool:
+    """True for a reply the server cut off at max_tokens: the text ends in `TRUNCATED` (`reply_text` appends it for finish "length")."""
+    return clean_reply(reply).endswith(TRUNCATED)
+
+
 def verdict(reply: str, t: dict, *, domain) -> str:
     """Why a reply is or is not an answer: "error" (the text of a failed request), "truncated", "no_answer_line" (no final `Answer:` line, text after it, or an empty
     one), "wrong" (the line is there and `domain.verify` rejects its text) or "accepted"."""
     if is_error_reply(reply):
         return "error"
-    if clean_reply(reply).endswith(TRUNCATED):
+    if is_truncated(reply):
         return "truncated"
     answer = final_answer(reply)
     if answer is None:

@@ -264,7 +264,7 @@ def assemble(tasks: list, results: dict, model: str, messages_for, reasoning: bo
         rec = results.get(t["id"])
         if rec is None:
             continue
-        outs = [(o, score(o, t)) for o, _flag in rec["outs"]]
+        outs = [(out[0], score(out[0], t)) for out in rec["outs"]]          # an out is [reply, flag] or [reply, flag, {prompt_sha, max_tokens}] (outputs.out_meta)
         if reasoning:
             verdicts = collections.Counter(verdict(o, t, domain=domain) for o, _flag in outs)
             records, reason, dropped = select_traces(outs, t, thinking, max_traces, domain=domain)

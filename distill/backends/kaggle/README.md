@@ -8,6 +8,15 @@ Two stdlib-only files: `build_tasks.py` (on this machine: picks the tasks, write
 
 The kernel gives each task the budget of its family: the request's `max_tokens`, the prompt-fit check (`prompt tokens + budget <= ctx_per_slot`, else the task is skipped and listed in `run.json` as `skipped_too_long`) and the request timeout (`request_timeout_s` is for `max_tokens`; a longer budget gets a proportionally longer one). `kaggle-score` reads the map from `run.json`: the per-family table shows each family's budget, and the share cut off is read against it.
 
+## What a resume brings with it, and what it asks again
+
+An output attached with `--resume-from` brings its **replies** with it, not only its `llama-server`. Each reply in `replies.jsonl` carries the `prompt_sha` of the messages it answered and the `max_tokens` it was asked with, so a line that mixes sessions stays honest (the line's own `prompt_sha` is only the prompt of the session that wrote it). The kernel asks a sample again when it is **missing, failed, or stale**:
+
+- stale by prompt: the reply's `prompt_sha` (its own, else its line's) is not the fingerprint of the task's messages now. The pilot's `out2` was asked under the old `SYSTEM_REASONING` (`system_sha bd6b48eaa3a0131b`); a resume from it with the current prompt asks every reply again, and says so in the log;
+- stale by budget: `finish` is `length` and its `max_tokens` (the config's `max_tokens` for a reply that does not say) is below the task's budget now. A cipher reply cut off at 4096 is asked again when cipher has 8192; one cut off at 8192 is not asked again at 8192 (same seed and budget, the same cut).
+
+A reply that stopped by itself is never stale for its budget. A reply that could not be asked again before the deadline stays in the line with its own fingerprint; `kaggle-score` checks the fingerprint reply by reply and skips and counts the ones of another prompt (`prompts.partial`). A reply of an older kernel has no fingerprint of its own: it takes its line's, and a line with none is taken as it was (nothing to compare). **To get only the server** of an earlier output, publish its `llama-bin` as a dataset and use `--llama-dataset`; leave `--resume-from` out.
+
 ## One server, fewer and longer slots (and why not two passes)
 
 `llama-server -c` is `slots x ctx_per_slot`; the config says `slots` 4 and `ctx_per_slot` 8192 (`slot_context`: a prompt of up to 4096 tokens and a reply of up to 4096). A task of 8192 tokens does not fit that slot. `run_teacher.server_geometry(cfg, tasks)` decides what the server really gets:

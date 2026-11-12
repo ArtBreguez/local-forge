@@ -414,7 +414,7 @@
    },
    "cache_prompt": false
   },
-  "partial_sha256": "ef06f4bda5c109da0b59575da4cf33749dc008e9b718a4fca7e948d5feff908a",
+  "partial_sha256": "db7a13e369c223041667d7e5c9c73edc8f70c9979ff558a5c9242c6d2c96897c",
   "printed": "--quota structs=2,crc=1,xor-key=1: 4 tasks to sample: structs 2/2, crc 1/1, xor-key 1/1\n",
   "tokenized": 27
  },
@@ -853,7 +853,7 @@
    },
    "cache_prompt": false
   },
-  "partial_sha256": "b187083eecd85b77ebdca0532d1ae48f44aae29914f9015b22b5eb20000d1727",
+  "partial_sha256": "5a148557ff1dc717c9c23ca3b85108e9224f2f830f8738ad200ae7d10d7a70ca",
   "printed": "--quota structs=2,crc=1,xor-key=1: 4 tasks to sample: structs 2/2, crc 1/1, xor-key 1/1\nresuming: 2 of 4 tasks complete, 2 to ask (2 failed or missing samples of checkpointed tasks)\n",
   "tokenized": 63
  }

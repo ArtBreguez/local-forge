@@ -11,10 +11,14 @@ same procedures run on the new layout and the output must be the same text, in t
   Training   `run_tag`, `batch_plan` and the record parser of the training script on a grid
   Kit        the files the Kaggle kit writes for the same tasks
 
-ONE DELIBERATE CHANGE since phase A: `SYSTEM_REASONING` now tells the model that the last line gives every part of a multi-part question (the thinking pilot's antidebug replies had the number and not the
-technique: 6 of 6 rejected). It is the only thing that moved the expected files: with the phase-A prompt put back, every test below passes byte for byte (plain mode, whose prompt is `SYSTEM_RECIPE`, did not
-move at all: `stage-plain.json`, `plan.json` and `lora.json` are the phase-A files). After a deliberate change of that prompt, `DISTILL_GOLDEN_UPDATE=1 python3 -m unittest tests.test_distill_golden` rewrites
-the expected files; read `git diff --stat tests/golden` before committing them.
+TWO DELIBERATE CHANGES since phase A, both in the thinking-pilot fix round (#33):
+  1. `SYSTEM_REASONING` now tells the model that the last line gives every part of a multi-part question (the thinking pilot's antidebug replies had the number and not the technique: 6 of 6 rejected). It moved
+     kit, score-reasoning, score-thinking, traces and the three stage files: with the phase-A prompt put back, every test below passes byte for byte (plain mode, whose prompt is `SYSTEM_RECIPE`, did not move at all:
+     `stage-plain.json`, `plan.json` and `lora.json` are the phase-A files).
+  2. A reasoning or thinking run's checkpoint carries `{prompt_sha, max_tokens}` with each reply (round 15, M1: a resume asks again a reply to another prompt, or cut off at a smaller budget). It moved the two
+     `partial_sha256` of `stage-reasoning`, `stage-reasoning-quota` and `stage-thinking` and nothing else: the stats, the records, the requests and what was printed are the same, and the checkpoint with the third
+     element of every reply removed has the digest it had before (checked when the change was made). `stage-plain.json` did not move: a default run keeps its two-element replies.
+After a deliberate change, `DISTILL_GOLDEN_UPDATE=1 python3 -m unittest tests.test_distill_golden` rewrites the expected files; read `git diff --stat tests/golden` before committing them.
 """
 from __future__ import annotations
 

@@ -2096,7 +2096,7 @@
    },
    "cache_prompt": false
   },
-  "partial_sha256": "ae7726707b36de5463253a2119072ae6e7b6af7cba2f93b421aa4623f426c8f5",
+  "partial_sha256": "e3929e70258a88503492bcf194b189569a5466f5e7461fd2007de4c249d092be",
   "printed": "",
   "tokenized": 215
  },
@@ -4093,7 +4093,7 @@
    },
    "cache_prompt": false
   },
-  "partial_sha256": "5286d25a84a49bba2e7374b0310864be2192586e6e5af0ac3dbdfcc1c623ef92",
+  "partial_sha256": "42de35e1406c4979aa2f55e21153d95325a3cba2154bc52816eca6ac7bb993eb",
   "printed": "resuming: 17 of 22 tasks complete, 5 to ask (5 failed or missing samples of checkpointed tasks)\n",
   "tokenized": 417
  }

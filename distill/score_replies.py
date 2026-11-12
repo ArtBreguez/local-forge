@@ -15,10 +15,10 @@ not among them is counted and skipped, and a task in the domain's held-out set i
 be stored under a prompt it never saw.
 
 `tools/kaggle/run_teacher.py` (`distill/backends/kaggle/`) is the notebook that writes `replies.jsonl` (README of `tools/kaggle`). It stores a thinking reply as `<think>\\nreasoning\\n</think>\\n\\nvisible` (what
-`--thinking` expects), the server's `tokens` and `prompt_tokens` per reply, a `prompt_sha` per line (`outputs.prompt_sha` of the messages it sent) and a `run.json` next to the replies with the settings it
+`--thinking` expects), the server's `tokens` and `prompt_tokens` per reply, a `prompt_sha` per line and per reply (`outputs.prompt_sha` of the messages it sent) and a `run.json` next to the replies with the settings it
 used. `--run-info run.json` (default: the `run.json` beside `--replies`, when there is one): its sampling settings go into the stats (`sampling`, the block the Modal stage writes), and `--thinking` must
-agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A line whose `prompt_sha` is not the one of the messages
-rebuilt here is skipped and counted (`prompts`): a reply is never stored under a prompt it did not answer. `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
+agree with it (SystemExit otherwise: a thinking run scored as visible reasoning would drop the reasoning, and the other way round would keep none). A reply whose `prompt_sha` (its own, else its line's: `reply_fingerprints`)
+is not the one of the messages rebuilt here is skipped and counted (`prompts`: lines that lost every reply in `mismatch`, a resumed line that lost some in `partial`, {id: replies}): a reply is never stored under a prompt it did not answer. `projected_fit` (stats and a printed line): of the teacher-reasoning records, how many fit a
 training window of 4096 and 8192 tokens (a thinking run; 2048, 3072, 4096 otherwise), counted as the prompt tokens plus the completion tokens the server reported for the reply that became the record.
 
 Outputs: the SFT records (`sft-<model>-<tag>-reasoning[-think].jsonl` next to the tasks file, or `--out`) and `<out>.stats.json`: the stats of `records.assemble` (`reasoning` block with the drops by reason,
@@ -77,6 +77,13 @@ def reply_of(out, thinking: bool = False) -> str:
     if finish == "error" or is_error_reply(text):
         return text if is_error_reply(text) else f"[error finish={finish!r}]"
     return tr.reply_text(text, finish, out.get("reasoning_content") or "", thinking)
+
+
+def reply_fingerprints(rec: dict) -> list:
+    """One prompt fingerprint per reply of a replies line, None where there is none to compare: a reply's own `prompt_sha` (the kernel writes one with every reply, because a resumed line holds replies of several
+    sessions), else the line's (an older kernel wrote only that one). A line without replies has its own fingerprint as the only one."""
+    own = [(o.get("prompt_sha") if isinstance(o, dict) else None) or rec.get("prompt_sha") for o in rec["outs"]]
+    return own or [rec.get("prompt_sha")]
 
 
 def read_run_info(path):
@@ -162,18 +169,30 @@ def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX
     if not tasks:
         raise SystemExit(f"none of the {len(replies)} task ids of {replies_path} is in {tasks_path}: is it the file of the task stage run the notebook read?")
     prompts = {"checked": 0, "mismatch": 0, "mismatched_ids": []}
+    own_outs = {}                                                 # id -> the replies of a line that answered the prompt rebuilt here, for a line that lost only some
     for t in list(tasks):
-        sha = replies[t["id"]].get("prompt_sha")
-        if sha is None:                                           # an older notebook: nothing to compare
+        rec = replies[t["id"]]
+        fingerprints = reply_fingerprints(rec)
+        if all(sha is None for sha in fingerprints):              # an older notebook: nothing to compare
             continue
         prompts["checked"] += 1
-        if sha != outputs.prompt_sha(messages_for(t)):
+        want = outputs.prompt_sha(messages_for(t))
+        wrong = [i for i, sha in enumerate(fingerprints) if sha is not None and sha != want]
+        if not wrong:
+            continue
+        if len(wrong) == len(fingerprints):                       # every reply of the line (or the line, when it has none) answered another prompt
             prompts["mismatch"] += 1
             prompts["mismatched_ids"].append(t["id"])
             tasks.remove(t)
+        else:                                                     # a resumed line mixes replies of several sessions: only the ones that answered another prompt go
+            own_outs[t["id"]] = [o for i, o in enumerate(rec["outs"]) if i not in wrong]
+            prompts.setdefault("partial", {})[t["id"]] = len(wrong)
     if prompts["mismatch"]:
         sys.stderr.write(f"warning: {prompts['mismatch']} replies line(s) answered a prompt other than the one rebuilt here (domain.messages) and were skipped: {', '.join(prompts['mismatched_ids'][:5])}"
                          f"{' ...' if prompts['mismatch'] > 5 else ''}\n")
+    if prompts.get("partial"):
+        sys.stderr.write(f"warning: {sum(prompts['partial'].values())} repl(ies) of {len(prompts['partial'])} replies line(s) answered a prompt other than the one rebuilt here and were skipped, the line's other replies were kept: "
+                         f"{', '.join(list(prompts['partial'])[:5])}{' ...' if len(prompts['partial']) > 5 else ''}\n")
     if not tasks:
         raise SystemExit(f"no replies line of {replies_path} answered the prompt this version of the code asks: the notebook and score_replies disagree on reasoning.messages (domain.messages of {domain.name!r})")
     heldout = domain.heldout_ids()
@@ -183,7 +202,7 @@ def score(replies_path, tasks_path, model: str, max_traces: int = tr.DEFAULT_MAX
         domain.check_task(t)                                      # as the sample stage does before it asks anything
     results, tokens, lengths = {}, collections.defaultdict(list), {}
     for t in tasks:
-        outs = replies[t["id"]]["outs"]
+        outs = own_outs.get(t["id"], replies[t["id"]]["outs"])
         results[t["id"]] = {"outs": [[reply_of(o, thinking), False] for o in outs]}
         tokens[t["kind"]] += [o["tokens"] for o in outs if isinstance(o, dict) and _count(o.get("tokens"))]
         for o, (reply, _flag) in zip(outs, results[t["id"]]["outs"]):
@@ -262,6 +281,8 @@ def run(a: argparse.Namespace, domain) -> None:
         print("\n" + "!" * 100 + f"\n{warning}\n" + "!" * 100 + "\n")
     if s["prompts"]["mismatch"]:
         print(f"prompts: {s['prompts']['mismatch']} of {s['prompts']['checked']} lines answered another prompt and were skipped")
+    if s["prompts"].get("partial"):
+        print(f"prompts: {sum(s['prompts']['partial'].values())} replies of {len(s['prompts']['partial'])} lines answered another prompt and were skipped (the rest of those lines was kept)")
     for line in records.reasoning_report(s):
         print(line)
     if projected_fit_line(s):
