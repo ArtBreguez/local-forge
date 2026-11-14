@@ -58,8 +58,8 @@ class EvalSet(Kit):
         self.assertEqual((len(ids), len(set(ids)), EXCLUDED in ids), (9, 9, False))
         self.assertEqual(json.loads((self.data / "lora-config.json").read_text())["built_from"]["eval"]["ids"], ids)
         self.assertEqual(lora_eval.eval_ids(self.data), set(ids))
-        self.assertEqual(score_lora.read_build(self.data / "lora-config.json"), {"ids": set(ids), **self.sha})
-        self.assertEqual(self.cfg["eval_sha"], lora_eval.eval_key(self.cfg["adapter_sha"], self.cfg["built_from"]["eval"]["excluded"]["sha"], ids), "the evaluation key is of exactly the ids the kernel is given")
+        self.assertEqual(score_lora.read_build(self.data / "lora-config.json"), {"ids": set(ids), **self.sha, "smoke": False})
+        self.assertEqual(self.cfg["eval_sha"], lora_eval.eval_key(self.cfg["adapter_sha"], self.cfg["built_from"]["eval"]["excluded"]["sha"], ids, lora_eval.resolve_config(self.cfg)), "the evaluation key is of exactly the ids the kernel is given")
 
     def test_the_excluded_task_is_in_the_earlier_output_under_this_very_builds_keys(self):
         """What made the first fix round's check blind: the reply of the excluded task carries the build's own keys."""
@@ -122,7 +122,7 @@ class EvalSet(Kit):
         r = score_lora.score(self.dir / "base.jsonl", self.dir / "lora.jsonl", [self.heldout], domain=ARITH, build=score_lora.read_build(self.data / "lora-config.json"))
         lines = score_lora.lines_of(r)
         self.assertEqual(lines[-1], "0 replies of tasks outside the evaluation set, not scored")
-        self.assertEqual(lines[-2], f"adapter key {self.cfg['adapter_sha']} (the SFT file and the training settings), evaluation key {self.cfg['eval_sha']} (that adapter, the exclusion and the ids asked): only the replies that carry both are scored")
+        self.assertEqual(lines[-2], f"adapter key {self.cfg['adapter_sha']} (the training records and the training settings), evaluation key {self.cfg['eval_sha']} (that adapter, the exclusion, the ids asked, the reply budget and the sampling): only the replies that carry both are scored")
         self.assertEqual((r["paired"]["overall"]["n"], r["outside"]["replies"], r["other_adapter"]["replies"], r["other_eval"]["replies"]), (9, 0, 0, 0))
         self.assertFalse(any("another adapter" in x or "another evaluation key" in x for x in lines), "the two lines are printed only when there is such a reply")
 
@@ -154,8 +154,8 @@ class EvalSet(Kit):
         self.assertEqual(r["other_adapter"], {"replies": 6, "by_arm": {"base": 3, "lora": 3}}, "another adapter, another adapter under this evaluation key, and no key at all")
         self.assertEqual(r["other_eval"], {"replies": 5, "by_arm": {"base": 2, "lora": 3}}, "this adapter under another evaluation key, and under none")
         lines = score_lora.lines_of(r)
-        self.assertIn(f"6 replies of another adapter than {mine['adapter_sha']} (another --sft or training setting), not scored (base 3, adapter 3)", lines)
-        self.assertIn(f"5 replies of this adapter written under another evaluation key than {mine['eval_sha']} (another exclusion or another set of tasks: a resume asks them again), not scored (base 2, adapter 3)", lines)
+        self.assertIn(f"6 replies of another adapter than {mine['adapter_sha']} (another --sft or training setting, or a smoke run's), not scored (base 3, adapter 3)", lines)
+        self.assertIn(f"5 replies of this adapter written under another evaluation key than {mine['eval_sha']} (another exclusion, set of tasks, reply budget, sampling or k: a resume asks them again), not scored (base 2, adapter 3)", lines)
 
     def test_each_key_alone_keeps_a_reply_out(self):
         a, mine = next(t for t in HELDOUT if t["id"] == self.asked[0]["id"]), self.sha
@@ -266,18 +266,23 @@ class TwoKeys(Kit):
         data = lambda name, f: (self.dir / name / "data" / f).read_bytes()
         self.assertEqual(data("wide", "train.jsonl"), data("narrow", "train.jsonl"), "the training records are the SFT file's, whatever the exclusion")
         self.assertNotEqual(data("wide", "eval_tasks.jsonl"), data("narrow", "eval_tasks.jsonl"))
-        self.assertEqual({k: wide[k] for k in lora_eval.TRAIN_KEYS}, {k: narrow[k] for k in lora_eval.TRAIN_KEYS})
+        self.assertEqual({k: self.kernel_cfg(wide)[k] for k in lora_eval.TRAIN_KEYS}, {k: self.kernel_cfg(narrow)[k] for k in lora_eval.TRAIN_KEYS})
         self.assertEqual((wide["max_steps"], wide["built_from"]["train"]), (narrow["max_steps"], narrow["built_from"]["train"]))
 
     def test_the_keys_of_the_build_are_the_kernels_functions_of_what_it_was_built_from(self):
         cfg = self.build()
         ex = cfg["built_from"]["eval"]["excluded"]
         self.assertEqual(ex["sha"], build_lora.excluded_sha(ex))
-        self.assertEqual(cfg["adapter_sha"], lora_eval.adapter_key(cfg["built_from"]["train"]["sha256"], cfg))
-        self.assertEqual(cfg["eval_sha"], lora_eval.eval_key(cfg["adapter_sha"], ex["sha"], cfg["built_from"]["eval"]["ids"]))
+        train = self.dir / "out" / "data" / "train.jsonl"
+        self.assertEqual(cfg["built_from"]["train"]["train_sha256"], lora_eval.file_sha(train), "the records as the kernel reads them")
+        self.assertEqual(cfg["built_from"]["train"]["sha256"], lora_eval.file_sha(self.sft), "and the SFT file they were read from, for the record")
+        self.assertEqual(cfg["adapter_sha"], lora_eval.adapter_key(lora_eval.file_sha(train), self.kernel_cfg(cfg)))
+        self.assertEqual(cfg["eval_sha"], lora_eval.eval_key(cfg["adapter_sha"], ex["sha"], cfg["built_from"]["eval"]["ids"], self.kernel_cfg(cfg)))
         self.assertRegex(ex["sha"], r"^[0-9a-f]{16}$")
-        self.assertEqual(build_lora.keys_line(cfg), f"adapter key {cfg['adapter_sha']} (the SFT file and the training settings: a resume keeps an adapter or a checkpoint of this key and refuses any other), evaluation key {cfg['eval_sha']} "
-                         "(the adapter key, the exclusion and the ids asked: a reply of another evaluation key is asked again and never scored)")
+        self.assertEqual(build_lora.keys_line(cfg), f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the cap on the steps among them: a resume keeps an adapter or a checkpoint of this key and refuses any other), "
+                         f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the ids asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)")
+        smoke = self.build(out=self.dir / "smoke", smoke=True)
+        self.assertEqual(build_lora.keys_line(smoke), build_lora.keys_line({**smoke, "smoke": False}) + " [SMOKE build: keys of its own, never a full run's]")
 
     def test_the_command_prints_both_keys(self):
         buf = io.StringIO()
@@ -557,7 +562,7 @@ class ExportReserve(unittest.TestCase):
                 break
             secs.append(slow * p["step_s"])
             t += secs[-1]
-        eval_deadline = deadline - p["export_reserve_s"] if export else deadline          # main: LORA_DEADLINE
+        eval_deadline = lora_eval.eval_deadline({"export_gguf": export, "export_reserve_s": p["export_reserve_s"]}, deadline)          # main's own function for LORA_DEADLINE (run in test_kaggle_lora_keys.KernelMain)
         t += r["load_s"]
         batch, asked, mean = p["eval_upper_s"] / (2 * p["eval_batches_per_process"]), 0, 0.0          # one arm's batch at the budget
         for _ in range(p["eval_batches_per_process"]):
@@ -580,7 +585,7 @@ class ExportReserve(unittest.TestCase):
         for p, on in ((plain, False), (export, True)):
             deadline = self.DEADLINE_H * 3600
             stop = lora_eval.train_deadline(0.0, deadline, 99.0, p["eval_reserve_s"])
-            self.assertGreaterEqual((deadline - p["export_reserve_s"] if on else deadline) - stop, p["eval_upper_s"] + load, "between the training stop and the evaluation's OWN deadline: its upper bound and its load")
+            self.assertGreaterEqual(lora_eval.eval_deadline({"export_gguf": on, "export_reserve_s": p["export_reserve_s"]}, deadline) - stop, p["eval_upper_s"] + load, "between the training stop and the evaluation's OWN deadline: its upper bound and its load")
 
     def test_steps_twice_as_slow_stop_training_early_enough_for_every_batch(self):
         for export in (False, True):

@@ -11,8 +11,8 @@ kernel's files; and print what the run will cost. The kernel is `lora_eval.py`; 
 Writes under --out:
     data/train.jsonl             the SFT records, as given (checked: see below)
     data/eval_tasks.jsonl        {"id", "kind", "messages"} per held-out task: `domain.messages(task, "thinking")`, the prompt the training records have; nothing of the task's truth
-    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its two keys: `adapter_sha`, the records and the training settings, and `eval_sha`, that adapter key with the content
-                                 exclusion and the ids that are asked) and what it was built from (record counts, teacher labels, the ids of the evaluation set, the held-out tasks that were excluded and why,
+    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its two keys: `adapter_sha`, the records and the training settings, the cap on the steps among them, and `eval_sha`, that adapter key with the content
+                                 exclusion, the ids that are asked and the evaluation settings: budget, sampling, seed, k) and what it was built from (record counts, teacher labels, the ids of the evaluation set, the held-out tasks that were excluded and why,
                                  the estimate); `score_lora --config` reads it and scores that set, and the replies written under that evaluation key, only
     data/lora_eval.py            the kernel's code (`run.py` below imports it; the GPU workers start it by path), data/run_teacher.py (reused by it)
     data/distill.<module>.py     the stdlib-only core it runs (`distill/sft.py`, the Modal trainer's code, and the three modules it needs); flat, because the Kaggle CLI skips the sub-folders of a dataset
@@ -376,7 +376,8 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     total, typical = p["total_upper_s"] + extra, p["total_typical_s"] + extra
     verdict = fit_verdict(p, gpu_hours, deadline_h)
     out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
-               + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): lower --train-hours, --k, --per-family or --max-new-tokens"))
+               + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): lower --train-hours, --k, --per-family or --max-new-tokens (on a resume: --train-hours is another adapter when it "
+                                                     "changes the cap on the steps, and it trains again; the other three are another evaluation of the same adapter, and it asks again)"))
     out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_window_s'])} for the evaluation" + (f" and {h(p['export_reserve_s'])} after it for the GGUF export" if p["export_reserve_s"] else "")))
     return out
 
@@ -392,18 +393,20 @@ def kernel_files() -> dict:
 
 def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict, p: dict, smoke: bool, **settings) -> dict:
     """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its two keys, and what it was built from: the held-out tasks that were excluded, and `eval.ids`, the
-    ids of the evaluation set (what `score_lora` scores and nothing else). `adapter_sha` (`lora_eval.adapter_key`: the training records and the training settings) is what the adapter and the checkpoints are
-    tied to; `eval_sha` (`lora_eval.eval_key`: that adapter key, the content exclusion `excluded["sha"]` and `eval.ids`) is what every reply is tied to. Another exclusion or another set is another `eval_sha`
-    under the same `adapter_sha`: the adapter is kept, the replies are asked again."""
+    ids of the evaluation set (what `score_lora` scores and nothing else). `adapter_sha` (`lora_eval.adapter_key`: the training records as the kernel reads them, `facts["train_sha256"]`, and the training
+    settings, the cap on the steps and the smoke flag among them) is what the adapter and the checkpoints are tied to; `eval_sha` (`lora_eval.eval_key`: that adapter key, the content exclusion
+    `excluded["sha"]`, `eval.ids` and the evaluation settings: budget, sampling, seed, `k`, batch, smoke) is what every reply is tied to. Another exclusion, set or budget is another `eval_sha` under the
+    same `adapter_sha`: the adapter is kept, the replies are asked again. Both are computed from the config AS THE KERNEL RESOLVES IT (`resolve_config`), which is how the kernel computes them again
+    (`lora_eval.check_keys`)."""
     cfg = {**{k: v for k, v in lora_eval.DEFAULTS.items() if k != "pins"}, **settings, "smoke": smoke}
     if not smoke:
         cfg.update(max_steps=p["max_steps"], eval_reserve_s=p["eval_reserve_s"], export_reserve_s=p["export_reserve_s"])
     try:
-        lora_eval.resolve_config(cfg)
+        resolved = lora_eval.resolve_config(cfg)
     except ValueError as e:
         raise SystemExit(f"the run config is refused by the kernel: {e}")
-    cfg["adapter_sha"] = lora_eval.adapter_key(facts["sha256"], cfg)
-    cfg["eval_sha"] = lora_eval.eval_key(cfg["adapter_sha"], excluded["sha"], [t["id"] for t in eval_tasks])
+    cfg["adapter_sha"] = lora_eval.adapter_key(facts["train_sha256"], resolved)
+    cfg["eval_sha"] = lora_eval.eval_key(cfg["adapter_sha"], excluded["sha"], [t["id"] for t in eval_tasks], resolved)
     return {**cfg, "built_from": {"train": facts, "eval": {"tasks": len(eval_tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in eval_tasks).items())), "ids": sorted(t["id"] for t in eval_tasks),
                                                            "files": [pathlib.Path(f).name for f in heldout_files], "excluded": excluded}, "estimate": {k: v for k, v in p.items() if k != "rates"}, "rates": p["rates"]}}
 
@@ -450,11 +453,13 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
         raise SystemExit(f"--gpu-hours {gpu_hours:g}: the kernel's deadline can be at most {max(limit_h, 0):.2f} h (the quota left, less {p.get('smoke_s', 0) / 3600:.1f} h for the smoke run that is still to come, less {DEADLINE_MARGIN_H} h)"
                          + ("" if deadline_h is None else f", and --deadline-h is {deadline_h:g}"))
     given["deadline_h"] = deadline_h or min(d["deadline_h"], math.floor(limit_h * 100) / 100)          # never later than the limit, in hundredths of an hour
-    facts = {**facts, "files": [pathlib.Path(sft_path).name], "sha256": hashlib.sha256(pathlib.Path(sft_path).read_bytes()).hexdigest()[:16], "est_examples": len(lengths)}
+    train_lines = [json.dumps(r) for r in rows]          # `train.jsonl`, as it is written below: its sha is what the adapter key holds, and what the kernel computes again from the file it is given
+    facts = {**facts, "files": [pathlib.Path(sft_path).name], "sha256": hashlib.sha256(pathlib.Path(sft_path).read_bytes()).hexdigest()[:16],
+             "train_sha256": hashlib.sha256("".join(line + "\n" for line in train_lines).encode()).hexdigest()[:16], "est_examples": len(lengths)}
     cfg = make_config(facts=facts, eval_tasks=eval_tasks, heldout_files=heldout_files, excluded=excluded, p=p, smoke=smoke, **given)
     for path in paths.values():
         path.parent.mkdir(parents=True, exist_ok=True)
-    outputs.write_atomic(paths["train"], (json.dumps(r) for r in rows))
+    outputs.write_atomic(paths["train"], train_lines)
     outputs.write_atomic(paths["eval"], (json.dumps({"id": t["id"], "kind": t["kind"], "messages": domain.messages(t, "thinking")}) for t in eval_tasks))
     paths["config"].write_text(json.dumps(cfg, indent=1))
     paths["dataset"].write_text(json.dumps({"title": dataset_slug, "id": f"{owner}/{dataset_slug}", "licenses": [{"name": "other"}]}, indent=1))
@@ -485,16 +490,16 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--lr", type=float, default=None, help=f"learning rate (default {d['lr']}, as modal_train.py)")
     ap.add_argument("--global-batch", type=int, default=None, help=f"sequences per optimizer step (default {d['global_batch']}, as modal_train.py)")
     ap.add_argument("--mix", action="store_true", help="also train the truth-template records, with an empty think block (modal_train's --mix); default: the thinking records only")
-    ap.add_argument("--gpus", type=int, default=None, help=f"processes/GPUs to train and evaluate on (default {d['gpus']}; the kernel uses fewer when it finds fewer)")
-    ap.add_argument("--k", type=int, default=1, help="replies per held-out task and arm (default %(default)s; the evaluation's time grows with it)")
-    ap.add_argument("--max-new-tokens", type=int, default=None, help=f"reply budget of the evaluation, reasoning included (default {d['max_new_tokens']}); a reply cut off at it is counted")
+    ap.add_argument("--gpus", type=int, default=None, help=f"processes/GPUs to train and evaluate on (default {d['gpus']}; the kernel stops when it finds fewer: the number is part of the adapter key)")
+    ap.add_argument("--k", type=int, default=1, help="replies per held-out task and arm (default %(default)s; the evaluation's time grows with it; part of the evaluation key)")
+    ap.add_argument("--max-new-tokens", type=int, default=None, help=f"reply budget of the evaluation, reasoning included (default {d['max_new_tokens']}); a reply cut off at it is counted; part of the evaluation key: a resume with another budget asks every reply again")
     ap.add_argument("--eval-batch", type=int, default=None, help=f"replies generated together on one GPU (default {d['eval_batch']})")
-    ap.add_argument("--train-hours", type=float, default=None, help=f"stop training after this many hours (default {d['train_hours']}); the number of steps is capped to fit it")
+    ap.add_argument("--train-hours", type=float, default=None, help=f"stop training after this many hours (default {d['train_hours']}); the number of steps is capped to fit it, and that cap (max_steps, the length of the learning-rate schedule) is part of the adapter key: a resume keeps this value, --measured and --gpus")
     ap.add_argument("--deadline-h", type=float, default=None, help=f"hours after the start at which the kernel starts nothing (default min({d['deadline_h']}, --gpu-hours less the smoke run still to come less {DEADLINE_MARGIN_H} h): the weekly quota, not the 12 h session, is the limit)")
     ap.add_argument("--gpu-hours", type=float, default=8.0, help="GPU hours of quota left when the kernel starts, what the estimate and the deadline are judged against (default %(default)s). Without --measured the smoke run that comes first is taken out of it; with --measured it has been run, so give what is left after it")
     ap.add_argument("--export-gguf", action="store_true", help="also merge the adapter into fp16 weights and write a Q4_K_M GGUF to /kaggle/working/gguf (about 5.6 GB; not what was evaluated; not tried on Kaggle)")
     ap.add_argument("--fla", action="store_true", help="install flash-linear-attention in the kernel (fast kernels for the student's linear-attention layers; not tried on a T4)")
-    ap.add_argument("--smoke", action="store_true", help="build the SMOKE run: 4 steps on the longest records and one batch of 8 replies per process, files named smoke-*; it measures the step time, the generation speed (at the full run's batch) and the peak memory")
+    ap.add_argument("--smoke", action="store_true", help="build the SMOKE run: 4 steps on the longest records and one batch of 8 replies per process, files named smoke-* and keys of its own (nothing of it is resumed or scored as a full run's); it measures the step time, the generation speed (at the full run's batch) and the peak memory")
     ap.add_argument("--measured", type=pathlib.Path, default=None, help="the run.json of a smoke run: its measured step time and generation speed replace the assumed ones in the estimate")
     ap.add_argument("--dataset-slug", default=None, help="default <domain>-lora-data")
     ap.add_argument("--kernel-slug", default=None, help="default <domain>-lora-eval")
@@ -517,8 +522,9 @@ def run(a: argparse.Namespace, domain) -> None:
 
 def keys_line(cfg: dict) -> str:
     """The two keys of a build, for its output: what a resume keeps (the adapter, by `adapter_sha`) and what it asks again (the replies of another `eval_sha`)."""
-    return (f"adapter key {cfg['adapter_sha']} (the SFT file and the training settings: a resume keeps an adapter or a checkpoint of this key and refuses any other), evaluation key {cfg['eval_sha']} "
-            "(the adapter key, the exclusion and the ids asked: a reply of another evaluation key is asked again and never scored)")
+    return (f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the cap on the steps among them: a resume keeps an adapter or a checkpoint of this key and refuses any other), "
+            f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the ids asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)"
+            + (" [SMOKE build: keys of its own, never a full run's]" if cfg["smoke"] else ""))
 
 
 def excluded_line(info: dict) -> str:

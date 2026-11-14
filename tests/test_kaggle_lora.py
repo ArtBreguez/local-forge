@@ -527,7 +527,7 @@ class Resume(unittest.TestCase):
         self.assertEqual(lora_eval.find_adapter([inp], "aaaa"), d)
         self.assertEqual(lora_eval.find_adapter([inp]), d, "no sha asked: nothing compared")
         self.assertEqual(lora_eval.find_adapter([inp], ""), d)
-        with self.assertRaisesRegex(SystemExit, "trained under adapter key 'aaaa', this build's is 'bbbb' \\(another --sft or another training setting\\)"):
+        with self.assertRaisesRegex(SystemExit, "trained under adapter key 'aaaa', this build's is 'bbbb' \\(another --sft or another training setting; --train-hours, --measured and --gpus are training settings when they change the cap on the steps\\)"):
             lora_eval.find_adapter([inp], "bbbb")
         (d / "train.json").write_text(json.dumps({"status": "partial"}))
         with self.assertRaisesRegex(SystemExit, "adapter key None"):
@@ -749,7 +749,8 @@ class GpuGlue(unittest.TestCase):
     def test_the_base_arm_is_the_adapter_switched_off_on_the_same_weights(self):
         gen = self.body("generate_batch")
         self.assertIn("model.disable_adapter()", gen)
-        self.assertIn("enable_thinking=True", gen)
+        self.assertIn("enable_thinking=THINKING", gen)
+        self.assertIs(lora_eval.THINKING, True, "the replies think: the template and the sampling of a thinking run, and the evaluation key says so")
         self.assertIn('add_generation_prompt=True', gen)
         self.assertIn("**cfg[\"sampling\"]", gen)
         self.assertEqual(self.body("eval_worker").count("load_student("), 1, "one model load for both arms")
@@ -763,7 +764,7 @@ class GpuGlue(unittest.TestCase):
         self.assertEqual(self.body("eval_worker").count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 1)
         self.assertNotIn("eval_sha", train, "the training worker reads nothing of the evaluation: the evaluation key cannot change a weight")
         self.assertNotIn("eval_tasks", train)
-        self.assertIn("carry_adapter(existing)", main, "an adapter that is kept goes into this session's output: the next resume attaches this one")
+        self.assertIn("carry_adapter(existing, OUT)", main, "an adapter that is kept goes into this session's output: the next resume attaches this one")
 
     def test_a_gpu_that_is_not_a_t4_stops_the_kernel_before_the_download(self):
         main = self.body("main")
@@ -926,7 +927,7 @@ class Scoring(unittest.TestCase):
             score_lora.main(["--domain", "example_arith", "--config", str(config), "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
         text = buf.getvalue()
         for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0", "tasks answered 12 of 12 in the evaluation set of the build",
-                       "0 replies of tasks outside the evaluation set, not scored", f"adapter key {SHA} (the SFT file and the training settings), evaluation key {EVAL} (that adapter, the exclusion and the ids asked)"):
+                       "0 replies of tasks outside the evaluation set, not scored", f"adapter key {SHA} (the training records and the training settings), evaluation key {EVAL} (that adapter, the exclusion, the ids asked, the reply budget and the sampling)"):
             self.assertIn(needle, text)
         self.assertEqual(json.loads((self.dir / "report.json").read_text())["paired"]["overall"]["n"], 12)
         with self.assertRaises(SystemExit):

@@ -4,8 +4,9 @@
         --base ~/work/kaggle-lora/out/replies-base.jsonl --lora ~/work/kaggle-lora/out/replies-lora.jsonl [--run-info ~/work/kaggle-lora/out/run.json] [--out report.json]
 
 WHAT is scored is the build's, not the replies files': `--config` is the `lora-config.json` the kernel ran (`build_lora.py` wrote it), and only the tasks of its evaluation set (`built_from.eval.ids`: the held-out
-tasks that share no content with a training task, after the floor and the quota) and only the replies written under its two keys enter a figure: `adapter_sha` (the adapter that answered: the SFT file and
-the training settings) and `eval_sha` (the evaluation the reply belongs to: that adapter, the exclusion and the ids asked). A replies file can hold more (an output attached with `--resume-from` that was
+tasks that share no content with a training task, after the floor and the quota) and only the replies written under its two keys enter a figure: `adapter_sha` (the adapter that answered: the training records and
+the training settings) and `eval_sha` (the evaluation the reply belongs to: that adapter, the exclusion, the ids asked, the reply budget and the sampling). A smoke build has keys of its own, so a smoke run's replies
+are another adapter's for a full build, and with the smoke build's own config the report starts with the smoke warning. A replies file can hold more (an output attached with `--resume-from` that was
 made by a build with other `--train-tasks` or another quota): a reply of a task outside the set is counted and printed ("N replies of tasks outside the evaluation set, not scored"), and so is a reply of
 another adapter and a reply of this adapter written under another evaluation key. The report prints both keys. A `--heldout` file that lacks a task of the set, or a run.json of another build, is refused.
 
@@ -57,8 +58,8 @@ KEYS = ("adapter_sha", "eval_sha")          # the training identity and the eval
 
 
 def read_build(path) -> dict:
-    """{"ids": the ids of the evaluation set, "adapter_sha", "eval_sha"} of a build's `lora-config.json` (`build_lora.make_config`). SystemExit for a file that is not one: without the set and the two keys there
-    is nothing that says which replies may be scored."""
+    """{"ids": the ids of the evaluation set, "adapter_sha", "eval_sha", "smoke"} of a build's `lora-config.json` (`build_lora.make_config`). SystemExit for a file that is not one: without the set and the two
+    keys there is nothing that says which replies may be scored. `smoke`: the build is a smoke run's (its keys are its own: only smoke replies carry them, and the report says what they are worth)."""
     try:
         data = json.loads(pathlib.Path(path).read_text())
     except (OSError, json.JSONDecodeError):
@@ -68,7 +69,7 @@ def read_build(path) -> dict:
     ids, keys = (ev.get("ids") if isinstance(ev, dict) else None), {k: data.get(k) if isinstance(data, dict) else None for k in KEYS}
     if not (isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids) and all(isinstance(v, str) and v for v in keys.values())):
         raise SystemExit(f"{path} is not the lora-config.json of a build_lora build (an `adapter_sha`, an `eval_sha` and the ids of its evaluation set, `built_from.eval.ids`): build again with this version, the set is what is scored")
-    return {"ids": set(ids), **keys}
+    return {"ids": set(ids), **keys, "smoke": data.get("smoke") is True}
 
 
 def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
@@ -161,7 +162,7 @@ def score(base_path, lora_path, heldout_files, *, domain, build: dict) -> dict:
     apart = lambda key: {"replies": sum(v["info"].get(key, 0) for v in arms.values()), "by_arm": {a: v["info"].get(key, 0) for a, v in arms.items()}}
     return {"arms": {a: {**summarize({k: r for k, r in v["rows"].items() if k in common}), "read": v["info"], "unpaired": len(v["rows"]) - len(common)} for a, v in arms.items()},
             "paired": pair(arms["base"]["rows"], arms["lora"]["rows"]), "tasks_answered": len({tid for v in arms.values() for tid, _ in v["rows"]}), "tasks_in_set": len(tasks),
-            **{k: build[k] for k in KEYS}, "outside": {**apart("outside"), "tasks": sorted({tid for v in arms.values() for tid in v["outside"]})}, "other_adapter": apart("other_adapter"),
+            **{k: build[k] for k in KEYS}, "smoke": bool(build.get("smoke")), "outside": {**apart("outside"), "tasks": sorted({tid for v in arms.values() for tid in v["outside"]})}, "other_adapter": apart("other_adapter"),
             "other_eval": apart("other_eval")}
 
 
@@ -176,12 +177,13 @@ def check_run(run_info, build: dict, path="run.json") -> None:
 
 
 def lines_of(report: dict, run_info: dict = None) -> list:
-    """The table printed: a header about the adapter's training (from run.json), then one row per family and the overall row."""
+    """The table printed: the smoke warning when the build is a smoke run's (the config says so, with or without a run.json), a header about the adapter's training (from run.json), then one row per family
+    and the overall row."""
     out = []
+    if report.get("smoke") or (run_info or {}).get("smoke"):
+        out.append("WARNING: this is a SMOKE run (4 steps, one batch of replies): its numbers say nothing about the adapter")
     if run_info:
         t = run_info.get("train") or {}
-        if run_info.get("smoke"):
-            out.append("WARNING: this is a SMOKE run (4 steps, one batch of replies): its numbers say nothing about the adapter")
         lr_last, lr_peak = t.get("lr_last"), t.get("lr_peak")
         stopped = " (stopped by the deadline" + (f", at a learning rate of {lr_last:.1e}, {100 * lr_last / lr_peak:.0f}% of the peak: the cosine had not finished, a weaker and noisier adapter than the planned one)" if lr_last is not None and lr_peak else ")") if t.get("deadline_hit") else ""
         out.append(f"adapter: {t.get('status', '?')}, {t.get('steps_done', '?')} of {t.get('steps_planned', '?')} steps, loss {t.get('loss_first')} -> {t.get('loss_last')}, {t.get('records')}" + stopped)
@@ -200,9 +202,9 @@ def lines_of(report: dict, run_info: dict = None) -> list:
     p = report["paired"]
     by_arm = p.get("unpaired_by_arm", {})
     out.append(f"paired replies {p['overall']['n']}, unpaired {p['unpaired']}" + (f" (base only {by_arm['base']}, adapter only {by_arm['lora']}: in no figure above)" if p["unpaired"] else "") + f"; tasks answered {report['tasks_answered']} of {report['tasks_in_set']} in the evaluation set of the build")
-    out.append(f"adapter key {report['adapter_sha']} (the SFT file and the training settings), evaluation key {report['eval_sha']} (that adapter, the exclusion and the ids asked): only the replies that carry both are scored")
-    for key, what in (("outside", "of tasks outside the evaluation set"), ("other_adapter", f"of another adapter than {report['adapter_sha']} (another --sft or training setting)"),
-                      ("other_eval", f"of this adapter written under another evaluation key than {report['eval_sha']} (another exclusion or another set of tasks: a resume asks them again)")):
+    out.append(f"adapter key {report['adapter_sha']} (the training records and the training settings), evaluation key {report['eval_sha']} (that adapter, the exclusion, the ids asked, the reply budget and the sampling): only the replies that carry both are scored")
+    for key, what in (("outside", "of tasks outside the evaluation set"), ("other_adapter", f"of another adapter than {report['adapter_sha']} (another --sft or training setting, or a smoke run's)"),
+                      ("other_eval", f"of this adapter written under another evaluation key than {report['eval_sha']} (another exclusion, set of tasks, reply budget, sampling or k: a resume asks them again)")):
         c = report[key]
         if key == "outside" or c["replies"]:
             out.append(f"{c['replies']} replies {what}, not scored" + (f" (base {c['by_arm']['base']}, adapter {c['by_arm']['lora']}" + (f"; tasks: {', '.join(c['tasks'])[:300]}" if c.get("tasks") else "") + ")" if c["replies"] else ""))
