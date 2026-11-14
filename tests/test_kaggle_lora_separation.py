@@ -70,10 +70,30 @@ class ContentKeys(unittest.TestCase):
         self.assertEqual(n("PTR_DAT_00104010 PTR_FUN_00104010"), "PTR_DAT_ADDR PTR_FUN_ADDR", "the name inside the name is the one that collapses")
         self.assertEqual(n("PTR_00104010 *PTR_0010a2c0"), "PTR_ADDR *PTR_ADDR", "a pointer name of its own")
         self.assertEqual(n("FUN_0010A2C0 DAT_0010Ab00"), "FUN_ADDR DAT_ADDR", "hex of either case")
-        for kept in ("local_10", "FUN_zzz", "xFUN_00101140", "param_1", "FUN_", "DAT_00104010_x"):
+        self.assertEqual(n("uVar1 = (*(code *)&UNK_001011f0)(param_1 + 2);"), "uVar1 = (*(code *)&UNK_ADDR)(param_1 + 2);", "PR 34 second review, m4: fsm-7-0013")
+        self.assertEqual(n("(eh_frame_hdr *)pbVar2 != &eh_frame_hdr_00102020"), "(eh_frame_hdr *)pbVar2 != &eh_frame_hdr_ADDR", "the strobf code of seed 7; the type name has no address and stays")
+        self.assertEqual(n("&UNK_001011f0 &eh_frame_hdr_00102028"), n("&UNK_0010a000 &eh_frame_hdr_00102020"))
+        self.assertNotEqual(n("UNK_001011f0"), n("DAT_001011f0"))
+        for kept in ("local_10", "FUN_zzz", "xFUN_00101140", "param_1", "FUN_", "DAT_00104010_x", "UNK_", "xUNK_001011f0", "eh_frame_hdr", "eh_frame_hdr_x", "my_eh_frame_hdr_00102020x", "UNK_001011f0_y", "frame_hdr_00102020", "unk_001011f0"):
             self.assertEqual(n(kept), kept, kept)
         self.assertNotEqual(n("FUN_00101140"), n("DAT_00101140"), "the kind of name stays")
         self.assertEqual(n("a  b\n\n\tc "), "a b c")
+
+    def test_the_same_function_with_an_unknown_or_eh_frame_name_at_another_address_has_the_same_code_key(self):
+        code = self.a["pseudocode"].replace("{\n", "{\n  uVar1 = (*(code *)&UNK_001011f0)(param_1 + 2);\n  if ((eh_frame_hdr *)pbVar2 != &eh_frame_hdr_00102020) return 0;\n", 1)
+        self.assertIn("&UNK_001011f0", code)
+        moved = code.replace("UNK_001011f0", "UNK_0010b7c0").replace("eh_frame_hdr_00102020", "eh_frame_hdr_00102f04")
+        self.assertEqual(self.rea.task_keys({**self.a, "pseudocode": moved})["code"], self.rea.task_keys({**self.a, "pseudocode": code})["code"])
+        self.assertNotEqual(self.rea.task_keys({**self.a, "pseudocode": code})["code"], self.rea.task_keys(self.a)["code"])
+
+    def test_the_question_is_normalised_in_both_keys(self):
+        """PR 34 second review, m5 (d): the question of the keys is the normalised one (whitespace, Ghidra addresses), in the code key and in the answer key."""
+        base = self.rea.task_keys(self.a)
+        spaced = self.rea.task_keys({**self.a, "question": "  " + self.a["question"].replace(" ", "  \n") + " "})
+        self.assertEqual(spaced, base)
+        named, moved = ({**self.a, "question": self.a["question"] + f" (in FUN_{addr})"} for addr in ("00101140", "0010a2c0"))
+        self.assertEqual(self.rea.task_keys(named), self.rea.task_keys(moved))
+        self.assertNotEqual(self.rea.task_keys(named)["answer"], base["answer"])
 
     def test_another_question_or_other_code_is_another_problem(self):
         base = self.rea.task_keys(self.a)
@@ -96,6 +116,8 @@ class ContentKeys(unittest.TestCase):
         self.assertEqual(sorted(self.rea.task_keys(no_code)), ["answer"])
         self.assertEqual(sorted(self.rea.task_keys({k: v for k, v in self.a.items() if k != "accept"})), ["code"])
         self.assertEqual(self.rea.task_keys({k: v for k, v in self.a.items() if k != "question"}), {})
+        for no_kind in ({k: v for k, v in self.a.items() if k != "kind"}, {**self.a, "kind": ""}, {**self.a, "kind": None}):
+            self.assertEqual(sorted(self.rea.task_keys(no_kind)), ["code"], "PR 34 second review, m5 (d): a record with no kind has no answer key, and is not a KeyError")
 
     def test_the_default_says_nothing_and_collapses_whitespace_only(self):
         self.assertEqual(Domain.task_keys(ARITH, HELDOUT[0]), {})
@@ -183,7 +205,7 @@ class Separation(Kit):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             info = self.info(min_family=4)
-        self.assertEqual(sorted(info["left_out"]), ["add", "sub"], "touched by the exclusion and 3 left, under 4; mul lost nothing")
+        self.assertEqual(sorted(info["left_out"]), ["add", "sub"], "3 left, under 4; mul has 4")
         self.assertIn("3 of 4 held-out tasks remain after excluding 1", info["left_out"]["add"])
         self.assertIn("note: family add is left out of the evaluation", buf.getvalue())
         self.assertEqual(sorted(info["by_family"]), ["add", "mul", "sub"])
@@ -205,9 +227,43 @@ class Separation(Kit):
         self.assertFalse((self.dir / "out").exists())
         self.build(min_family=3, strict_families=True)
 
-    def test_a_family_that_was_small_before_the_exclusion_is_not_left_out_by_the_floor(self):
-        info = self.info(quota="mul=3", min_family=5)
-        self.assertEqual((info["left_out"], info["by_family"]["mul"]["chosen"]), ({}, 3), "four mul tasks, none excluded: the floor is about what the exclusion took")
+    def test_a_family_that_was_small_before_the_exclusion_is_left_out_by_the_floor_like_any_other(self):
+        """PR 34 second review, m1 (the owner's decision): the floor is for EVERY family, not only for the ones the exclusion took a task from."""
+        twin = next(t for t in TRAIN if t["question"] == HELDOUT[3]["question"])["id"]          # without the training twin of arith-9999-003 the four add tasks all stay
+        kw = dict(sft=write_jsonl(self.dir / "fewer-sft.jsonl", [r for r in sft_rows() if r["task"] != twin]), train_tasks=[write_jsonl(self.dir / "fewer-train.jsonl", [t for t in TRAIN if t["id"] != twin])],
+                  heldout=[write_jsonl(self.dir / "fewer.jsonl", [t for t in HELDOUT if t["id"] != "arith-9999-002"])])
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            info = self.info(quota="mul=3,add=3", min_family=4, **kw)
+        self.assertEqual((list(info["left_out"]), info["by_family"]["add"]["chosen"], info["by_family"]["mul"]), (["mul"], 3, {"heldout": 3, "code": 0, "answer": 0, "union": 0, "excluded": 0, "left": 3, "chosen": 0}),
+                         "mul: 3 in the file and none excluded, under 4; add: 4 and none excluded")
+        self.assertIn("3 of 3 held-out tasks remain after excluding 0", info["left_out"]["mul"])
+        self.assertIn("note: family mul is left out of the evaluation: 3 of 3 held-out tasks remain after excluding 0", buf.getvalue())
+        with self.assertRaisesRegex(SystemExit, "no held-out task of mul"):
+            self.info(quota="mul=3", min_family=5, out=self.dir / "none")
+        info = self.info(quota="mul=3", min_family=4, out=self.dir / "kept")
+        self.assertEqual((info["left_out"], info["by_family"]["mul"]["chosen"]), ({}, 3), "four mul tasks and a floor of four: asked")
+
+    def test_the_floor_is_strictly_fewer_than(self):
+        for floor, out in ((3, []), (4, ["add", "sub"]), (5, ["add", "mul", "sub"])):
+            if floor == 5:
+                with self.assertRaisesRegex(SystemExit, "no held-out task of add, mul, sub"):
+                    self.info(min_family=floor, out=self.dir / f"f{floor}")
+                continue
+            self.assertEqual(sorted(self.info(min_family=floor, out=self.dir / f"f{floor}")["left_out"]), out, floor)
+
+    def test_a_family_the_held_out_file_does_not_have_is_left_out_too(self):
+        only_add = [write_jsonl(self.dir / "add.jsonl", [t for t in HELDOUT if t["kind"] == "add"])]
+        info = self.info(heldout=only_add, quota="add=3,mul=3", min_family=2)
+        self.assertEqual(list(info["left_out"]), ["mul"])
+        self.assertIn("0 of 0 held-out tasks remain after excluding 0", info["left_out"]["mul"])
+        with self.assertRaisesRegex(SystemExit, "--strict-families: mul: 0 of 0"):
+            self.info(heldout=only_add, quota="add=3,mul=3", min_family=2, strict_families=True, out=self.dir / "strict")
+
+    def test_the_default_floor_is_five_and_the_command_uses_it(self):
+        self.assertEqual(build_lora.MIN_FAMILY, 5)
+        with self.assertRaisesRegex(SystemExit, "no held-out task of add, mul, sub"), contextlib.redirect_stdout(io.StringIO()):
+            build_lora.main(["--domain", "example_arith", "--sft", str(self.sft), "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), "--owner", "someone", "--out", str(self.dir / "cli")])
 
     def test_when_every_family_is_left_out_nothing_is_built(self):
         with self.assertRaisesRegex(SystemExit, "no held-out task of add, sub .* after excluding 2"):
@@ -270,15 +326,43 @@ class OverlapReport(Kit):
         self.assertEqual(rep["matches"]["arith-9999-006"], {"code": "arith-7-900", "answer": "arith-7-900"})
         self.assertEqual((rep["train_tasks"], rep["unkeyed"]), (1, []))
 
-    def test_the_table_and_the_command(self):
+    def overlap_cmd(self, *more):
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            build_lora.main(["overlap", "--domain", "example_arith", "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout)])
-        lines = buf.getvalue().splitlines()
+            build_lora.main(["overlap", "--domain", "example_arith", "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), *more])
+        return buf.getvalue().splitlines()
+
+    def test_the_table_and_the_command(self):
+        lines = self.overlap_cmd("--min-family", "4")
+        out = ["left", "out", "(fewer", "than", "4)"]
         self.assertEqual(lines[0].split(), ["family", "held-out", "code+question", "question+answer", "either", "left"])
-        self.assertEqual([line.split() for line in lines[1:5]], [["add", "4", "1", "1", "1", "3"], ["mul", "4", "0", "0", "0", "4"], ["sub", "4", "1", "1", "1", "3"], ["TOTAL", "12", "2", "2", "2", "10"]])
+        self.assertEqual([line.split() for line in lines[1:5]], [["add", "4", "1", "1", "1", "3", *out], ["mul", "4", "0", "0", "0", "4"], ["sub", "4", "1", "1", "1", "3", *out], ["TOTAL", "12", "2", "2", "2", "10"]])
+        self.assertEqual(lines[5], "left out of an evaluation, fewer than 4 tasks left (--min-family): add, sub; 4 tasks of 1 families can be asked")
         self.assertIn("30 training tasks compared", lines[-1])
         self.assertFalse((self.dir / "out").exists(), "nothing is built")
+
+    def test_the_table_lists_the_families_under_the_floor_which_is_five_unless_said(self):
+        """PR 34 second review, m1: every family with fewer than 5 tasks left is listed as left out, in the table the owner reads before a build."""
+        lines = self.overlap_cmd()
+        self.assertTrue(all(line.endswith("left out (fewer than 5)") for line in lines[1:4]), lines[1:4])
+        self.assertFalse(lines[4].endswith(")"), "the TOTAL row is no family")
+        self.assertEqual(lines[5], "left out of an evaluation, fewer than 5 tasks left (--min-family): add, mul, sub; 0 tasks of 0 families can be asked")
+        lines = self.overlap_cmd("--min-family", "3")
+        self.assertFalse(any("left out (" in line for line in lines[1:5]))
+        self.assertEqual(lines[5], "left out of an evaluation, fewer than 3 tasks left (--min-family): no family; 10 tasks of 3 families can be asked")
+
+    def test_the_left_column_is_what_neither_rule_took(self):
+        """PR 34 second review, m5 (a): where the answer rule alone excludes, `left` is the held-out tasks less the UNION, not less the code matches (the real table: pktsum 30, 0 by code, 30 by answer, 0 left)."""
+        held = [hold(0, question="Q one", answer=5, code="B"), hold(3, question="Q one", answer=5, code="C"), hold(6, question="Q two", answer=7, code="D"), hold(9, question="Q one", answer=6, code="A")]
+        rep = build_lora.overlap({"arith-7-900": {"id": "arith-7-900", "kind": "add", "question": "Q one", "answer": 5, "code": "A"}}, held, domain=CODE)
+        self.assertEqual(rep["by_family"]["add"], {"heldout": 4, "code": 1, "answer": 2, "union": 3})
+        lines = build_lora.overlap_lines(rep, 1)
+        self.assertEqual(lines[1].split(), ["add", "4", "1", "2", "3", "1"], "4 - 3, not 4 - 1 and not 4 - 2")
+        self.assertEqual(lines[2].split(), ["TOTAL", "4", "1", "2", "3", "1"])
+        self.assertEqual(build_lora.under_floor(rep, 2), ["add"], "one task left is under a floor of two")
+        self.assertEqual(build_lora.under_floor(rep, 1), [])
+        chosen, info = build_lora.pick_eval([write_jsonl(self.dir / "pool.jsonl", held)], "", 10, ["add"], domain=CODE, train_tasks={"arith-7-900": {"id": "arith-7-900", "kind": "add", "question": "Q one", "answer": 5, "code": "A"}}, min_family=1)
+        self.assertEqual(([t["id"] for t in chosen], info["by_family"]["add"]["left"]), (["arith-9999-006"], 1), "the table's `left` is what the builder has left")
 
     def test_the_command_refuses_a_file_that_is_not_the_held_out_split_and_a_training_file_that_is(self):
         with self.assertRaisesRegex(SystemExit, "not held-out ids"):
@@ -365,9 +449,9 @@ class ReaSeparation(unittest.TestCase):
         buf = io.StringIO()
         held = write_jsonl(self.dir / "decompiled-seed1001-y.jsonl", [PAIR[1], *self.other])
         with contextlib.redirect_stdout(buf):
-            build_lora.main(["overlap", "--train-tasks", str(self.train_file), "--heldout", str(held)])
+            build_lora.main(["overlap", "--train-tasks", str(self.train_file), "--heldout", str(held), "--min-family", "1"])
         rows = [line.split() for line in buf.getvalue().splitlines()]
-        self.assertIn(["structs", "1", "1", "1", "1", "0"], rows)
+        self.assertIn(["structs", "1", "1", "1", "1", "0", "left", "out", "(fewer", "than", "1)"], rows)
         self.assertIn(["TOTAL", "5", "1", "1", "1", "4"], rows)
 
 

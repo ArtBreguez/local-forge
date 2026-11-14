@@ -29,18 +29,19 @@ class ConfigSha(Kit):
 
     def test_what_the_adapter_does_not_depend_on_leaves_it(self):
         base = self.sha("a")
-        for name, kw in (("k", {"k": 2}), ("budget", {"max_new_tokens": 2048}), ("hours", {"train_hours": 1.0}), ("eval", {"per_family": 2}), ("quota", {"gpu_hours": 9.0}), ("resume", {"resume_from": "someone/earlier"})):
+        for name, kw in (("k", {"k": 2}), ("budget", {"max_new_tokens": 2048}), ("hours", {"train_hours": 1.0}), ("eval", {"per_family": 2}), ("subset", {"quota": "add=2,mul=1"}), ("quota", {"gpu_hours": 9.0}), ("resume", {"resume_from": "someone/earlier"})):
             self.assertEqual(self.sha(name, **kw), base, name)
 
     def test_the_function_reads_the_records_and_exactly_the_training_keys(self):
         cfg = lora_eval.resolve_config({})
-        base = lora_eval.config_sha("abc", cfg)
-        self.assertNotEqual(lora_eval.config_sha("abd", cfg), base)
+        base = lora_eval.config_sha("abc", cfg, "ex")
+        self.assertNotEqual(lora_eval.config_sha("abd", cfg, "ex"), base)
+        self.assertNotEqual(lora_eval.config_sha("abc", cfg, "ey"), base, "another content exclusion is another build")
         for key in lora_eval.TRAIN_KEYS:
             changed = {**cfg, key: "x" if isinstance(cfg[key], str) else (not cfg[key]) if isinstance(cfg[key], bool) else cfg[key] + 1}
-            self.assertNotEqual(lora_eval.config_sha("abc", changed), base, key)
+            self.assertNotEqual(lora_eval.config_sha("abc", changed, "ex"), base, key)
         for key in ("k", "max_steps", "train_hours", "deadline_h", "gpus", "max_new_tokens", "seed_base", "config_sha"):
-            self.assertEqual(lora_eval.config_sha("abc", {**cfg, key: 12345}), base, key)
+            self.assertEqual(lora_eval.config_sha("abc", {**cfg, key: 12345}, "ex"), base, key)
 
 
 if __name__ == "__main__":

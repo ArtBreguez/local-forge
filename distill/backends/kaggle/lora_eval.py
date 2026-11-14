@@ -18,7 +18,8 @@ What it does, in order (`main`, no GPU library imported in this process):
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
 `--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, so that it can never be taken for a result): it measures the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
-Resume is tied to `config_sha` (the training records and settings, `config_sha`): an attached adapter or checkpoint of another one is refused, and a reply of another one is asked again.
+Resume is tied to `config_sha` (the training records, the training settings and the content exclusion of the evaluation: `config_sha`): an attached adapter or checkpoint of another one is refused, and a
+reply of another one is asked again. The merged replies files hold the tasks of this build's `eval_tasks.jsonl` and no other (`merge_shards`): an attached output never brings a task back.
 Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
 """
 from __future__ import annotations
@@ -98,11 +99,11 @@ DEFAULTS = {
     "smoke": False,
     "smoke_steps": 4,
     "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
-    "config_sha": "",                        # the builder's: the training records and the training settings (`config_sha`); an adapter, a checkpoint or a reply of another one is refused or asked again
+    "config_sha": "",                        # the builder's: the training records, the training settings and the content exclusion (`config_sha`); an adapter, a checkpoint or a reply of another one is refused or asked again
     "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
-TRAIN_KEYS = ("student", "max_len", "rank", "dropout", "epochs", "lr", "global_batch", "mix", "seed")          # the settings that make one adapter another (the time controls, max_steps and train_hours, do not)
+TRAIN_KEYS = ("student", "max_len", "rank", "dropout", "epochs", "lr", "global_batch", "mix", "seed")          # the settings that make one adapter another (the time controls, max_steps and train_hours, do not); `config_sha` adds the records and the content exclusion
 
 
 def log(*a):
@@ -123,10 +124,11 @@ def resolve_config(user: dict) -> dict:
     return cfg
 
 
-def config_sha(train_sha: str, cfg: dict) -> str:
-    """What an adapter, a checkpoint and the replies of an adapter are tied to: the training records (`train_sha`, the sha of the SFT file the builder read) and the settings of `TRAIN_KEYS`. A resume that attaches
-    an output of another one (another --sft, --max-len, --rank, ...) would otherwise evaluate or continue the old adapter without a word."""
-    return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}], sort_keys=True).encode()).hexdigest()[:16]
+def config_sha(train_sha: str, cfg: dict, excluded_sha: str) -> str:
+    """What an adapter, a checkpoint and the replies of an adapter are tied to: the training records (`train_sha`, the sha of the SFT file the builder read), the settings of `TRAIN_KEYS`, and the content
+    exclusion of the evaluation (`excluded_sha`: `build_lora.excluded_sha`, the rules and the held-out tasks they exclude, which is what `--train-tasks` decides). A resume that attaches an output of another one (another
+    --sft, --max-len, --rank, ..., or other --train-tasks that exclude other held-out tasks) would otherwise evaluate or continue the old adapter, or carry its replies, without a word."""
+    return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}, excluded_sha], sort_keys=True).encode()).hexdigest()[:16]
 
 
 # ---- what training does with its steps (pure) -------------------------------------------------------------------------------------------------
@@ -217,7 +219,7 @@ def find_adapter(roots, config_sha: str = None) -> "pathlib.Path | None":
                 continue
             if marker.parent.name == "adapter" and (marker.parent / "adapter_model.safetensors").exists() and info.get("status") in ("done", "partial"):
                 if config_sha and info.get("config_sha") != config_sha:
-                    raise SystemExit(f"the adapter {marker.parent} was trained under config {info.get('config_sha')!r}, this build is {config_sha!r} (another --sft or training setting): build again with the same ones, or without --resume-from")
+                    raise SystemExit(f"the adapter {marker.parent} was trained under config {info.get('config_sha')!r}, this build is {config_sha!r} (another --sft or training setting, or --train-tasks that exclude other held-out tasks): build again with the same ones, or without --resume-from")
                 return marker.parent
     return None
 
@@ -232,7 +234,7 @@ def latest_checkpoint(roots, config_sha: str = None) -> "pathlib.Path | None":
             d = marker.parent
             if d.parent.name == "ckpt" and d.name.startswith("step-") and d.name[5:].isdigit():
                 if config_sha and _done_sha(marker) != config_sha:
-                    raise SystemExit(f"the checkpoint {d} was written under config {_done_sha(marker)!r}, this build is {config_sha!r} (another --sft or training setting): build again with the same ones, or without --resume-from")
+                    raise SystemExit(f"the checkpoint {d} was written under config {_done_sha(marker)!r}, this build is {config_sha!r} (another --sft or training setting, or --train-tasks that exclude other held-out tasks): build again with the same ones, or without --resume-from")
                 if int(d.name[5:]) > best_step:
                     best, best_step = d, int(d.name[5:])
     return best
@@ -325,11 +327,20 @@ def reply_line(task: dict, sha: str, outs: list) -> dict:
     return {"id": task["id"], "kind": task["kind"], "prompt_sha": sha, "outs": outs}
 
 
-def merge_shards(out: pathlib.Path, arm: str, prefix: str = "", input_root: pathlib.Path = INPUT) -> int:
-    """`<prefix>replies-<arm>.jsonl` from the replies of earlier sessions and this one's shards (the last line of an id wins: `run_teacher.load_previous`), written whole through a `.part` file.
-    Returns the number of tasks."""
+def eval_ids(data_dir: pathlib.Path) -> set:
+    """The ids of the evaluation set of this build: the tasks of its `eval_tasks.jsonl`."""
+    return {json.loads(line)["id"] for line in (pathlib.Path(data_dir) / "eval_tasks.jsonl").read_text().splitlines() if line.strip()}
+
+
+def merge_shards(out: pathlib.Path, arm: str, ids, prefix: str = "", input_root: pathlib.Path = INPUT) -> int:
+    """`<prefix>replies-<arm>.jsonl` from the replies of earlier sessions and this one's shards (the last line of an id wins: `run_teacher.load_previous`), written whole through a `.part` file: the lines of
+    the tasks in `ids` (the evaluation set of THIS build, `eval_ids`) and of no other. An attached earlier output can hold replies of tasks this build no longer asks, and among them the ones it EXCLUDES for
+    sharing content with a training task: they are dropped here, with a log line, and never reach the file that is scored. Returns the number of tasks written."""
     out = pathlib.Path(out)
-    merged = run_teacher.load_previous(previous_files(arm, out, input_root, prefix))
+    found = run_teacher.load_previous(previous_files(arm, out, input_root, prefix))
+    merged = {tid: rec for tid, rec in found.items() if tid in ids}
+    if len(merged) < len(found):
+        log(f"merge ({arm}): {len(found) - len(merged)} task(s) of earlier replies are not in this build's evaluation set and are left out: {', '.join(sorted(set(found) - set(merged)))[:300]}")
     final = out / f"{prefix}replies-{arm}.jsonl"
     part = final.with_suffix(".part")
     part.write_text("".join(json.dumps(rec) + "\n" for rec in merged.values()))
@@ -639,7 +650,7 @@ def main() -> None:
         info["error"] = "training left no adapter"
     elif time.time() < deadline:
         info["eval_rc"] = run_worker("eval", gpus, data_dir, {"LORA_DEADLINE": str(deadline - cfg["export_reserve_s"] if cfg["export_gguf"] else deadline)})
-        info["replies"] = {arm: merge_shards(OUT, arm, prefix) for arm in ARMS}
+        info["replies"] = {arm: merge_shards(OUT, arm, eval_ids(data_dir), prefix) for arm in ARMS}
     else:
         info["error"] = "the deadline came before the evaluation"
     if cfg["export_gguf"] and final and not cfg["smoke"] and "error" not in info and time.time() + cfg["export_reserve_s"] < deadline:

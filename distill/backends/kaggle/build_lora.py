@@ -11,8 +11,8 @@ kernel's files; and print what the run will cost. The kernel is `lora_eval.py`; 
 Writes under --out:
     data/train.jsonl             the SFT records, as given (checked: see below)
     data/eval_tasks.jsonl        {"id", "kind", "messages"} per held-out task: `domain.messages(task, "thinking")`, the prompt the training records have; nothing of the task's truth
-    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its `config_sha`) and what it was built from (record counts, teacher labels, the held-out tasks and the ones that were
-                                 excluded and why, the estimate)
+    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its `config_sha`: the records, the training settings and the content exclusion) and what it was built from (record
+                                 counts, teacher labels, the ids of the evaluation set, the held-out tasks that were excluded and why, the estimate); `score_lora --config` reads it and scores that set only
     data/lora_eval.py            the kernel's code (`run.py` below imports it; the GPU workers start it by path), data/run_teacher.py (reused by it)
     data/distill.<module>.py     the stdlib-only core it runs (`distill/sft.py`, the Modal trainer's code, and the three modules it needs); flat, because the Kaggle CLI skips the sub-folders of a dataset
     data/dataset-metadata.json   for `kaggle datasets create -p <out>/data`
@@ -22,14 +22,16 @@ Writes under --out:
 What decides which held-out tasks are asked. A held-out id that is not a training id says nothing about the CONTENT: the generator draws the same problem under two seeds, and the student that trained on one
 would be tested on the other. A held-out task is therefore EXCLUDED from the evaluation (a training record never is) when EITHER rule matches a task of --train-tasks (ALL of its tasks, the ones that
 made it into the SFT file or not; `domain.task_keys`):
-  code      its normalised code and its question are a training task's (REA: the pseudocode with Ghidra's FUN_/DAT_/LAB_/PTR_/SUB_ addresses collapsed, whitespace collapsed),
+  code      its normalised code and its question are a training task's (REA: the pseudocode with Ghidra's FUN_/DAT_/LAB_/PTR_/SUB_/UNK_/eh_frame_hdr_ addresses collapsed, whitespace collapsed),
   answer    its question and its answer key (kind, question, accepted answers) are a training task's: with the same question and answer the evaluation can be passed by memory.
-The exclusion comes BEFORE the quota, so the quota fills from the tasks that remain. A family the exclusion left with fewer than --min-family (5) tasks, or none, is left out of the evaluation, with a printed
-note (--strict-families: SystemExit). What was excluded, per family and rule, and the pairs, is in the config's `built_from.eval.excluded`; `overlap` prints the table without building anything.
+The exclusion comes BEFORE the quota, so the quota fills from the tasks that remain. EVERY family that has fewer than --min-family (5) tasks left after it, or none, is left out of the evaluation, with a
+printed note (--strict-families: SystemExit): the families the exclusion emptied and the ones whose held-out file never had 5. What was excluded, per family and rule, the pairs, the families left out and the
+ids that are asked are in the config's `built_from.eval`; `overlap` prints the table, with the families under the floor marked, without building anything.
 
 What it REFUSES (SystemExit, before anything is written): a training record of a held-out task (`domain.heldout_ids`), a training record of a task that is in the evaluation subset or whose user message
 is an evaluation task's (normalised: `domain.normalize_prompt`), a training record of a task that --train-tasks does not have, a held-out file that holds a task that is not held-out, a subject that gives no
-content keys, a record with think text of a teacher that may only filter (`teachers.require_reasoning`: gpt-oss, claude, ... the rule of kaggle-score; whatever the record's `target_source`), a truth-template
+content keys, a record with think text of a teacher that may only filter or that is in no entry of `distill/teachers.py` (`teachers.require_reasoning(strict=True)`: gpt-oss, claude, ... and any label the
+catalogue does not have; whatever the record's `target_source`), a truth-template
 record that has think text or whose text is not its task's `truth_target`, a file with no thinking record (this kit trains and tests the thinking format), and a build over an earlier one without --force.
 The evaluation subset is `--quota kind=N,...`, by default `--per-family` (10) tasks of each family that the training records have, the first ones by id (`config.apply_quota`). The tasks are read by
 `domain.load_heldout`. Stdlib only.
@@ -79,7 +81,7 @@ RATES = {
     "typical_gen_share": 0.75,              # the longest reply of a batch is rarely the budget (the pilot cut every cipher reply off at 4096, so a batch of 8 usually has one that is)
 }
 DEADLINE_MARGIN_H = 0.25                    # what the kernel's deadline leaves of the quota that is left: the merge of the shards and run.json are written after the last batch
-MIN_FAMILY = 5                              # a family that the exclusion leaves with fewer held-out tasks than this is left out of the evaluation
+MIN_FAMILY = 5                              # a family that has fewer held-out tasks than this after the exclusion is left out of the evaluation (every family: the owner's decision, PR 34 second review, m1)
 CHARS_PER_TOKEN = 3.0                       # no tokenizer on this machine: pseudocode and reasoning, ~3 characters per token (+-25%; the kernel counts the real tokens and prints them)
 
 
@@ -163,11 +165,21 @@ def overlap(train: dict, heldout: list, *, domain) -> dict:
     return {"train_tasks": len(train), "heldout": len(heldout), "unkeyed": sorted(unkeyed), "matches": matches, "by_family": by_family, "total": {k: sum(v[k] for v in by_family.values()) for k in cols}}
 
 
-def overlap_lines(report: dict) -> list:
-    """The per-family table of an `overlap` report: held-out tasks, how many match a training task by code+question, by question+answer, either (the union: what the builder excludes), and how many remain."""
+def under_floor(report: dict, min_family: int) -> list:
+    """The families of an `overlap` report that have fewer than `min_family` held-out tasks left after the exclusion (held-out less the union): the ones an evaluation leaves out."""
+    return [kind for kind, c in report["by_family"].items() if c["heldout"] - c["union"] < min_family]
+
+
+def overlap_lines(report: dict, min_family: int = MIN_FAMILY) -> list:
+    """The per-family table of an `overlap` report: held-out tasks, how many match a training task by code+question, by question+answer, either (the union: what the builder excludes), how many remain, and
+    whether the family is under the floor (`under_floor`: fewer than `min_family` left, so an evaluation leaves it out). The TOTAL row counts every family; the line after it says what is left without the
+    families under the floor."""
     out = [f"{'family':<12}{'held-out':>9}{'code+question':>15}{'question+answer':>17}{'either':>8}{'left':>6}"]
+    low = under_floor(report, min_family)
     for kind, c in [*report["by_family"].items(), ("TOTAL", report["total"])]:
-        out.append(f"{kind:<12}{c['heldout']:>9}{c['code']:>15}{c['answer']:>17}{c['union']:>8}{c['heldout'] - c['union']:>6}")
+        out.append(f"{kind:<12}{c['heldout']:>9}{c['code']:>15}{c['answer']:>17}{c['union']:>8}{c['heldout'] - c['union']:>6}" + (f"   left out (fewer than {min_family})" if kind in low else ""))
+    kept = sum(c["heldout"] - c["union"] for kind, c in report["by_family"].items() if kind not in low)
+    out.append(f"left out of an evaluation, fewer than {min_family} tasks left (--min-family): {', '.join(low) if low else 'no family'}; {kept} tasks of {len(report['by_family']) - len(low)} families can be asked")
     out.append(f"{report['train_tasks']} training tasks compared; a held-out task is excluded when its code+question OR its question+answer matches one of them"
                + (f"; {len(report['unkeyed'])} held-out task(s) have no key at all and are not compared" if report["unkeyed"] else ""))
     return out
@@ -176,10 +188,11 @@ def overlap_lines(report: dict) -> list:
 def pick_eval(files, quota: str, per_family: int, families, *, domain, train_tasks: dict, rules=KEY_RULES, min_family: int = 5, strict_families: bool = False) -> tuple:
     """(the held-out tasks the evaluation asks, what was excluded). `domain.load_heldout(files)`, every one of them a held-out id (SystemExit otherwise: a file of tasks that a training set may hold would make the
     evaluation meaningless); then every task that matches a task of `train_tasks` under one of `rules` is EXCLUDED (`overlap`); then `--quota` (`kind=N,...`) or `per_family` of each of `families` (the kinds of the
-    training records), the first ones by id round robin (`config.apply_quota`) of the tasks that REMAIN, each checked by `domain.check_task`. A family that the exclusion touched and left with fewer than
-    `min_family` tasks (or none) is left out of the evaluation with a printed note, or SystemExit with `strict_families`. SystemExit for no task at all; a note for a family that has fewer than asked.
+    training records), the first ones by id round robin (`config.apply_quota`) of the tasks that REMAIN, each checked by `domain.check_task`. EVERY family asked for that has fewer than `min_family` tasks left
+    after the exclusion (or none), whether the exclusion took any of them or the file never had that many, is left out of the evaluation with a printed note, or SystemExit with `strict_families`: a row of 3
+    tasks says nothing (its 95% interval is 0-100%). SystemExit for no task at all; a note for a family that has fewer than asked.
     The second value: {"rules", "min_family", "train_tasks", "by_family": {kind: {"heldout", "code", "answer", "union", "excluded", "left", "chosen"}}, "total", "pairs": {id: {rule: training id}} of the excluded
-    tasks, "left_out": {kind: why}, "unkeyed"}."""
+    tasks, "left_out": {kind: why}, "unkeyed", "sha" (`excluded_sha`)}."""
     tasks = domain.load_heldout([pathlib.Path(f) for f in files])
     heldout = domain.heldout_ids()
     leaked = [t["id"] for t in tasks if t["id"] not in heldout]
@@ -191,7 +204,7 @@ def pick_eval(files, quota: str, per_family: int, families, *, domain, train_tas
     all_n, gone_n, left_n = (collections.Counter(t["kind"] for t in group) for group in (tasks, [t for t in tasks if t["id"] in pairs], left))
     want = config.parse_quota(quota, domain.kinds()) if quota else {kind: per_family for kind in sorted(families)}
     left_out = {kind: f"{left_n[kind]} of {all_n[kind]} held-out tasks remain after excluding {gone_n[kind]} that share content with a training task (fewer than {min_family})"
-                for kind in want if gone_n[kind] and left_n[kind] < min_family}
+                for kind in want if left_n[kind] < min_family}
     if left_out and strict_families:
         raise SystemExit("--strict-families: " + "; ".join(f"{kind}: {why}" for kind, why in left_out.items()))
     for kind, why in left_out.items():
@@ -209,13 +222,22 @@ def pick_eval(files, quota: str, per_family: int, families, *, domain, train_tas
     by_family = {kind: {**c, "excluded": gone_n[kind], "left": left_n[kind], "chosen": have[kind]} for kind, c in report["by_family"].items()}
     info = {"rules": list(rules), "min_family": min_family, "train_tasks": report["train_tasks"], "by_family": by_family, "total": {**report["total"], "excluded": len(pairs), "chosen": len(chosen)},
             "pairs": dict(sorted(pairs.items())), "left_out": left_out, "unkeyed": report["unkeyed"]}
+    info["sha"] = excluded_sha(info)
     return chosen, info
+
+
+def excluded_sha(info: dict) -> str:
+    """What the content exclusion of a build is, as a hash: the rules and the sorted ids of the held-out tasks they exclude (the keys of `pairs`: WHICH tasks may not be asked; the training task each one
+    matched is not part of it, a twin with a lower id excludes the same task). It is part of the build's `config_sha`: a build with other `--train-tasks` (or another held-out file) that excludes other tasks
+    is another build, and nothing an earlier one wrote is continued under it."""
+    return hashlib.sha256(json.dumps([list(info["rules"]), sorted(info["pairs"])]).encode()).hexdigest()[:16]
 
 
 def check_training(rows: list, eval_tasks: list, *, domain, mix: bool = False, train_tasks: dict = None) -> dict:
     """SystemExit unless the records may be trained on and evaluated against `eval_tasks`: none of a held-out task, none of a task of the evaluation subset, none whose user message is an evaluation task's
     (both through `domain.normalize_prompt`: the check does not depend on `train_tasks`), every record that holds a teacher's text (a teacher-reasoning record, or ANY record with think text, whatever its
-    `target_source`) of a teacher that may store it (`teachers.require_reasoning`, the rule `kaggle-score` applies to its `--model`), every truth-template record plain (no think tag: it is rendered from the
+    `target_source`) of a teacher that may store it AND is a catalogue entry (`teachers.require_reasoning(strict=True)`: the rule `kaggle-score` applies to a GGUF it cannot find, so `o3-mini` or a name nobody
+    has looked at is refused, not passed for want of a marker), every truth-template record plain (no think tag: it is rendered from the
     truth), and at least one thinking record. With `train_tasks` ({id: task}, `read_train_tasks`): every record's task is in it and every truth-template record's text IS `domain.truth_target` of its task.
     Returns {"records", "by_source", "labels", "families", "fates"}."""
     heldout, tasks = domain.heldout_ids(), sorted({r["task"] for r in rows})
@@ -236,7 +258,7 @@ def check_training(rows: list, eval_tasks: list, *, domain, mix: bool = False, t
     thinks = [sft.parse_assistant(t)[0] != "plain" for t in texts]
     labels = sorted({r["model"] for r, think in zip(rows, thinks) if r["target_source"] == records.TEACHER_SOURCE or think})
     for label in labels:
-        teachers.require_reasoning(label, why="the Kaggle LoRA kit (it trains on the teacher's stored text)")
+        teachers.require_reasoning(label, strict=True, why="the Kaggle LoRA kit (it trains on the teacher's stored text)")          # strict: a label that is in no catalogue entry is refused too (nobody has looked at where it comes from)
     mislabelled = sorted({r["task"] for r, think in zip(rows, thinks) if think and r["target_source"] == records.TRUTH_SOURCE})
     if mislabelled:
         raise SystemExit(f"{len(mislabelled)} {records.TRUTH_SOURCE} record(s) hold think text ({', '.join(mislabelled)[:200]}): a truth template is rendered from the truth and has no `<think>` tag, so this text is a model's under another label")
@@ -278,13 +300,13 @@ def rates_from(path) -> dict:
 
 def plan(lengths: list, eval_prompts: list, *, epochs: float, gpus: int, global_batch: int, train_hours: float, k: int, max_new_tokens: int, eval_batch: int, export: bool, rates: dict) -> dict:
     """What the run costs, in seconds, from the estimated token `lengths` of the training examples and of the evaluation prompts. Training: `steps_full` = the epochs asked, `step_s` = a step's tokens at
-    `train_tok_per_s_per_gpu` over `gpus`; when `train_hours` binds, `max_steps` caps the run (0 = it does not). Evaluation: `k` replies per task and arm on `gpus` processes, batches of `eval_batch`; a batch costs its prefill and
+    `train_tok_per_s_per_gpu` over `gpus`; when `train_hours` (less the model load, which the kernel's training clock counts) binds, `max_steps` caps the run (0 = it does not). Evaluation: `k` replies per task and arm on `gpus` processes, batches of `eval_batch`; a batch costs its prefill and
     `max_new_tokens` decode steps at most (the UPPER bound, which every figure of the verdict uses) or `typical_gen_share` of them. Plus the setup, two model loads and the export when asked."""
     n, mean = len(lengths), sum(lengths) / len(lengths)
     per_epoch = math.ceil(n / global_batch)
     full = max(1, math.ceil(epochs * per_epoch))
     step_s = global_batch * mean / (gpus * rates["train_tok_per_s_per_gpu"])
-    budget = max(1, int(train_hours * 3600 // step_s))
+    budget = max(1, int((train_hours * 3600 - rates["load_s"]) // step_s))          # the kernel's training clock (`lora_eval.train_deadline`) starts before the worker loads the student: the load is out of `train_hours`
     steps = min(full, budget)
     items = len(eval_prompts) * k
     batches = math.ceil(math.ceil(items / gpus) / eval_batch)
@@ -309,9 +331,23 @@ def smoke_plan(longest: int, *, gpus: int, steps: int, max_new_tokens: int, eval
     return {"smoke": True, "steps": steps, "step_s": round(step_s, 1), "eval_batch": eval_batch, "total_upper_s": round(total), "total_typical_s": round(total), "gpus": gpus, "rates": rates}
 
 
+def fit_verdict(p: dict, gpu_hours: float, deadline_h: float) -> str:
+    """Empty when the plan fits, else why it does not. Two clocks, and both must hold: the QUOTA (`gpu_hours`, with the smoke run that is still to come: `p["smoke_s"]`), and the KERNEL'S OWN DEADLINE: the kernel
+    starts nothing `deadline_h` after ITS start (`lora_eval.main`: `T0 + deadline_h`), stops training `eval_reserve_s` before that (`lora_eval.train_deadline`) and starts no batch that would pass it, so this
+    run's own work (the setup, the loads, the training, the evaluation's upper bound, the export: `total_upper_s`, the smoke run not in it) has to end by `deadline_h`. A plan inside the quota and past the deadline
+    (the deadline is the quota less the smoke run less a margin) would be cut by the kernel: a `partial` adapter or batches that are never asked."""
+    h = lambda s: f"{s / 3600:.2f} h"
+    if p["total_upper_s"] + p.get("smoke_s", 0) > gpu_hours * 3600:
+        return "more than the quota"
+    if p["total_upper_s"] > deadline_h * 3600:
+        return (f"inside the quota, but this run needs {h(p['total_upper_s'])}, {math.ceil((p['total_upper_s'] - deadline_h * 3600) / 60)} min past the {deadline_h:g} h after which the kernel starts nothing: "
+                "it would stop training early or leave the last batches unasked")
+    return ""
+
+
 def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     """The lines the builder prints about a plan (`plan` or `smoke_plan`): what is assumed, what each stage costs, whether it fits `gpu_hours` (the quota that is left when the kernel starts, with the smoke run
-    that has still to be run added: `p["smoke_s"]`), and what the kernel does at the deadline."""
+    that has still to be run added: `p["smoke_s"]`) AND the kernel's own deadline (`fit_verdict`), and what the kernel does at the deadline."""
     h = lambda s: f"{s / 3600:.1f} h"
     r = p["rates"]
     where = "assumed" if r == RATES else "assumed, with the numbers of --measured"
@@ -333,9 +369,9 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
             out.append("smoke:    the smoke run is done (--measured): --gpu-hours is the quota that is left after it")
     extra = p.get("smoke_s", 0)
     total, typical = p["total_upper_s"] + extra, p["total_typical_s"] + extra
-    fits = total <= gpu_hours * 3600
+    verdict = fit_verdict(p, gpu_hours, deadline_h)
     out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
-               + ("it fits" if fits else "IT DOES NOT FIT: lower --train-hours, --k, --per-family or --max-new-tokens"))
+               + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): lower --train-hours, --k, --per-family or --max-new-tokens"))
     out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_reserve_s'])} for the evaluation"))
     return out
 
@@ -350,8 +386,9 @@ def kernel_files() -> dict:
 
 
 def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict, p: dict, smoke: bool, **settings) -> dict:
-    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its `config_sha` (what the adapter and the replies are tied to: the training records
-    and the training settings), and what it was built from, the held-out tasks that were excluded included."""
+    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its `config_sha` (what the adapter and the replies are tied to: the training records,
+    the training settings and the content exclusion, `excluded["sha"]`), and what it was built from: the held-out tasks that were excluded, and `eval.ids`, the ids of the evaluation set (what `score_lora`
+    scores and nothing else)."""
     cfg = {**{k: v for k, v in lora_eval.DEFAULTS.items() if k != "pins"}, **settings, "smoke": smoke}
     if not smoke:
         cfg.update(max_steps=p["max_steps"], eval_reserve_s=p["eval_reserve_s"], export_reserve_s=p["export_reserve_s"])
@@ -359,8 +396,8 @@ def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict,
         lora_eval.resolve_config(cfg)
     except ValueError as e:
         raise SystemExit(f"the run config is refused by the kernel: {e}")
-    cfg["config_sha"] = lora_eval.config_sha(facts["sha256"], cfg)
-    return {**cfg, "built_from": {"train": facts, "eval": {"tasks": len(eval_tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in eval_tasks).items())),
+    cfg["config_sha"] = lora_eval.config_sha(facts["sha256"], cfg, excluded["sha"])
+    return {**cfg, "built_from": {"train": facts, "eval": {"tasks": len(eval_tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in eval_tasks).items())), "ids": sorted(t["id"] for t in eval_tasks),
                                                            "files": [pathlib.Path(f).name for f in heldout_files], "excluded": excluded}, "estimate": {k: v for k, v in p.items() if k != "rates"}, "rates": p["rates"]}}
 
 
@@ -430,8 +467,8 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--out", type=pathlib.Path, required=True, help="directory: data/ (the dataset) and kernel/ are written under it")
     ap.add_argument("--quota", default="", help="kind=N,...: the held-out tasks of each listed family and none of another; default --per-family of each family the training records have")
     ap.add_argument("--per-family", type=int, default=10, help="held-out tasks per family when --quota is not given (default %(default)s)")
-    ap.add_argument("--min-family", type=int, default=MIN_FAMILY, help="a family that the exclusion leaves with fewer held-out tasks than this (or none) is left out of the evaluation, with a note (default %(default)s)")
-    ap.add_argument("--strict-families", action="store_true", help="refuse (SystemExit) instead of leaving out a family that the exclusion left under --min-family")
+    ap.add_argument("--min-family", type=int, default=MIN_FAMILY, help="a family that has fewer held-out tasks than this after the exclusion (or none), whether the exclusion took any or not, is left out of the evaluation, with a note (default %(default)s)")
+    ap.add_argument("--strict-families", action="store_true", help="refuse (SystemExit) instead of leaving out a family that is under --min-family after the exclusion")
     ap.add_argument("--student", default=None, help=f"Hugging Face model to fine-tune (default {d['student']}, the one modal_train.py trains)")
     ap.add_argument("--max-len", type=int, default=d["max_len"], help="training window in tokens; a longer record is dropped, never cut (default %(default)s: 8192 does not fit a T4)")
     ap.add_argument("--rank", type=int, default=None, help=f"LoRA rank (default {d['rank']}; modal_train.py uses 32)")
@@ -483,13 +520,14 @@ def overlap_main(argv: list) -> None:
     ap.add_argument("--domain", default="rea", help="the subject: a package of distill/domains (default %(default)s)")
     ap.add_argument("--train-tasks", type=pathlib.Path, nargs="+", required=True, help="ALL the training tasks (REA: decompiled-seed7-all.jsonl)")
     ap.add_argument("--heldout", type=pathlib.Path, nargs="+", required=True, help="the held-out tasks (REA: decompiled-seed1001-all.jsonl)")
+    ap.add_argument("--min-family", type=int, default=MIN_FAMILY, help="a family with fewer held-out tasks left than this is marked as left out, as a build would leave it out (default %(default)s)")
     a = ap.parse_args(argv)
     domain = load(a.domain)
     held = domain.load_heldout([pathlib.Path(f) for f in a.heldout])
     leaked = [t["id"] for t in held if t["id"] not in domain.heldout_ids()]
     if leaked:
         raise SystemExit(f"--heldout holds tasks that are not held-out ids of domain {domain.name!r} ({', '.join(leaked)[:200]})")
-    print("\n".join(overlap_lines(overlap(read_train_tasks(a.train_tasks, domain=domain), held, domain=domain))))
+    print("\n".join(overlap_lines(overlap(read_train_tasks(a.train_tasks, domain=domain), held, domain=domain), a.min_family)))
 
 
 def main(argv=None) -> None:

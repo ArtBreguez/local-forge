@@ -10,7 +10,7 @@ Nothing here decides anything; every method calls the function that decided it b
   messages         `SYSTEM_RECIPE` (plain; the text of modal_rea.py, which stays untouched) or `reasoning.SYSTEM_REASONING`, then the pseudocode and the question
   heldout_ids      the ids of seed 1001 (the held-out split: `<family>-1001-<n>`)
   task_keys        the content of a decompiled task: its normalised pseudocode with its question, and its question with its answer key (kind, question, `accept`); `normalize_prompt` is what makes two decompilations of
-                   one function equal (the Ghidra names of two compiles differ in their addresses only). The ids never enter.
+                   one function equal (the Ghidra names of two compiles, FUN_/DAT_/LAB_/PTR_/SUB_/UNK_/eh_frame_hdr_<hex>, differ in their addresses only). The ids never enter.
 """
 from __future__ import annotations
 
@@ -36,9 +36,11 @@ SYSTEM_RECIPE = ("You are a reverse engineer. You are given decompiled C pseudoc
                  "question. Answer in one short line with the concrete value or name asked for, then one sentence of justification.")
 
 
-# Ghidra's names for what it cannot name: a function (FUN_), data (DAT_), a label (LAB_), a pointer (PTR_), a subroutine (SUB_), each followed by the address in hex. Two compiles of one source put them at other
-# addresses, so the same function decompiles to texts that differ in these only. `PTR_DAT_00104010` is one name inside another: the inner one is collapsed, and its prefix stays.
-GHIDRA_ADDRESS = re.compile(r"(?<![A-Za-z0-9])(FUN|DAT|LAB|PTR|SUB)_[0-9a-fA-F]+(?![A-Za-z0-9_])")
+# Ghidra's names for what it cannot name: a function (FUN_), data (DAT_), a label (LAB_), a pointer (PTR_), a subroutine (SUB_), bytes of unknown type (UNK_) and an address inside the `.eh_frame_hdr` section
+# (eh_frame_hdr_), each followed by the address in hex. Two compiles of one source put them at other addresses, so the same function decompiles to texts that differ in these only. `PTR_DAT_00104010` is one
+# name inside another: the inner one is collapsed, and its prefix stays. (Seed 7 has `&UNK_001011f0` once and `&eh_frame_hdr_00102020` six times; these seven prefixes are every `<name>_<hex address>` shape of
+# the seed-7 and seed-1001 files.)
+GHIDRA_ADDRESS = re.compile(r"(?<![A-Za-z0-9])(FUN|DAT|LAB|PTR|SUB|UNK|eh_frame_hdr)_[0-9a-fA-F]+(?![A-Za-z0-9_])")
 
 
 def _digest(*parts) -> str:

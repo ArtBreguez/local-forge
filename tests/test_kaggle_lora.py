@@ -40,6 +40,12 @@ KEPT = [t for t in HELDOUT if t["id"] not in SHARED]
 TRAIN_BY_ID = {t["id"]: t for t in TRAIN}
 PAIR = [json.loads(line) for line in (ROOT / "tests" / "golden" / "kaggle_lora" / "structs-pair.jsonl").read_text().splitlines()]       # structs-7-0292 and structs-1001-0028: the same function, question and answer under two seeds
 TEACHER = "codeforge-27b-heretic-q4"
+SHA = "feedfacefeedface"                   # the `config_sha` of the build whose replies the scoring tests read
+
+
+def build_of(tasks, sha: str = SHA) -> dict:
+    """What `score_lora.read_build` gives for a build that asks `tasks`."""
+    return {"ids": {t["id"] for t in tasks}, "config_sha": sha}
 
 
 def row(task: dict, source: str = "teacher-reasoning", label: str = TEACHER, text: str = None) -> dict:
@@ -235,7 +241,11 @@ class Estimate(unittest.TestCase):
         step_s = 16 * 3000 / (2 * self.R["train_tok_per_s_per_gpu"])
         self.assertEqual((p["steps_per_epoch"], p["steps_full"]), (75, 150))
         self.assertAlmostEqual(p["step_s"], step_s, delta=0.1)
-        self.assertEqual((p["steps"], p["max_steps"]), (int(10800 // step_s), int(10800 // step_s)))
+        budget = int((10800 - self.R["load_s"]) // step_s)
+        self.assertEqual((p["steps"], p["max_steps"]), (budget, budget), "the kernel's training clock starts before the worker loads the student: the load is out of the 3 h")
+        stop = lora_eval.train_deadline(0.0, 1e9, 3.0, 0)
+        self.assertLess(self.R["load_s"] + (p["max_steps"] - 1) * step_s, stop, "every step of the schedule starts before the kernel's clock stops: the adapter is `done`, not `partial`")
+        self.assertGreaterEqual(self.R["load_s"] + p["max_steps"] * step_s, stop - step_s, "and no step that fits is given away")
         self.assertLessEqual(p["train_s"], 3 * 3600)
         self.assertLess(p["epochs_effective"], 1.0, "150 tok/s: 3 h buys less than one epoch of 1,200 records of 3,000 tokens")
 
@@ -267,6 +277,7 @@ class Estimate(unittest.TestCase):
         p = self.plan()
         self.assertIn("it fits", build_lora.describe(p, 8.0, 7.5)[-2])
         self.assertIn("IT DOES NOT FIT", build_lora.describe(p, 2.0, 7.5)[-2])
+        self.assertIn("more than the quota", build_lora.describe(p, 2.0, 7.5)[-2])
         self.assertIn("starts nothing after 7.5 h", build_lora.describe(p, 8.0, 7.5)[-1])
         self.assertIn("assumed", build_lora.describe(p, 8.0, 7.5)[0])
 
@@ -558,13 +569,14 @@ class Resume(unittest.TestCase):
         write_jsonl(inp / "earlier" / "replies-base.jsonl", [self.line(t0, [{**self.out(t0), "text": "old"}]), self.line(t2, [self.out(t2)])])
         write_jsonl(lora_eval.shard_path(out, "base", 0), [self.line(t0, [{**self.out(t0), "text": "new"}])])
         write_jsonl(lora_eval.shard_path(out, "base", 1), [self.line(t1, [self.out(t1)])])
-        self.assertEqual(lora_eval.merge_shards(out, "base", input_root=inp), 3)
+        ids = {t["id"] for t in self.tasks}
+        self.assertEqual(lora_eval.merge_shards(out, "base", ids, input_root=inp), 3)
         merged, info = score_replies.read_replies(out / "replies-base.jsonl")
         self.assertEqual(sorted(merged), sorted([t0["id"], t1["id"], t2["id"]]))
         self.assertEqual(merged[t0["id"]]["outs"][0]["text"], "new")
         self.assertEqual(info["malformed"], 0)
         self.assertEqual(sorted(p.name for p in out.iterdir()), ["replies-base.jsonl"], "the shards and the .part file are gone")
-        self.assertEqual(lora_eval.merge_shards(out, "base", input_root=inp), 3, "a second merge changes nothing")
+        self.assertEqual(lora_eval.merge_shards(out, "base", ids, input_root=inp), 3, "a second merge changes nothing")
 
     def test_a_smoke_run_never_mixes_with_a_real_one(self):
         out, inp = self.root / "out", self.root / "in"
@@ -752,7 +764,10 @@ class Scoring(unittest.TestCase):
     def out(self, task, right, tokens=100, finish="stop", text=None, sha=None):
         answer = task["answer"] if right else task["answer"] + 1
         return {"text": text if text is not None else THINK.format("thinking", answer), "finish": finish, "tokens": tokens, "prompt_tokens": 50, "secs": 1.0,
-                "prompt_sha": sha or outputs.prompt_sha(ARITH.messages(task, "thinking")), "max_tokens": 4096}
+                "prompt_sha": sha or outputs.prompt_sha(ARITH.messages(task, "thinking")), "max_tokens": 4096, "config_sha": SHA}
+
+    def score(self, base, lora, tasks=HELDOUT):
+        return score_lora.score(base, lora, [self.heldout], domain=ARITH, build=build_of(tasks))
 
     def replies(self, name, make):
         lines = [{"id": t["id"], "kind": t["kind"], "prompt_sha": outputs.prompt_sha(ARITH.messages(t, "thinking")), "outs": make(t)} for t in HELDOUT]
@@ -767,7 +782,7 @@ class Scoring(unittest.TestCase):
 
     def test_the_two_arms_are_scored_per_family_and_overall(self):
         base, lora = self.files()
-        r = score_lora.score(base, lora, [self.heldout], domain=ARITH)
+        r = self.score(base, lora)
         b, l = r["arms"]["base"], r["arms"]["lora"]
         self.assertEqual((b["overall"]["accepted"], l["overall"]["accepted"], b["overall"]["replies"]), (5, 7, 12))
         self.assertEqual({k: v["accepted"] for k, v in b["by_kind"].items()}, {"add": 4, "mul": 0, "sub": 1})
@@ -776,10 +791,10 @@ class Scoring(unittest.TestCase):
         self.assertEqual((b["overall"]["mean_tokens"], round(l["overall"]["mean_tokens"], 1)), (100.0, round((4096 + 11 * 200) / 12, 1)))
         self.assertEqual((b["overall"]["cut_off"], l["overall"]["cut_off"], l["by_kind"]["add"]["cut_off"]), (0.0, round(1 / 12, 4), 0.25))
         self.assertEqual((l["overall"]["truncated"], l["overall"]["wrong"]), (1, 4), "a cut-off reply is `truncated`, not `wrong`")
-        self.assertEqual((r["tasks_answered"], r["tasks_in_files"]), (12, 12))
+        self.assertEqual((r["tasks_answered"], r["tasks_in_set"]), (12, 12))
 
     def test_the_arms_are_paired_and_the_sign_test_counts_only_the_discordant_pairs(self):
-        r = score_lora.score(*self.files(), [self.heldout], domain=ARITH)
+        r = self.score(*self.files())
         p = r["paired"]
         self.assertEqual({k: p["overall"][k] for k in ("both", "base_only", "lora_only", "neither", "n")}, {"both": 3, "base_only": 2, "lora_only": 4, "neither": 3, "n": 12})
         self.assertAlmostEqual(p["overall"]["sign_p"], 2 * (1 + 6 + 15) / 64, places=4)
@@ -804,7 +819,7 @@ class Scoring(unittest.TestCase):
         for name, out in cases.items():
             line = {"id": t["id"], "kind": t["kind"], "prompt_sha": out["prompt_sha"], "outs": [out]}
             path = write_jsonl(self.dir / "one.jsonl", [line])
-            got = score_lora.read_arm(path, {t["id"]: t}, domain=ARITH)["rows"][(t["id"], 0)]["verdict"]
+            got = score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, config_sha=SHA)["rows"][(t["id"], 0)]["verdict"]
             self.assertEqual(got, traces.verdict(score_replies.reply_of(out, thinking=True), t, domain=ARITH), name)
             self.assertEqual(got == "accepted", traces.score_reasoning(score_replies.reply_of(out, thinking=True), t, domain=ARITH), name)
             verdicts[name] = got
@@ -815,20 +830,20 @@ class Scoring(unittest.TestCase):
         out = self.out(t, True, sha="deadbeefdeadbeef")
         path = write_jsonl(self.dir / "one.jsonl", [{"id": t["id"], "kind": t["kind"], "prompt_sha": out["prompt_sha"], "outs": [out]}])
         with self.assertRaisesRegex(SystemExit, "another prompt"):
-            score_lora.read_arm(path, {t["id"]: t}, domain=ARITH)
+            score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, config_sha=SHA)
 
     def test_missing_replies_unknown_tasks_and_unchecked_replies_are_counted_not_scored(self):
         t = self.by_kind["add"][0]
         sha = outputs.prompt_sha(ARITH.messages(t, "thinking"))
         lines = [{"id": t["id"], "kind": "add", "prompt_sha": sha, "outs": [None, {**self.out(t, True), "prompt_sha": None}, self.out(t, True)]}, {"id": "nobody", "kind": "add", "outs": [self.out(t, True)]}]
-        got = score_lora.read_arm(write_jsonl(self.dir / "one.jsonl", lines), {t["id"]: t}, domain=ARITH)
+        got = score_lora.read_arm(write_jsonl(self.dir / "one.jsonl", lines), {t["id"]: t}, domain=ARITH, config_sha=SHA)
         self.assertEqual(sorted(got["rows"]), [(t["id"], 2)])
-        self.assertEqual((got["info"]["missing"], got["info"]["unchecked"], got["info"]["unknown"]), (1, 1, 1))
+        self.assertEqual((got["info"]["missing"], got["info"]["unchecked"], got["info"]["outside"], got["outside"]), (1, 1, 1, ["nobody"]))
 
     def test_an_arm_that_has_fewer_replies_leaves_the_rest_unpaired(self):
         base, lora = self.files()
         short = write_jsonl(self.dir / "short.jsonl", [json.loads(line) for line in lora.read_text().splitlines()][:6])
-        r = score_lora.score(base, short, [self.heldout], domain=ARITH)
+        r = self.score(base, short)
         self.assertEqual((r["paired"]["overall"]["n"], r["paired"]["unpaired"], r["arms"]["base"]["overall"]["replies"], r["arms"]["lora"]["overall"]["replies"]), (6, 6, 6, 6), "both arms are summarised over the replies both have")
         self.assertEqual((r["arms"]["base"]["unpaired"], r["arms"]["lora"]["unpaired"], r["paired"]["unpaired_by_arm"]), (6, 0, {"base": 6, "lora": 0}))
 
@@ -860,7 +875,8 @@ class Scoring(unittest.TestCase):
 
     def test_the_table_says_when_the_test_is_over_tasks(self):
         report = {"arms": {a: {"overall": {"replies": 6, "accepted": 3, "accuracy": 0.5, "ci95": [0.2, 0.8], "cut_off": 0.0, "mean_tokens": 10.0}, "by_kind": {}} for a in ("base", "lora")},
-                  "paired": {"overall": {"both": 1, "base_only": 1, "lora_only": 1, "neither": 3, "n": 6, "sign_p": 1.0, "per_task": 3}, "by_kind": {}, "unpaired": 0}, "tasks_answered": 2, "tasks_in_files": 2}
+                  "paired": {"overall": {"both": 1, "base_only": 1, "lora_only": 1, "neither": 3, "n": 6, "sign_p": 1.0, "per_task": 3}, "by_kind": {}, "unpaired": 0}, "tasks_answered": 2, "tasks_in_set": 2,
+                  "config_sha": SHA, "outside": {"replies": 0, "by_arm": {"base": 0, "lora": 0}, "tasks": []}, "other_build": {"replies": 0, "by_arm": {"base": 0, "lora": 0}}}
         self.assertTrue(any("k > 1 (up to 3 replies per task): the sign p is over TASKS" in line for line in score_lora.lines_of(report)))
         report["paired"]["overall"]["per_task"] = 1
         self.assertFalse(any("k > 1" in line for line in score_lora.lines_of(report)))
@@ -868,11 +884,11 @@ class Scoring(unittest.TestCase):
     def test_the_table_names_the_replies_that_only_one_arm_has(self):
         base, lora = self.files()
         short = write_jsonl(self.dir / "short.jsonl", [json.loads(line) for line in lora.read_text().splitlines()][:6])
-        lines = score_lora.lines_of(score_lora.score(base, short, [self.heldout], domain=ARITH))
-        self.assertIn("paired replies 6, unpaired 6 (base only 6, adapter only 0: in no figure above)", lines[-1])
+        lines = score_lora.lines_of(self.score(base, short))
+        self.assertIn("paired replies 6, unpaired 6 (base only 6, adapter only 0: in no figure above)", lines[-2])
 
     def test_a_partial_adapter_says_where_the_learning_rate_stopped(self):
-        report = score_lora.score(*self.files(), [self.heldout], domain=ARITH)
+        report = self.score(*self.files())
         done = {"train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "deadline_hit": True, "lr_last": 1.2e-4, "lr_peak": 1.5e-4}}
         text = "\n".join(score_lora.lines_of(report, done))
         self.assertIn("stopped by the deadline, at a learning rate of 1.2e-04, 80% of the peak: the cosine had not finished", text)
@@ -884,16 +900,19 @@ class Scoring(unittest.TestCase):
     def test_the_table_and_the_command(self):
         base, lora = self.files()
         info = self.dir / "run.json"
-        info.write_text(json.dumps({"smoke": True, "train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "loss_first": 1.5, "loss_last": 0.7, "records": {"think": 800}, "deadline_hit": True}}))
+        config = self.dir / "lora-config.json"
+        config.write_text(json.dumps({"config_sha": SHA, "built_from": {"eval": {"ids": sorted(t["id"] for t in HELDOUT)}}}))
+        info.write_text(json.dumps({"smoke": True, "config": {"config_sha": SHA}, "train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "loss_first": 1.5, "loss_last": 0.7, "records": {"think": 800}, "deadline_hit": True}}))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
-            score_lora.main(["--domain", "example_arith", "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
+            score_lora.main(["--domain", "example_arith", "--config", str(config), "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
         text = buf.getvalue()
-        for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0"):
+        for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0", "tasks answered 12 of 12 in the evaluation set of the build",
+                       "0 replies of tasks outside the evaluation set, not scored"):
             self.assertIn(needle, text)
         self.assertEqual(json.loads((self.dir / "report.json").read_text())["paired"]["overall"]["n"], 12)
         with self.assertRaises(SystemExit):
-            score_lora.main(["--domain", "example_arith", "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--out", str(self.dir / "report.json")])
+            score_lora.main(["--domain", "example_arith", "--config", str(config), "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--out", str(self.dir / "report.json")])
 
 
 class ReaWiring(unittest.TestCase):
@@ -926,7 +945,7 @@ class ReaWiring(unittest.TestCase):
             build_lora.pick_eval([other], "", 2, ["xor-key"], domain=self.domain, train_tasks={})
 
     def test_the_evaluation_subset_of_rea_is_checked_by_the_domain(self):
-        chosen, _ = build_lora.pick_eval([self.file], "", 1, ["xor-key", "password"], domain=self.domain, train_tasks={})
+        chosen, _ = build_lora.pick_eval([self.file], "", 1, ["xor-key", "password"], domain=self.domain, train_tasks={}, min_family=1)
         self.assertEqual(sorted(t["kind"] for t in chosen), ["password", "xor-key"])
         with self.assertRaisesRegex(SystemExit, "no task kind|which is no task kind"):
             build_lora.pick_eval([self.file], "nonsense=3", 1, [], domain=self.domain, train_tasks={})
@@ -934,9 +953,9 @@ class ReaWiring(unittest.TestCase):
     def test_a_reply_is_judged_by_the_rea_scorer(self):
         t = self.tasks[0]
         sha = outputs.prompt_sha(self.domain.messages(t, "thinking"))
-        good = {"text": THINK.format("looking at the loop", self.right(t)), "finish": "stop", "tokens": 300, "prompt_sha": sha}
-        bad = {"text": THINK.format("looking at the loop", "zzzz"), "finish": "stop", "tokens": 300, "prompt_sha": sha}
-        got = score_lora.read_arm(write_jsonl(self.dir / "r.jsonl", [{"id": t["id"], "kind": t["kind"], "outs": [good, bad]}]), {t["id"]: t}, domain=self.domain)["rows"]
+        good = {"text": THINK.format("looking at the loop", self.right(t)), "finish": "stop", "tokens": 300, "prompt_sha": sha, "config_sha": SHA}
+        bad = {"text": THINK.format("looking at the loop", "zzzz"), "finish": "stop", "tokens": 300, "prompt_sha": sha, "config_sha": SHA}
+        got = score_lora.read_arm(write_jsonl(self.dir / "r.jsonl", [{"id": t["id"], "kind": t["kind"], "outs": [good, bad]}]), {t["id"]: t}, domain=self.domain, config_sha=SHA)["rows"]
         self.assertEqual((got[(t["id"], 0)]["verdict"], got[(t["id"], 1)]["verdict"]), ("accepted", "wrong"))
         from rea_bench import scoring
         self.assertTrue(scoring.score_strict(self.right(t), t))
@@ -959,7 +978,7 @@ class Docs(unittest.TestCase):
             if add:
                 add(ap)
             known[name] = {o for a in ap._actions for o in a.option_strings}
-        known["score_lora"] = {"--domain", "--heldout", "--base", "--lora", "--run-info", "--out", "--force"}
+        known["score_lora"] = {"--domain", "--config", "--heldout", "--base", "--lora", "--run-info", "--out", "--force"}
         blocks = re.findall(r"(?s)```bash\n(.*?)```", self.section())
         shown = {"build_lora": set(), "score_lora": set()}
         for block in blocks:
@@ -994,7 +1013,7 @@ class Docs(unittest.TestCase):
         text = self.section()
         self.assertNotIn("at most", text)
         self.assertNotIn("4.9 h", text)
-        for needle in ("assuming", "0.3 s", "150 tok/s", "smoke run first", "7.6 of the 8 h", "IT DOES NOT FIT"):
+        for needle in ("assuming", "0.3 s", "150 tok/s", "smoke run first", "7.5 of the 8 h", "IT DOES NOT FIT"):
             self.assertIn(needle, text, needle)
 
     def test_the_numbers_of_the_estimate_are_the_ones_the_builder_prints(self):
