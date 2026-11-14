@@ -1,5 +1,5 @@
 """What an attached output is tied to: the two keys of the Kaggle LoRA build (PR 34 review, m4; third review, the owner's decision). The ADAPTER key is the training identity (the SFT file and the
-training settings), the EVALUATION key is that adapter key with the evaluation set (the content exclusion and the ids asked) and the evaluation settings. What each key reads, setting by setting, is
+training settings), the EVALUATION key is that adapter key with the evaluation set (the content exclusion and the tasks asked) and the evaluation settings. What each key reads, setting by setting, is
 `tests/test_kaggle_lora_keys.py` (fourth review, m1-m4).
 """
 from __future__ import annotations

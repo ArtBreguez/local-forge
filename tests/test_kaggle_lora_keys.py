@@ -71,7 +71,7 @@ class Classification(unittest.TestCase):
         rows = [x for x in (pathlib.Path(lora_eval.__file__).parent / "README.md").read_text().splitlines() if x.startswith("| ")]
         cell = lambda start: next(set(re.findall(r"`([\w.]+)`", x.split("|")[2])) for x in rows if x.startswith(start))
         self.assertEqual(cell("| **adapter key** (`TRAIN_KEYS`)"), ADAPTER | {"train.jsonl", "sft.LORA_TARGETS"})
-        self.assertEqual(cell("| **evaluation key** (`EVAL_KEYS`)"), EVALUATION)
+        self.assertEqual(cell("| **evaluation key** (`EVAL_KEYS`)"), EVALUATION | {"eval_tasks.jsonl"})
         start = next(i for i, x in enumerate(rows) if x.startswith("| **neither** (`NOT_KEYED`"))
         self.assertEqual(set().union(*(set(re.findall(r"`(\w+)`", x.split("|")[2])) for x in rows[start:start + 3])), NEITHER)
 
@@ -93,12 +93,12 @@ class Classification(unittest.TestCase):
 
     def test_what_is_not_a_setting_is_a_constant_the_keys_hold(self):
         cfg = lora_eval.resolve_config({})
-        a, e = lora_eval.adapter_key("abc", cfg), lora_eval.eval_key("adapter", "ex", ["t1"], cfg)
+        a, e = lora_eval.adapter_key("abc", cfg), lora_eval.eval_key("adapter", "ex", "tasks", cfg)
         with mock.patch.object(lora_eval.sft, "LORA_TARGETS", [*lora_eval.sft.LORA_TARGETS, "another_proj"]):
             self.assertNotEqual(lora_eval.adapter_key("abc", cfg), a, "the modules the adapter sits on")
-            self.assertEqual(lora_eval.eval_key("adapter", "ex", ["t1"], cfg), e)
+            self.assertEqual(lora_eval.eval_key("adapter", "ex", "tasks", cfg), e)
         with mock.patch.object(lora_eval, "THINKING", False):
-            self.assertNotEqual(lora_eval.eval_key("adapter", "ex", ["t1"], cfg), e, "a reply that did not think is of another evaluation")
+            self.assertNotEqual(lora_eval.eval_key("adapter", "ex", "tasks", cfg), e, "a reply that did not think is of another evaluation")
             self.assertEqual(lora_eval.adapter_key("abc", cfg), a)
 
 
@@ -147,15 +147,15 @@ class AdapterKeyReads(unittest.TestCase):
 class EvalKeyReads(unittest.TestCase):
     def setUp(self):
         self.cfg = lora_eval.resolve_config({})
-        self.key = lambda cfg=self.cfg, adapter="adapter", ex="ex", ids=("t1", "t2"): lora_eval.eval_key(adapter, ex, ids, cfg)
+        self.key = lambda cfg=self.cfg, adapter="adapter", ex="ex", tasks="tasks": lora_eval.eval_key(adapter, ex, tasks, cfg)
         self.base = self.key()
 
-    def test_the_adapter_the_exclusion_and_the_ids_asked(self):
+    def test_the_adapter_the_exclusion_and_the_tasks_asked(self):
         self.assertRegex(self.base, r"^[0-9a-f]{16}$")
-        self.assertEqual(self.key(ids=["t2", "t1"]), self.base, "a set: the order of the ids is not part of it")
-        self.assertEqual(self.key(ids={"t1", "t2"}), self.base)
-        for name, kw in (("another adapter", {"adapter": "adapteR"}), ("another exclusion", {"ex": "ey"}), ("a task fewer", {"ids": ["t1"]}), ("a task more", {"ids": ["t1", "t2", "t3"]}), ("another task", {"ids": ["t1", "t3"]})):
+        self.assertEqual(self.key(), self.base)
+        for name, kw in (("another adapter", {"adapter": "adapteR"}), ("another exclusion", {"ex": "ey"}), ("another file of tasks", {"tasks": "taskS"})):
             self.assertNotEqual(self.key(**kw), self.base, name)
+        self.assertEqual(len({self.key(adapter="a", ex="b", tasks="c"), self.key(adapter="b", ex="a", tasks="c"), self.key(adapter="a", ex="c", tasks="b"), self.key(adapter="c", ex="b", tasks="a")}), 4, "each in its own place")
 
     def test_every_evaluation_setting_by_name(self):
         for key in sorted(EVALUATION):
@@ -277,14 +277,9 @@ class Built(Kit):
         score = lambda cfg_dir: score_lora.score(earlier / "replies-base.jsonl", earlier / "replies-lora.jsonl", [self.heldout], domain=ARITH, build=score_lora.read_build(self.dir / cfg_dir / "data" / "lora-config.json"))
         r = score("resume")
         self.assertEqual((r["paired"]["overall"]["n"], r["tasks_answered"], r["other_adapter"]["replies"], r["other_eval"]["replies"]), (0, 0, 0, 2 * len(ids)), "the review: 16 paired replies of 3,000 tokens under a 1,024 budget")
-        self.assertIn(f"{2 * len(ids)} replies of this adapter written under another evaluation key than {resume['eval_sha']} (another exclusion, set of tasks, reply budget, sampling or k: a resume asks them again), not scored "
+        self.assertIn(f"{2 * len(ids)} replies of this adapter written under another evaluation key than {resume['eval_sha']} (another exclusion, set of tasks, prompt, reply budget, sampling or k: a resume asks them again), not scored "
                       f"(base {len(ids)}, adapter {len(ids)})", score_lora.lines_of(r))
         self.assertEqual(score("first")["paired"]["overall"]["n"], len(ids), "under the build that asked them they are scored")
-
-    def test_the_advice_of_a_plan_that_does_not_fit_says_what_each_flag_costs_on_a_resume(self):
-        cfg = self.build(out=self.dir / "a", gpu_hours=1.0, deadline_h=0.1)
-        self.assertTrue(cfg["plan_lines"][-2].endswith("lower --train-hours, --k, --per-family or --max-new-tokens (on a resume: --train-hours is another adapter when it changes the cap on the steps, and it trains again; "
-                                                     "the other three are another evaluation of the same adapter, and it asks again)"), cfg["plan_lines"][-2])
 
 
 class Smoke(Kit):
@@ -312,7 +307,7 @@ class Smoke(Kit):
         self.assertNotEqual(self.smoke["eval_sha"], self.full["eval_sha"])
         cfg = kernel_cfg(self.full)
         self.assertEqual(lora_eval.adapter_key(self.full["built_from"]["train"]["train_sha256"], {**cfg, "smoke": True}), self.smoke["adapter_sha"], "the flag alone is the difference")
-        self.assertNotEqual(lora_eval.eval_key(self.full["adapter_sha"], self.full["built_from"]["eval"]["excluded"]["sha"], self.ids, {**cfg, "smoke": True}), self.full["eval_sha"],
+        self.assertNotEqual(lora_eval.eval_key(self.full["adapter_sha"], self.full["built_from"]["eval"]["excluded"]["sha"], self.full["built_from"]["eval"]["sha256"], {**cfg, "smoke": True}), self.full["eval_sha"],
                             "and it is in the evaluation key itself, not only through the adapter key")
 
     def test_smoke_replies_given_by_hand_to_the_scorer_of_the_full_build_are_not_scored(self):
@@ -557,7 +552,7 @@ class KernelMain(Kit):
         (earlier / "train.json").write_text(json.dumps({"status": "done", "adapter_sha": "0" * 16}))
         with self.assertRaisesRegex(SystemExit, "trained under adapter key '0000000000000000'"):
             self.run_built(self.dir / "out")
-        self.assertEqual(self.calls, [])
+        self.assertEqual((self.sh, self.downloads, self.calls), ([], [], []), "before the pip install and the download (PR 34 fifth review, m3)")
 
 
 class CarryAdapter(unittest.TestCase):

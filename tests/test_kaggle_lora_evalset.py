@@ -59,7 +59,7 @@ class EvalSet(Kit):
         self.assertEqual(json.loads((self.data / "lora-config.json").read_text())["built_from"]["eval"]["ids"], ids)
         self.assertEqual(lora_eval.eval_ids(self.data), set(ids))
         self.assertEqual(score_lora.read_build(self.data / "lora-config.json"), {"ids": set(ids), **self.sha, "smoke": False})
-        self.assertEqual(self.cfg["eval_sha"], lora_eval.eval_key(self.cfg["adapter_sha"], self.cfg["built_from"]["eval"]["excluded"]["sha"], ids, lora_eval.resolve_config(self.cfg)), "the evaluation key is of exactly the ids the kernel is given")
+        self.assertEqual(self.cfg["eval_sha"], lora_eval.eval_key(self.cfg["adapter_sha"], self.cfg["built_from"]["eval"]["excluded"]["sha"], lora_eval.file_sha(self.data / "eval_tasks.jsonl"), lora_eval.resolve_config(self.cfg)), "the evaluation key is of exactly the tasks the kernel is given")
 
     def test_the_excluded_task_is_in_the_earlier_output_under_this_very_builds_keys(self):
         """What made the first fix round's check blind: the reply of the excluded task carries the build's own keys."""
@@ -122,7 +122,7 @@ class EvalSet(Kit):
         r = score_lora.score(self.dir / "base.jsonl", self.dir / "lora.jsonl", [self.heldout], domain=ARITH, build=score_lora.read_build(self.data / "lora-config.json"))
         lines = score_lora.lines_of(r)
         self.assertEqual(lines[-1], "0 replies of tasks outside the evaluation set, not scored")
-        self.assertEqual(lines[-2], f"adapter key {self.cfg['adapter_sha']} (the training records and the training settings), evaluation key {self.cfg['eval_sha']} (that adapter, the exclusion, the ids asked, the reply budget and the sampling): only the replies that carry both are scored")
+        self.assertEqual(lines[-2], f"adapter key {self.cfg['adapter_sha']} (the training records and the training settings), evaluation key {self.cfg['eval_sha']} (that adapter, the exclusion, the tasks asked, the reply budget and the sampling): only the replies that carry both are scored")
         self.assertEqual((r["paired"]["overall"]["n"], r["outside"]["replies"], r["other_adapter"]["replies"], r["other_eval"]["replies"]), (9, 0, 0, 0))
         self.assertFalse(any("another adapter" in x or "another evaluation key" in x for x in lines), "the two lines are printed only when there is such a reply")
 
@@ -155,7 +155,7 @@ class EvalSet(Kit):
         self.assertEqual(r["other_eval"], {"replies": 5, "by_arm": {"base": 2, "lora": 3}}, "this adapter under another evaluation key, and under none")
         lines = score_lora.lines_of(r)
         self.assertIn(f"6 replies of another adapter than {mine['adapter_sha']} (another --sft or training setting, or a smoke run's), not scored (base 3, adapter 3)", lines)
-        self.assertIn(f"5 replies of this adapter written under another evaluation key than {mine['eval_sha']} (another exclusion, set of tasks, reply budget, sampling or k: a resume asks them again), not scored (base 2, adapter 3)", lines)
+        self.assertIn(f"5 replies of this adapter written under another evaluation key than {mine['eval_sha']} (another exclusion, set of tasks, prompt, reply budget, sampling or k: a resume asks them again), not scored (base 2, adapter 3)", lines)
 
     def test_each_key_alone_keeps_a_reply_out(self):
         a, mine = next(t for t in HELDOUT if t["id"] == self.asked[0]["id"]), self.sha
@@ -234,7 +234,7 @@ class EvalSet(Kit):
 
 class TwoKeys(Kit):
     """The training identity and the evaluation identity are separate (PR 34 third review, the owner's decision). The second review's M1 made the exclusion part of ONE hash, which refused a trained adapter
-    when only `--train-tasks` changed; now the exclusion and the ids asked are in the EVALUATION key and the adapter key holds what the weights are made of."""
+    when only `--train-tasks` changed; now the exclusion and the tasks asked are in the EVALUATION key and the adapter key holds what the weights are made of."""
 
     def narrow(self):
         """The SFT file and the training tasks without the training twin of arith-9999-003: a narrower `--train-tasks`, which excludes one held-out task fewer."""
@@ -277,10 +277,10 @@ class TwoKeys(Kit):
         self.assertEqual(cfg["built_from"]["train"]["train_sha256"], lora_eval.file_sha(train), "the records as the kernel reads them")
         self.assertEqual(cfg["built_from"]["train"]["sha256"], lora_eval.file_sha(self.sft), "and the SFT file they were read from, for the record")
         self.assertEqual(cfg["adapter_sha"], lora_eval.adapter_key(lora_eval.file_sha(train), self.kernel_cfg(cfg)))
-        self.assertEqual(cfg["eval_sha"], lora_eval.eval_key(cfg["adapter_sha"], ex["sha"], cfg["built_from"]["eval"]["ids"], self.kernel_cfg(cfg)))
+        self.assertEqual(cfg["eval_sha"], lora_eval.eval_key(cfg["adapter_sha"], ex["sha"], cfg["built_from"]["eval"]["sha256"], self.kernel_cfg(cfg)))
         self.assertRegex(ex["sha"], r"^[0-9a-f]{16}$")
         self.assertEqual(build_lora.keys_line(cfg), f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the cap on the steps among them: a resume keeps an adapter or a checkpoint of this key and refuses any other), "
-                         f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the ids asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)")
+                         f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)")
         smoke = self.build(out=self.dir / "smoke", smoke=True)
         self.assertEqual(build_lora.keys_line(smoke), build_lora.keys_line({**smoke, "smoke": False}) + " [SMOKE build: keys of its own, never a full run's]")
 

@@ -41,10 +41,11 @@ def refuse_overwrite(paths, force: bool) -> None:
 
 def write_atomic(path: pathlib.Path, lines) -> int:
     """Write the jsonl through `<path>.part` and move it into place at the end: a run that dies half way leaves no `path` for
-    refuse_overwrite to block the next run with (the .part file is replaced by the next run)."""
+    refuse_overwrite to block the next run with (the .part file is replaced by the next run). Every line ends in `\n` on every system (`newline="\n"`: no `\r\n` on Windows), so a hash of the
+    lines joined with `\n` is the hash of the file."""
     part = path.with_name(path.name + ".part")
     n = 0
-    with open(part, "w") as out:
+    with open(part, "w", newline="\n") as out:
         for line in lines:
             out.write(line + "\n")
             n += 1

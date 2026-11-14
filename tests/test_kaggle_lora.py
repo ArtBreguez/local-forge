@@ -759,7 +759,11 @@ class GpuGlue(unittest.TestCase):
         train, main = self.body("train_worker"), self.body("main")
         self.assertIn('latest_checkpoint([OUT, INPUT], cfg["adapter_sha"])', train, "a checkpoint of another adapter key stops the kernel instead of being continued")
         self.assertIn('save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["adapter_sha"])', train, "and a checkpoint says which adapter key it was written under")
-        self.assertEqual(main.count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 2, "training is skipped, and the evaluation run, only for an adapter of this adapter key")
+        self.assertEqual(main.count("existing = attached_adapter(cfg, [OUT, INPUT])"), 1, "training is skipped only for an adapter of this adapter key (`find_adapter` with the key)")
+        self.assertLess(main.index("attached_adapter(cfg, [OUT, INPUT])"), main.index("pip"), "and an adapter or a checkpoint of another key stops the kernel before the setup (PR 34 fifth review, m3)")
+        self.assertEqual(main.count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 1, "and the evaluation is run only for one")
+        self.assertIn('find_adapter(roots, cfg["adapter_sha"])', self.body("attached_adapter"))
+        self.assertIn('latest_checkpoint(roots, cfg["adapter_sha"])', self.body("attached_adapter"))
         self.assertIn("train_info(cfg,", train)
         self.assertEqual(self.body("eval_worker").count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 1)
         self.assertNotIn("eval_sha", train, "the training worker reads nothing of the evaluation: the evaluation key cannot change a weight")
@@ -927,7 +931,7 @@ class Scoring(unittest.TestCase):
             score_lora.main(["--domain", "example_arith", "--config", str(config), "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
         text = buf.getvalue()
         for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0", "tasks answered 12 of 12 in the evaluation set of the build",
-                       "0 replies of tasks outside the evaluation set, not scored", f"adapter key {SHA} (the training records and the training settings), evaluation key {EVAL} (that adapter, the exclusion, the ids asked, the reply budget and the sampling)"):
+                       "0 replies of tasks outside the evaluation set, not scored", f"adapter key {SHA} (the training records and the training settings), evaluation key {EVAL} (that adapter, the exclusion, the tasks asked, the reply budget and the sampling)"):
             self.assertIn(needle, text)
         self.assertEqual(json.loads((self.dir / "report.json").read_text())["paired"]["overall"]["n"], 12)
         with self.assertRaises(SystemExit):

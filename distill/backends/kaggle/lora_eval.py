@@ -21,11 +21,13 @@ adapter nor a reply of it can be resumed or scored as a full run's, whatever the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
 Resume is tied to TWO keys of the build, because what makes an adapter and what makes an evaluation are not the same thing. The ADAPTER key (`adapter_sha`, `adapter_key`: the training records, the settings of
 `TRAIN_KEYS`, the base student, the schedule's length `max_steps` and the smoke limits among them, and the LoRA target modules) is what the weights are a function of: an attached adapter or checkpoint of
-another one is refused, so a checkpoint is never continued under another schedule. The EVALUATION key (`eval_sha`, `eval_key`: the adapter key, the content exclusion, the ids that are asked and the settings of
-`EVAL_KEYS`: the reply budget, the sampling, the seed, `k`, the batch, the smoke limits, and that the replies think) says which evaluation a reply belongs to: a reply written under another one is asked
+another one is refused, so a checkpoint is never continued under another schedule. The EVALUATION key (`eval_sha`, `eval_key`: the adapter key, the content exclusion, the tasks that are asked (the bytes of
+`eval_tasks.jsonl`: each id, family and prompt) and the settings of `EVAL_KEYS`: the reply budget, the sampling, the seed, `k`, the batch, the smoke limits, and that the replies think) says which evaluation a
+reply belongs to: a reply written under another one is asked
 again, and the adapter is KEPT when only the evaluation changed (other `--train-tasks` that exclude other held-out tasks, another quota, another budget: none is read by the training worker). Every reply
 carries both keys. Every setting of `DEFAULTS` is in one of the two or in `NOT_KEYED` with the reason (a test refuses a new setting that is in none), and the kernel computes both keys again from the files
-it is given before it does anything (`check_keys`): a config, a `train.jsonl` or an `eval_tasks.jsonl` changed after the build stops it. A finished adapter that is found in an attached output is copied
+it is given before it does anything (`check_keys`): a config, a `train.jsonl` or an `eval_tasks.jsonl` changed after the build stops it, by one byte of a prompt or of a family as by a task. An attached
+adapter or checkpoint of another adapter key stops it there too, before anything is installed or downloaded (`attached_adapter`). A finished adapter that is found in an attached output is copied
 into this session's output (`carry_adapter`), so that the next resume, which attaches this one, still has it. The merged replies files hold the tasks of this build's `eval_tasks.jsonl` and no other
 (`merge_shards`): an attached output never brings a task back.
 Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
@@ -110,7 +112,7 @@ DEFAULTS = {
     "smoke_steps": 4,
     "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
     "adapter_sha": "",                       # the builder's ADAPTER key (`adapter_key`: the training records and the settings of `TRAIN_KEYS`); an adapter or a checkpoint of another one is refused
-    "eval_sha": "",                          # the builder's EVALUATION key (`eval_key`: the adapter key, the content exclusion and the ids asked); a reply of another one is asked again, and never scored
+    "eval_sha": "",                          # the builder's EVALUATION key (`eval_key`: the adapter key, the content exclusion, the tasks asked and the settings of `EVAL_KEYS`); a reply of another one is asked again, and never scored
     "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
@@ -151,7 +153,7 @@ def resolve_config(user: dict) -> dict:
 
 
 def file_sha(path) -> str:
-    """The sha256 of a file's bytes, 16 hex digits: `train.jsonl` as the kernel reads it is the first part of the adapter key."""
+    """The sha256 of a file's bytes, 16 hex digits: `train.jsonl` as the kernel reads it is the first part of the adapter key, `eval_tasks.jsonl` as it reads it is in the evaluation key."""
     return hashlib.sha256(pathlib.Path(path).read_bytes()).hexdigest()[:16]
 
 
@@ -165,25 +167,32 @@ def adapter_key(train_sha: str, cfg: dict) -> str:
     return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}, list(sft.LORA_TARGETS)], sort_keys=True).encode()).hexdigest()[:16]
 
 
-def eval_key(adapter_sha: str, excluded_sha: str, ids, cfg: dict) -> str:
+def eval_key(adapter_sha: str, excluded_sha: str, tasks_sha: str, cfg: dict) -> str:
     """The EVALUATION identity, what a reply is tied to: the adapter that answered (`adapter_sha`: another adapter is another evaluation), the content exclusion (`excluded_sha`: `build_lora.excluded_sha`, the
-    rules and the held-out tasks they exclude, which is what `--train-tasks` decides), the `ids` of the tasks that are asked, the settings of `EVAL_KEYS` (the reply budget, the sampling, the seed, the
-    samples per task, the batch they are generated in, and the smoke flag with its budget: a smoke reply is never a full run's) and `THINKING`. A reply written under another one is asked again
-    (`work_items`) and never scored (`score_lora.read_arm`); the adapter is not touched by it."""
-    return hashlib.sha256(json.dumps([adapter_sha, excluded_sha, sorted(ids), {k: cfg[k] for k in EVAL_KEYS}, {"thinking": THINKING}], sort_keys=True).encode()).hexdigest()[:16]
+    rules and the held-out tasks they exclude, which is what `--train-tasks` decides), the tasks that are asked (`tasks_sha`: `file_sha` of the dataset's `eval_tasks.jsonl`, so the id, the family AND the
+    messages of every task, as `train.jsonl` is in the adapter key: the prompt is what a reply answers), the settings of `EVAL_KEYS` (the reply budget, the sampling, the seed, the samples per task, the
+    batch they are generated in, and the smoke flag with its budget: a smoke reply is never a full run's) and `THINKING`. A reply written under another one is asked again (`work_items`) and never scored
+    (`score_lora.read_arm`); the adapter is not touched by it."""
+    return hashlib.sha256(json.dumps([adapter_sha, excluded_sha, tasks_sha, {k: cfg[k] for k in EVAL_KEYS}, {"thinking": THINKING}], sort_keys=True).encode()).hexdigest()[:16]
 
 
 def check_keys(cfg: dict, data_dir: pathlib.Path) -> None:
     """SystemExit unless the two keys of the config are the keys of what this kernel is about to read: `adapter_key` of the dataset's `train.jsonl` and the settings of `cfg` (resolved), `eval_key` of that,
-    the exclusion the config names (`built_from.eval.excluded.sha`) and the ids of the dataset's `eval_tasks.jsonl`. The builder wrote both; a `lora-config.json` edited by hand after the build (another
-    budget, another `max_steps`), a config with no key, or a training or evaluation file that is not the build's would stamp an adapter and replies with keys that do not describe them."""
+    the exclusion the config names (`built_from.eval.excluded.sha`) and the dataset's `eval_tasks.jsonl` (its bytes: a prompt or a family edited there is another evaluation, as a task added or dropped is).
+    The builder wrote both; a `lora-config.json` edited by hand after the build (another budget, another `max_steps`), a config with no key, or a training or evaluation file that is not the build's would
+    stamp an adapter and replies with keys that do not describe them. And unless the set the config names (`built_from.eval.ids`: what `score_lora --config` scores) is the set of that file (what is asked
+    here): the two are written by the same build."""
     built = cfg.get("built_from") if isinstance(cfg.get("built_from"), dict) else {}
-    excluded = ((built.get("eval") or {}).get("excluded") or {}).get("sha")
+    ev = built.get("eval") if isinstance(built.get("eval"), dict) else {}
+    excluded = (ev.get("excluded") or {}).get("sha")
     adapter = adapter_key(file_sha(pathlib.Path(data_dir) / "train.jsonl"), cfg)
-    for name, what, mine in (("adapter_sha", "adapter key", adapter), ("eval_sha", "evaluation key", eval_key(adapter, excluded, eval_ids(data_dir), cfg))):
+    for name, what, mine in (("adapter_sha", "adapter key", adapter), ("eval_sha", "evaluation key", eval_key(adapter, excluded, file_sha(pathlib.Path(data_dir) / "eval_tasks.jsonl"), cfg))):
         if cfg.get(name) != mine:
             raise SystemExit(f"lora-config.json says {what} {cfg.get(name)!r}, and the files and settings of this dataset make {mine!r}: the config, train.jsonl or eval_tasks.jsonl was changed after the build "
                              "(or the dataset is of another version of the kit). Build again with build_lora.py; a setting is never edited in the dataset")
+    if ev.get("ids") != sorted(eval_ids(data_dir)):
+        raise SystemExit("lora-config.json names another evaluation set (built_from.eval.ids, what score_lora scores) than the tasks of eval_tasks.jsonl (what is asked here): the config was changed after "
+                         "the build. Build again with build_lora.py")
 
 
 # ---- what training does with its steps (pure) -------------------------------------------------------------------------------------------------
@@ -288,7 +297,7 @@ def find_adapter(roots, adapter_sha: str = None) -> "pathlib.Path | None":
                 continue
             if marker.parent.name == "adapter" and (marker.parent / "adapter_model.safetensors").exists() and info.get("status") in ("done", "partial"):
                 if adapter_sha and info.get("adapter_sha") != adapter_sha:
-                    raise SystemExit(f"the adapter {marker.parent} was trained under adapter key {info.get('adapter_sha')!r}, this build's is {adapter_sha!r} (another --sft or another training setting; --train-hours, --measured and --gpus are training settings when they change the cap on the steps): build again with the same ones, or without --resume-from")
+                    raise SystemExit(f"the adapter {marker.parent} was trained under adapter key {info.get('adapter_sha')!r}, this build's is {adapter_sha!r} (another --sft or another training setting; --train-hours, --measured and --gpus are training settings when they change the cap on the steps): build again with the same ones, or without --resume-from to train again")
                 return marker.parent
     return None
 
@@ -304,10 +313,23 @@ def latest_checkpoint(roots, adapter_sha: str = None) -> "pathlib.Path | None":
             d = marker.parent
             if d.parent.name == "ckpt" and d.name.startswith("step-") and d.name[5:].isdigit():
                 if adapter_sha and _done_sha(marker) != adapter_sha:
-                    raise SystemExit(f"the checkpoint {d} was written under adapter key {_done_sha(marker)!r}, this build's is {adapter_sha!r} (another --sft or another training setting; --train-hours, --measured and --gpus are training settings when they change the cap on the steps): build again with the same ones, or without --resume-from")
+                    raise SystemExit(f"the checkpoint {d} was written under adapter key {_done_sha(marker)!r}, this build's is {adapter_sha!r} (another --sft or another training setting; --train-hours, --measured and --gpus are training settings when they change the cap on the steps): build again with the same ones, or without --resume-from to train again")
                 if int(d.name[5:]) > best_step:
                     best, best_step = d, int(d.name[5:])
     return best
+
+
+def attached_adapter(cfg: dict, roots) -> "pathlib.Path | None":
+    """What a session resumes, looked at BEFORE anything is installed or downloaded (`main`), and by the builder on the fetched output of the earlier run (`build_lora --resume-output`): the finished
+    adapter of this build's adapter key under `roots` (`find_adapter`), None when there is none. SystemExit, with the two keys, for a finished adapter of another adapter key, and, when no adapter is
+    finished (the training worker would then continue the newest checkpoint), for a complete checkpoint of another one (`latest_checkpoint`): the refusal costs nothing here, and after the setup it would
+    cost the session its pip install and the 18 GB download. A smoke build resumes nothing and looks at nothing."""
+    if cfg["smoke"]:
+        return None
+    found = find_adapter(roots, cfg["adapter_sha"])
+    if found is None:
+        latest_checkpoint(roots, cfg["adapter_sha"])
+    return found
 
 
 def _done_sha(marker: pathlib.Path):
@@ -650,6 +672,7 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
             with open(shard_path(OUT, arm, rank, prefix), "a") as f:
                 for (t, i), out in zip(batch, outs):
                     line = lines[arm].setdefault(t["id"], reply_line(t, run_teacher.prompt_sha(t["messages"]), []))
+                    line.update(kind=t["kind"], prompt_sha=run_teacher.prompt_sha(t["messages"]))          # a line kept from an earlier session is this session's from here on: the family and the prompt of this build's task
                     line["outs"] += [None] * (i + 1 - len(line["outs"]))
                     line["outs"][i] = out
                     f.write(json.dumps(line) + "\n")
@@ -729,18 +752,18 @@ def main() -> None:
     if not names:
         raise SystemExit("no GPU: turn the accelerator on in the kernel's settings (kernel-metadata.json: enable_gpu)")
     if cfg["gpu_name"] and not all(cfg["gpu_name"] in n for n in names):
-        raise SystemExit(f"the kernel got {names}, not {cfg['gpu_name']}: set the accelerator to GPU T4 x2 in the kernel's settings (or \"gpu_name\": \"\" in lora-config.json to run on whatever it is)")
+        raise SystemExit(f"the kernel got {names}, not {cfg['gpu_name']}: set the accelerator to GPU T4 x2 in the kernel's settings (or build again with --gpu-name '' to run on whatever it is: the card is in no key)")
     if len(names) < cfg["gpus"]:
         raise SystemExit(f"the kernel got {len(names)} GPU(s) and the build is for {cfg['gpus']}: the adapter key holds the number of processes (a step's share per process follows it, and the estimate "
                          f"its speed), so build again with --gpus {len(names)}, or set the accelerator to GPU T4 x2")
     gpus = cfg["gpus"]
+    existing = attached_adapter(cfg, [OUT, INPUT])          # an adapter or a checkpoint of another adapter key stops the kernel here, before the setup
     run_teacher.sh([sys.executable, "-m", "pip", "install", "-q", *cfg["pins"], *(["flash-linear-attention"] if cfg["fla"] else [])])
     os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
     from huggingface_hub import snapshot_download
     snapshot_download(cfg["student"], local_dir=str(STUDENT_DIR), allow_patterns=["*.json", "*.safetensors", "*.jinja", "*.txt", "tokenizer*"])
     log("student downloaded", cfg["student"])
     info = {"smoke": cfg["smoke"], "gpus": gpus, "started": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(T0)), "config": cfg}
-    existing = None if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["adapter_sha"])
     if existing is None:
         stop = train_deadline(time.time(), deadline, cfg["train_hours"], cfg["eval_reserve_s"])
         info["train_rc"] = run_worker("train", gpus, data_dir, {"LORA_TRAIN_DEADLINE": str(stop)})

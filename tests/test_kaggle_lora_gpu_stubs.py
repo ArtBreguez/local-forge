@@ -475,6 +475,19 @@ class EvalOnStubs(unittest.TestCase):
             self.assertEqual([(o["adapter_sha"], o["eval_sha"]) for o in line["outs"]], [(SHA, EVAL)])
             self.assertEqual(line["prompt_sha"], run_teacher.prompt_sha(next(task(i)["messages"] for i in range(4) if task(i)["id"] == line["id"])))
 
+    def test_a_line_kept_from_an_earlier_session_takes_the_family_and_the_prompt_of_this_builds_task(self):
+        """PR 34 fifth review, m1: a line that an earlier build wrote under another family (and another prompt) was kept as it was, with this session's reply written into it."""
+        t = task(0)
+        old = {"text": "<think>\nx\n</think>\n\nAnswer: 1", "finish": "stop", "tokens": 5, "prompt_sha": "0" * 16, "max_tokens": 64, "adapter_sha": SHA, "eval_sha": "f" * 16}
+        (self.inp / "earlier").mkdir()
+        for arm in lora_eval.ARMS:
+            write_jsonl(self.inp / "earlier" / f"replies-{arm}.jsonl", [{"id": t["id"], "kind": "another-family", "prompt_sha": "0" * 16, "outs": [old]}])
+        self.run_eval(n=1)
+        for arm in lora_eval.ARMS:
+            (line,) = self.shard(arm)
+            self.assertEqual((line["id"], line["kind"], line["prompt_sha"]), (t["id"], t["kind"], run_teacher.prompt_sha(t["messages"])), arm)
+            self.assertEqual([(o["prompt_sha"], o["eval_sha"]) for o in line["outs"]], [(run_teacher.prompt_sha(t["messages"]), EVAL)], "and the reply of the other evaluation is replaced")
+
     def test_the_deadline_stops_the_next_batch_when_the_mean_batch_would_pass_it(self):
         """A batch of both arms takes 200 s (100 per generate): after the first, one arm's mean is 100 s, and the second batch needs 2 x that before the deadline."""
         clock = Clock()

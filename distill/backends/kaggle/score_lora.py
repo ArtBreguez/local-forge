@@ -5,14 +5,15 @@
 
 WHAT is scored is the build's, not the replies files': `--config` is the `lora-config.json` the kernel ran (`build_lora.py` wrote it), and only the tasks of its evaluation set (`built_from.eval.ids`: the held-out
 tasks that share no content with a training task, after the floor and the quota) and only the replies written under its two keys enter a figure: `adapter_sha` (the adapter that answered: the training records and
-the training settings) and `eval_sha` (the evaluation the reply belongs to: that adapter, the exclusion, the ids asked, the reply budget and the sampling). A smoke build has keys of its own, so a smoke run's replies
+the training settings) and `eval_sha` (the evaluation the reply belongs to: that adapter, the exclusion, the tasks asked, the reply budget and the sampling). A smoke build has keys of its own, so a smoke run's replies
 are another adapter's for a full build, and with the smoke build's own config the report starts with the smoke warning. A replies file can hold more (an output attached with `--resume-from` that was
 made by a build with other `--train-tasks` or another quota): a reply of a task outside the set is counted and printed ("N replies of tasks outside the evaluation set, not scored"), and so is a reply of
 another adapter and a reply of this adapter written under another evaluation key. The report prints both keys. A `--heldout` file that lacks a task of the set, or a run.json of another build, is refused.
 
 A reply is judged by the code `kaggle-score` runs: `score_replies.reply_of` (a cut-off reply ends in the truncation marker, a failed request is an error) and `traces.verdict`, whose last step is the subject's
 own `domain.verify` (REA: `scoring.score_strict`, the whitelist grammar on the text after the last `Answer:` line). A reply that answered another prompt than the task's now (its `prompt_sha`) is refused, as
-`kaggle-score` refuses it. For the generated families `scoring.score` (the evaluation scorer of rea-bench's held-out arm) and `score_strict` are the same function; they differ only for the legacy templates.
+`kaggle-score` refuses it: the prompts are in the evaluation key (the bytes of the build's `eval_tasks.jsonl`), so a reply that carries the key and another prompt means the `--heldout` files, or the
+subject's prompt code, are not the build's. The FAMILY of a row is the task's in the held-out file (where the truth is), never what the replies file says. For the generated families `scoring.score` (the evaluation scorer of rea-bench's held-out arm) and `score_strict` are the same function; they differ only for the legacy templates.
 
 Per family and arm: replies, accepted (accuracy, with its 95% Wilson interval), wrong, no `Answer:` line, truncated, errors, the share cut off at the budget (`finish == "length"`) and the mean completion tokens,
 over the replies BOTH arms have (a reply only one arm has, after a hard kill between the two arms of a batch, is counted apart as unpaired and enters no figure).
@@ -73,10 +74,11 @@ def read_build(path) -> dict:
 
 
 def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
-    """{"rows": {(task id, sample index): {"kind", "verdict", "finish", "tokens"}}, "info": counts, "outside": ids} of one arm's replies file. `tasks` is the evaluation set ({id: task}): the replies of a task
+    """{"rows": {(task id, sample index): {"kind", "verdict", "finish", "tokens"}}, "info": counts, "outside": ids} of one arm's replies file. `tasks` is the evaluation set ({id: task}): `kind` is the
+    task's own family (the held-out file's), whatever the `kind` of the replies line says, so a line that names another family never moves a reply into that family's row. The replies of a task
     that is not in it are counted (`info["outside"]`, the task ids in `outside`) and never scored. A missing or malformed entry is counted and skipped. A reply is scored only when it carries BOTH keys of
     `build` (`read_build`): one of another adapter, or that does not say (`info["other_adapter"]`), and one of this adapter written under another evaluation key, or that does not say (`info["other_eval"]`:
-    another exclusion or another set of tasks; a resume asks it again, and it stays in the file when the deadline came first), are counted and skipped, before anything else of the reply is looked at.
+    another exclusion, another set of tasks or another prompt of a task; a resume asks it again, and it stays in the file when the deadline came first), are counted and skipped, before anything else of the reply is looked at.
     A reply with no fingerprint is skipped as unchecked, and a reply that answered another prompt is SystemExit (the same refusal as `kaggle-score`)."""
     lines, info = score_replies.read_replies(path)
     info = collections.Counter(info)
@@ -104,7 +106,7 @@ def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
             if own != sha:
                 raise SystemExit(f"{path}: the reply {j} of {tid} answered another prompt than the task's now (fingerprint {own}, now {sha}): score the run that was built from these held-out tasks")
             verdict = traces.verdict(score_replies.reply_of(out, thinking=True), task, domain=domain)
-            rows[(tid, j)] = {"kind": rec.get("kind") or task["kind"], "verdict": verdict, "finish": out.get("finish"), "tokens": out.get("tokens") if isinstance(out.get("tokens"), (int, float)) else 0}
+            rows[(tid, j)] = {"kind": task["kind"], "verdict": verdict, "finish": out.get("finish"), "tokens": out.get("tokens") if isinstance(out.get("tokens"), (int, float)) else 0}
     return {"rows": rows, "info": dict(info), "outside": sorted(outside)}
 
 
@@ -202,9 +204,9 @@ def lines_of(report: dict, run_info: dict = None) -> list:
     p = report["paired"]
     by_arm = p.get("unpaired_by_arm", {})
     out.append(f"paired replies {p['overall']['n']}, unpaired {p['unpaired']}" + (f" (base only {by_arm['base']}, adapter only {by_arm['lora']}: in no figure above)" if p["unpaired"] else "") + f"; tasks answered {report['tasks_answered']} of {report['tasks_in_set']} in the evaluation set of the build")
-    out.append(f"adapter key {report['adapter_sha']} (the training records and the training settings), evaluation key {report['eval_sha']} (that adapter, the exclusion, the ids asked, the reply budget and the sampling): only the replies that carry both are scored")
+    out.append(f"adapter key {report['adapter_sha']} (the training records and the training settings), evaluation key {report['eval_sha']} (that adapter, the exclusion, the tasks asked, the reply budget and the sampling): only the replies that carry both are scored")
     for key, what in (("outside", "of tasks outside the evaluation set"), ("other_adapter", f"of another adapter than {report['adapter_sha']} (another --sft or training setting, or a smoke run's)"),
-                      ("other_eval", f"of this adapter written under another evaluation key than {report['eval_sha']} (another exclusion, set of tasks, reply budget, sampling or k: a resume asks them again)")):
+                      ("other_eval", f"of this adapter written under another evaluation key than {report['eval_sha']} (another exclusion, set of tasks, prompt, reply budget, sampling or k: a resume asks them again)")):
         c = report[key]
         if key == "outside" or c["replies"]:
             out.append(f"{c['replies']} replies {what}, not scored" + (f" (base {c['by_arm']['base']}, adapter {c['by_arm']['lora']}" + (f"; tasks: {', '.join(c['tasks'])[:300]}" if c.get("tasks") else "") + ")" if c["replies"] else ""))
