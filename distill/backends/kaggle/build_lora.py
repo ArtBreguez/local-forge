@@ -11,8 +11,9 @@ kernel's files; and print what the run will cost. The kernel is `lora_eval.py`; 
 Writes under --out:
     data/train.jsonl             the SFT records, as given (checked: see below)
     data/eval_tasks.jsonl        {"id", "kind", "messages"} per held-out task: `domain.messages(task, "thinking")`, the prompt the training records have; nothing of the task's truth
-    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its `config_sha`: the records, the training settings and the content exclusion) and what it was built from (record
-                                 counts, teacher labels, the ids of the evaluation set, the held-out tasks that were excluded and why, the estimate); `score_lora --config` reads it and scores that set only
+    data/lora-config.json        the run (`lora_eval.DEFAULTS` with this build's values, and its two keys: `adapter_sha`, the records and the training settings, and `eval_sha`, that adapter key with the content
+                                 exclusion and the ids that are asked) and what it was built from (record counts, teacher labels, the ids of the evaluation set, the held-out tasks that were excluded and why,
+                                 the estimate); `score_lora --config` reads it and scores that set, and the replies written under that evaluation key, only
     data/lora_eval.py            the kernel's code (`run.py` below imports it; the GPU workers start it by path), data/run_teacher.py (reused by it)
     data/distill.<module>.py     the stdlib-only core it runs (`distill/sft.py`, the Modal trainer's code, and the three modules it needs); flat, because the Kaggle CLI skips the sub-folders of a dataset
     data/dataset-metadata.json   for `kaggle datasets create -p <out>/data`
@@ -228,8 +229,9 @@ def pick_eval(files, quota: str, per_family: int, families, *, domain, train_tas
 
 def excluded_sha(info: dict) -> str:
     """What the content exclusion of a build is, as a hash: the rules and the sorted ids of the held-out tasks they exclude (the keys of `pairs`: WHICH tasks may not be asked; the training task each one
-    matched is not part of it, a twin with a lower id excludes the same task). It is part of the build's `config_sha`: a build with other `--train-tasks` (or another held-out file) that excludes other tasks
-    is another build, and nothing an earlier one wrote is continued under it."""
+    matched is not part of it, a twin with a lower id excludes the same task). It is part of the build's EVALUATION key (`lora_eval.eval_key`) and of nothing else: a build with other `--train-tasks` (or
+    another held-out file) that excludes other tasks is another evaluation, whose replies are asked again, of the SAME adapter (the exclusion decides which held-out tasks are asked; the training records
+    are written as given, whatever it is)."""
     return hashlib.sha256(json.dumps([list(info["rules"]), sorted(info["pairs"])]).encode()).hexdigest()[:16]
 
 
@@ -301,10 +303,12 @@ def rates_from(path) -> dict:
 def plan(lengths: list, eval_prompts: list, *, epochs: float, gpus: int, global_batch: int, train_hours: float, k: int, max_new_tokens: int, eval_batch: int, export: bool, rates: dict) -> dict:
     """What the run costs, in seconds, from the estimated token `lengths` of the training examples and of the evaluation prompts. Training: `steps_full` = the epochs asked, `step_s` = a step's tokens at
     `train_tok_per_s_per_gpu` over `gpus`; when `train_hours` (less the model load, which the kernel's training clock counts) binds, `max_steps` caps the run (0 = it does not). Evaluation: `k` replies per task and arm on `gpus` processes, batches of `eval_batch`; a batch costs its prefill and
-    `max_new_tokens` decode steps at most (the UPPER bound, which every figure of the verdict uses) or `typical_gen_share` of them. Plus the setup, two model loads and the export when asked."""
+    `max_new_tokens` decode steps at most (the UPPER bound, which every figure of the verdict uses) or `typical_gen_share` of them. Plus the setup, two model loads and the export when asked.
+    `eval_reserve_s` is what training must leave before the session deadline (`lora_eval.train_deadline`): the evaluation's upper bound, its model load AND, with `export`, the export's reserve, because the
+    kernel ends the evaluation `export_reserve_s` before the deadline (`lora_eval.main`); `eval_window_s` is what the evaluation then has (the reserve less the export)."""
     n, mean = len(lengths), sum(lengths) / len(lengths)
     per_epoch = math.ceil(n / global_batch)
-    full = max(1, math.ceil(epochs * per_epoch))
+    full = lora_eval.total_steps(n, epochs, global_batch)          # the kernel's own count: the steps it will run
     step_s = global_batch * mean / (gpus * rates["train_tok_per_s_per_gpu"])
     budget = max(1, int((train_hours * 3600 - rates["load_s"]) // step_s))          # the kernel's training clock (`lora_eval.train_deadline`) starts before the worker loads the student: the load is out of `train_hours`
     steps = min(full, budget)
@@ -318,7 +322,8 @@ def plan(lengths: list, eval_prompts: list, *, epochs: float, gpus: int, global_
     return {"examples": n, "mean_tokens": round(mean), "steps_per_epoch": per_epoch, "steps_full": full, "step_s": round(step_s, 1), "steps": steps, "epochs_effective": round(steps / per_epoch, 2),
             "max_steps": budget if budget < full else 0, "train_s": round(train_s), "eval_items_per_arm": items, "eval_batches_per_process": batches, "eval_upper_s": round(eval_upper),
             "eval_typical_s": round(eval_typical), "overhead_s": round(overhead), "export_s": round(export_s), "total_upper_s": round(overhead + train_s + eval_upper + export_s),
-            "total_typical_s": round(overhead + train_s + eval_typical + export_s), "eval_reserve_s": round(eval_upper + rates["load_s"]), "export_reserve_s": round(export_s), "gpus": gpus,
+            "total_typical_s": round(overhead + train_s + eval_typical + export_s), "eval_reserve_s": math.ceil(eval_upper + rates["load_s"]) + round(export_s), "eval_window_s": math.ceil(eval_upper + rates["load_s"]),
+            "export_reserve_s": round(export_s), "gpus": gpus,
             "global_batch": global_batch, "k": k, "max_new_tokens": max_new_tokens, "eval_batch": eval_batch, "rates": rates}
 
 
@@ -372,7 +377,7 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     verdict = fit_verdict(p, gpu_hours, deadline_h)
     out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
                + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): lower --train-hours, --k, --per-family or --max-new-tokens"))
-    out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_reserve_s'])} for the evaluation"))
+    out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_window_s'])} for the evaluation" + (f" and {h(p['export_reserve_s'])} after it for the GGUF export" if p["export_reserve_s"] else "")))
     return out
 
 
@@ -386,9 +391,10 @@ def kernel_files() -> dict:
 
 
 def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict, p: dict, smoke: bool, **settings) -> dict:
-    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its `config_sha` (what the adapter and the replies are tied to: the training records,
-    the training settings and the content exclusion, `excluded["sha"]`), and what it was built from: the held-out tasks that were excluded, and `eval.ids`, the ids of the evaluation set (what `score_lora`
-    scores and nothing else)."""
+    """The config.json of a run: `lora_eval.DEFAULTS` with the build's settings, validated by the kernel's own `resolve_config`, its two keys, and what it was built from: the held-out tasks that were excluded, and `eval.ids`, the
+    ids of the evaluation set (what `score_lora` scores and nothing else). `adapter_sha` (`lora_eval.adapter_key`: the training records and the training settings) is what the adapter and the checkpoints are
+    tied to; `eval_sha` (`lora_eval.eval_key`: that adapter key, the content exclusion `excluded["sha"]` and `eval.ids`) is what every reply is tied to. Another exclusion or another set is another `eval_sha`
+    under the same `adapter_sha`: the adapter is kept, the replies are asked again."""
     cfg = {**{k: v for k, v in lora_eval.DEFAULTS.items() if k != "pins"}, **settings, "smoke": smoke}
     if not smoke:
         cfg.update(max_steps=p["max_steps"], eval_reserve_s=p["eval_reserve_s"], export_reserve_s=p["export_reserve_s"])
@@ -396,7 +402,8 @@ def make_config(*, facts: dict, eval_tasks: list, heldout_files, excluded: dict,
         lora_eval.resolve_config(cfg)
     except ValueError as e:
         raise SystemExit(f"the run config is refused by the kernel: {e}")
-    cfg["config_sha"] = lora_eval.config_sha(facts["sha256"], cfg, excluded["sha"])
+    cfg["adapter_sha"] = lora_eval.adapter_key(facts["sha256"], cfg)
+    cfg["eval_sha"] = lora_eval.eval_key(cfg["adapter_sha"], excluded["sha"], [t["id"] for t in eval_tasks])
     return {**cfg, "built_from": {"train": facts, "eval": {"tasks": len(eval_tasks), "by_kind": dict(sorted(collections.Counter(t["kind"] for t in eval_tasks).items())), "ids": sorted(t["id"] for t in eval_tasks),
                                                            "files": [pathlib.Path(f).name for f in heldout_files], "excluded": excluded}, "estimate": {k: v for k, v in p.items() if k != "rates"}, "rates": p["rates"]}}
 
@@ -426,6 +433,8 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
     given = {"student": student or d["student"], "max_len": max_len, "rank": rank or d["rank"], "epochs": epochs or d["epochs"], "lr": lr or d["lr"], "global_batch": global_batch or d["global_batch"], "mix": mix,
              "gpus": gpus or d["gpus"], "k": k, "max_new_tokens": max_new_tokens or d["max_new_tokens"], "eval_batch": eval_batch or d["eval_batch"], "train_hours": train_hours or d["train_hours"],
              "export_gguf": export_gguf, "fla": fla}
+    if given["train_hours"] * 3600 <= RATES["load_s"]:
+        raise SystemExit(f"--train-hours {given['train_hours']:g}: the kernel's training clock starts before the student is loaded (~{RATES['load_s'] / 60:.0f} min): no step would be taken")
     lengths = trainable_lengths(rows, given["max_len"], mix)
     if not lengths:
         raise SystemExit(f"every thinking record is over --max-len {given['max_len']} tokens (estimated): nothing to train on")
@@ -501,8 +510,15 @@ def run(a: argparse.Namespace, domain) -> None:
     print(f"{t['train']['records']} training records {t['train']['by_source']} (teacher labels {t['train']['labels']}; {t['train']['fates']}), {t['eval']['tasks']} held-out tasks {t['eval']['by_kind']}, "
           f"{'SMOKE run' if cfg['smoke'] else 'full run'} -> {a.out}")
     print(excluded_line(t["eval"]["excluded"]))
+    print(keys_line(cfg))
     print("\n".join(cfg["plan_lines"]))
     print(f"next: kaggle datasets create -p {a.out}/data   then   kaggle kernels push -p {a.out}/kernel   (set the kernel's accelerator to GPU T4 x2; distill/backends/kaggle/README.md)")
+
+
+def keys_line(cfg: dict) -> str:
+    """The two keys of a build, for its output: what a resume keeps (the adapter, by `adapter_sha`) and what it asks again (the replies of another `eval_sha`)."""
+    return (f"adapter key {cfg['adapter_sha']} (the SFT file and the training settings: a resume keeps an adapter or a checkpoint of this key and refuses any other), evaluation key {cfg['eval_sha']} "
+            "(the adapter key, the exclusion and the ids asked: a reply of another evaluation key is asked again and never scored)")
 
 
 def excluded_line(info: dict) -> str:

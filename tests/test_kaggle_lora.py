@@ -40,12 +40,14 @@ KEPT = [t for t in HELDOUT if t["id"] not in SHARED]
 TRAIN_BY_ID = {t["id"]: t for t in TRAIN}
 PAIR = [json.loads(line) for line in (ROOT / "tests" / "golden" / "kaggle_lora" / "structs-pair.jsonl").read_text().splitlines()]       # structs-7-0292 and structs-1001-0028: the same function, question and answer under two seeds
 TEACHER = "codeforge-27b-heretic-q4"
-SHA = "feedfacefeedface"                   # the `config_sha` of the build whose replies the scoring tests read
+SHA = "feedfacefeedface"                   # the adapter key (`adapter_sha`) of the build whose replies the scoring tests read
+EVAL = "0ddba11c0ffee000"                  # and its evaluation key (`eval_sha`)
+KEYS = {"adapter_sha": SHA, "eval_sha": EVAL}
 
 
-def build_of(tasks, sha: str = SHA) -> dict:
+def build_of(tasks, keys: dict = KEYS) -> dict:
     """What `score_lora.read_build` gives for a build that asks `tasks`."""
-    return {"ids": {t["id"] for t in tasks}, "config_sha": sha}
+    return {"ids": {t["id"] for t in tasks}, **keys}
 
 
 def row(task: dict, source: str = "teacher-reasoning", label: str = TEACHER, text: str = None) -> dict:
@@ -269,7 +271,7 @@ class Estimate(unittest.TestCase):
         self.assertTrue(6 * 3600 < p["total_upper_s"] < 7.5 * 3600, p["total_upper_s"] / 3600)
         self.assertTrue(6.5 * 3600 < p["total_upper_s"] + self.smoke()["total_upper_s"] < 8 * 3600, "about 7 h of the 8 h with the smoke run")
         self.assertEqual(p["overhead_s"], round(self.R["setup_s"] + 2 * self.R["load_s"]))
-        self.assertEqual(p["eval_reserve_s"], round(p["eval_upper_s"] + self.R["load_s"]))
+        self.assertEqual((p["eval_reserve_s"], p["eval_window_s"], p["export_reserve_s"]), (round(p["eval_upper_s"] + self.R["load_s"]), round(p["eval_upper_s"] + self.R["load_s"]), 0), "without the export: the evaluation's upper bound and its model load")
         self.assertGreater(self.plan(export=True)["total_upper_s"], p["total_upper_s"])
         self.assertEqual(self.plan(export=True)["export_reserve_s"], round(self.R["export_s"]))
 
@@ -521,14 +523,17 @@ class Resume(unittest.TestCase):
         d = inp / "earlier" / "adapter"
         d.mkdir(parents=True)
         (d / "adapter_model.safetensors").write_text("x")
-        (d / "train.json").write_text(json.dumps({"status": "done", "config_sha": "aaaa"}))
+        (d / "train.json").write_text(json.dumps({"status": "done", "adapter_sha": "aaaa", "eval_sha": "never read"}))
         self.assertEqual(lora_eval.find_adapter([inp], "aaaa"), d)
         self.assertEqual(lora_eval.find_adapter([inp]), d, "no sha asked: nothing compared")
         self.assertEqual(lora_eval.find_adapter([inp], ""), d)
-        with self.assertRaisesRegex(SystemExit, "trained under config 'aaaa', this build is 'bbbb'"):
+        with self.assertRaisesRegex(SystemExit, "trained under adapter key 'aaaa', this build's is 'bbbb' \\(another --sft or another training setting\\)"):
             lora_eval.find_adapter([inp], "bbbb")
         (d / "train.json").write_text(json.dumps({"status": "partial"}))
-        with self.assertRaisesRegex(SystemExit, "config None"):
+        with self.assertRaisesRegex(SystemExit, "adapter key None"):
+            lora_eval.find_adapter([inp], "bbbb")
+        (d / "train.json").write_text(json.dumps({"status": "done", "config_sha": "bbbb", "eval_sha": "bbbb"}))
+        with self.assertRaisesRegex(SystemExit, "adapter key None", msg="the key of a kernel before the two keys, or an evaluation key, is not an adapter key"):
             lora_eval.find_adapter([inp], "bbbb")
 
     def test_a_checkpoint_of_another_config_is_refused_and_one_of_this_config_is_resumed(self):
@@ -536,29 +541,39 @@ class Resume(unittest.TestCase):
         for step, sha in ((10, "aaaa"), (20, "aaaa")):
             d = inp / "ckpt" / f"step-{step}"
             d.mkdir(parents=True)
-            (d / "DONE").write_text(json.dumps({"step": step, "config_sha": sha}))
+            (d / "DONE").write_text(json.dumps({"step": step, "adapter_sha": sha}))
         self.assertEqual(lora_eval.latest_checkpoint([inp], "aaaa"), inp / "ckpt" / "step-20")
         self.assertEqual(lora_eval.latest_checkpoint([inp]), inp / "ckpt" / "step-20", "no sha asked: nothing compared")
-        with self.assertRaisesRegex(SystemExit, "checkpoint .* written under config 'aaaa', this build is 'bbbb'"):
+        with self.assertRaisesRegex(SystemExit, "checkpoint .* written under adapter key 'aaaa', this build's is 'bbbb'"):
             lora_eval.latest_checkpoint([inp], "bbbb")
         (inp / "ckpt" / "step-20" / "DONE").write_text("20")          # a checkpoint of the first version of the kernel: its DONE holds the step only
-        with self.assertRaisesRegex(SystemExit, "written under config None"):
+        with self.assertRaisesRegex(SystemExit, "written under adapter key None"):
             lora_eval.latest_checkpoint([inp], "aaaa")
 
     def test_a_reply_of_another_config_is_asked_again_in_both_arms(self):
         t0, t1, t2 = self.tasks[:3]
-        stamped = lambda t, sha: self.line(t, [{**self.out(t), **({"config_sha": sha} if sha else {})}])
-        prev = {"base": {t0["id"]: stamped(t0, "aaaa"), t1["id"]: stamped(t1, "aaaa"), t2["id"]: stamped(t2, "aaaa")},
-                "lora": {t0["id"]: stamped(t0, "aaaa"), t1["id"]: stamped(t1, "other"), t2["id"]: stamped(t2, None)}}
-        cfg = {**self.cfg, "config_sha": "aaaa"}
-        self.assertEqual(sorted(t["id"] for t, _ in lora_eval.work_items([t0, t1, t2], prev, cfg)), sorted([t1["id"], t2["id"]]), "another sha and no sha are another adapter's")
-        self.assertEqual(lora_eval.work_items([t0, t1, t2], prev, self.cfg), [], "a config with no sha compares nothing")
-        self.assertEqual(lora_eval.work_items([t0, t1, t2], prev, {**self.cfg, "config_sha": ""}), [])
+        t3 = self.tasks[3]
+        stamped = lambda t, **keys: self.line(t, [{**self.out(t), **keys}])
+        mine = {"adapter_sha": "aaaa", "eval_sha": "eeee"}
+        prev = {"base": {t["id"]: stamped(t, **mine) for t in (t0, t1, t2, t3)},
+                "lora": {t0["id"]: stamped(t0, **mine), t1["id"]: stamped(t1, adapter_sha="aaaa", eval_sha="other"), t2["id"]: stamped(t2), t3["id"]: stamped(t3, adapter_sha="other", eval_sha="eeee")}}
+        cfg = {**self.cfg, **mine}
+        self.assertEqual(sorted(t["id"] for t, _ in lora_eval.work_items([t0, t1, t2, t3], prev, cfg)), sorted(t["id"] for t in (t1, t2, t3)),
+                         "another evaluation key of this adapter, no key at all, and this evaluation key under another adapter's name: each is another evaluation")
+        self.assertEqual(lora_eval.other_eval(prev["lora"][t0["id"]], cfg, 1), [])
+        for t in (t1, t2, t3):
+            self.assertEqual(lora_eval.other_eval(prev["lora"][t["id"]], cfg, 1), [0], t["id"])
+        self.assertEqual(lora_eval.other_eval(stamped(t0, adapter_sha="aaaa"), cfg, 1), [0], "no evaluation key")
+        self.assertEqual(lora_eval.other_eval(stamped(t0, eval_sha="eeee"), cfg, 1), [0], "no adapter key")
+        self.assertEqual(lora_eval.work_items([t0, t1, t2, t3], prev, self.cfg), [], "a config with no evaluation key compares nothing")
+        self.assertEqual(lora_eval.work_items([t0, t1, t2, t3], prev, {**self.cfg, "adapter_sha": "aaaa", "eval_sha": ""}), [])
+        self.assertEqual(lora_eval.other_eval(None, cfg, 1), [])
 
     def test_only_the_samples_the_run_asks_for_are_compared_to_the_config(self):
         t = self.tasks[0]
-        prev = {"base": {t["id"]: self.line(t, [{**self.out(t), "config_sha": "aaaa"}, {**self.out(t), "config_sha": "old"}])}, "lora": {}}
-        items = lora_eval.work_items([t], {"base": prev["base"], "lora": {t["id"]: prev["base"][t["id"]]}}, {**self.cfg, "config_sha": "aaaa"})
+        mine = {"adapter_sha": "aaaa", "eval_sha": "eeee"}
+        prev = {"base": {t["id"]: self.line(t, [{**self.out(t), **mine}, {**self.out(t), "adapter_sha": "aaaa", "eval_sha": "old"}])}, "lora": {}}
+        items = lora_eval.work_items([t], {"base": prev["base"], "lora": {t["id"]: prev["base"][t["id"]]}}, {**self.cfg, **mine})
         self.assertEqual(items, [], "sample 1 is beyond k=1: not asked, not compared")
 
     def test_the_shards_and_the_attached_replies_become_one_file_and_the_last_line_wins(self):
@@ -739,13 +754,16 @@ class GpuGlue(unittest.TestCase):
         self.assertIn("**cfg[\"sampling\"]", gen)
         self.assertEqual(self.body("eval_worker").count("load_student("), 1, "one model load for both arms")
 
-    def test_what_resumes_is_tied_to_the_builds_config_sha_and_train_json_is_the_summary(self):
+    def test_what_resumes_is_tied_to_the_builds_adapter_key_and_train_json_is_the_summary(self):
         train, main = self.body("train_worker"), self.body("main")
-        self.assertIn('latest_checkpoint([OUT, INPUT], cfg["config_sha"])', train, "a checkpoint of another config stops the kernel instead of being continued")
-        self.assertIn('save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["config_sha"])', train, "and a checkpoint says which config it was written under")
-        self.assertEqual(main.count('find_adapter([OUT, INPUT], cfg["config_sha"])'), 2, "training is skipped, and the evaluation run, only for an adapter of this config")
+        self.assertIn('latest_checkpoint([OUT, INPUT], cfg["adapter_sha"])', train, "a checkpoint of another adapter key stops the kernel instead of being continued")
+        self.assertIn('save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["adapter_sha"])', train, "and a checkpoint says which adapter key it was written under")
+        self.assertEqual(main.count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 2, "training is skipped, and the evaluation run, only for an adapter of this adapter key")
         self.assertIn("train_info(cfg,", train)
-        self.assertEqual(self.body("eval_worker").count('find_adapter([OUT, INPUT], cfg["config_sha"])'), 1)
+        self.assertEqual(self.body("eval_worker").count('find_adapter([OUT, INPUT], cfg["adapter_sha"])'), 1)
+        self.assertNotIn("eval_sha", train, "the training worker reads nothing of the evaluation: the evaluation key cannot change a weight")
+        self.assertNotIn("eval_tasks", train)
+        self.assertIn("carry_adapter(existing)", main, "an adapter that is kept goes into this session's output: the next resume attaches this one")
 
     def test_a_gpu_that_is_not_a_t4_stops_the_kernel_before_the_download(self):
         main = self.body("main")
@@ -764,7 +782,7 @@ class Scoring(unittest.TestCase):
     def out(self, task, right, tokens=100, finish="stop", text=None, sha=None):
         answer = task["answer"] if right else task["answer"] + 1
         return {"text": text if text is not None else THINK.format("thinking", answer), "finish": finish, "tokens": tokens, "prompt_tokens": 50, "secs": 1.0,
-                "prompt_sha": sha or outputs.prompt_sha(ARITH.messages(task, "thinking")), "max_tokens": 4096, "config_sha": SHA}
+                "prompt_sha": sha or outputs.prompt_sha(ARITH.messages(task, "thinking")), "max_tokens": 4096, **KEYS}
 
     def score(self, base, lora, tasks=HELDOUT):
         return score_lora.score(base, lora, [self.heldout], domain=ARITH, build=build_of(tasks))
@@ -819,7 +837,7 @@ class Scoring(unittest.TestCase):
         for name, out in cases.items():
             line = {"id": t["id"], "kind": t["kind"], "prompt_sha": out["prompt_sha"], "outs": [out]}
             path = write_jsonl(self.dir / "one.jsonl", [line])
-            got = score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, config_sha=SHA)["rows"][(t["id"], 0)]["verdict"]
+            got = score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, build=KEYS)["rows"][(t["id"], 0)]["verdict"]
             self.assertEqual(got, traces.verdict(score_replies.reply_of(out, thinking=True), t, domain=ARITH), name)
             self.assertEqual(got == "accepted", traces.score_reasoning(score_replies.reply_of(out, thinking=True), t, domain=ARITH), name)
             verdicts[name] = got
@@ -830,13 +848,13 @@ class Scoring(unittest.TestCase):
         out = self.out(t, True, sha="deadbeefdeadbeef")
         path = write_jsonl(self.dir / "one.jsonl", [{"id": t["id"], "kind": t["kind"], "prompt_sha": out["prompt_sha"], "outs": [out]}])
         with self.assertRaisesRegex(SystemExit, "another prompt"):
-            score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, config_sha=SHA)
+            score_lora.read_arm(path, {t["id"]: t}, domain=ARITH, build=KEYS)
 
     def test_missing_replies_unknown_tasks_and_unchecked_replies_are_counted_not_scored(self):
         t = self.by_kind["add"][0]
         sha = outputs.prompt_sha(ARITH.messages(t, "thinking"))
         lines = [{"id": t["id"], "kind": "add", "prompt_sha": sha, "outs": [None, {**self.out(t, True), "prompt_sha": None}, self.out(t, True)]}, {"id": "nobody", "kind": "add", "outs": [self.out(t, True)]}]
-        got = score_lora.read_arm(write_jsonl(self.dir / "one.jsonl", lines), {t["id"]: t}, domain=ARITH, config_sha=SHA)
+        got = score_lora.read_arm(write_jsonl(self.dir / "one.jsonl", lines), {t["id"]: t}, domain=ARITH, build=KEYS)
         self.assertEqual(sorted(got["rows"]), [(t["id"], 2)])
         self.assertEqual((got["info"]["missing"], got["info"]["unchecked"], got["info"]["outside"], got["outside"]), (1, 1, 1, ["nobody"]))
 
@@ -876,7 +894,7 @@ class Scoring(unittest.TestCase):
     def test_the_table_says_when_the_test_is_over_tasks(self):
         report = {"arms": {a: {"overall": {"replies": 6, "accepted": 3, "accuracy": 0.5, "ci95": [0.2, 0.8], "cut_off": 0.0, "mean_tokens": 10.0}, "by_kind": {}} for a in ("base", "lora")},
                   "paired": {"overall": {"both": 1, "base_only": 1, "lora_only": 1, "neither": 3, "n": 6, "sign_p": 1.0, "per_task": 3}, "by_kind": {}, "unpaired": 0}, "tasks_answered": 2, "tasks_in_set": 2,
-                  "config_sha": SHA, "outside": {"replies": 0, "by_arm": {"base": 0, "lora": 0}, "tasks": []}, "other_build": {"replies": 0, "by_arm": {"base": 0, "lora": 0}}}
+                  **KEYS, "outside": {"replies": 0, "by_arm": {"base": 0, "lora": 0}, "tasks": []}, "other_adapter": {"replies": 0, "by_arm": {"base": 0, "lora": 0}}, "other_eval": {"replies": 0, "by_arm": {"base": 0, "lora": 0}}}
         self.assertTrue(any("k > 1 (up to 3 replies per task): the sign p is over TASKS" in line for line in score_lora.lines_of(report)))
         report["paired"]["overall"]["per_task"] = 1
         self.assertFalse(any("k > 1" in line for line in score_lora.lines_of(report)))
@@ -885,7 +903,7 @@ class Scoring(unittest.TestCase):
         base, lora = self.files()
         short = write_jsonl(self.dir / "short.jsonl", [json.loads(line) for line in lora.read_text().splitlines()][:6])
         lines = score_lora.lines_of(self.score(base, short))
-        self.assertIn("paired replies 6, unpaired 6 (base only 6, adapter only 0: in no figure above)", lines[-2])
+        self.assertIn("paired replies 6, unpaired 6 (base only 6, adapter only 0: in no figure above)", lines[-3])
 
     def test_a_partial_adapter_says_where_the_learning_rate_stopped(self):
         report = self.score(*self.files())
@@ -901,14 +919,14 @@ class Scoring(unittest.TestCase):
         base, lora = self.files()
         info = self.dir / "run.json"
         config = self.dir / "lora-config.json"
-        config.write_text(json.dumps({"config_sha": SHA, "built_from": {"eval": {"ids": sorted(t["id"] for t in HELDOUT)}}}))
-        info.write_text(json.dumps({"smoke": True, "config": {"config_sha": SHA}, "train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "loss_first": 1.5, "loss_last": 0.7, "records": {"think": 800}, "deadline_hit": True}}))
+        config.write_text(json.dumps({**KEYS, "built_from": {"eval": {"ids": sorted(t["id"] for t in HELDOUT)}}}))
+        info.write_text(json.dumps({"smoke": True, "config": KEYS, "train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "loss_first": 1.5, "loss_last": 0.7, "records": {"think": 800}, "deadline_hit": True}}))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
             score_lora.main(["--domain", "example_arith", "--config", str(config), "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--run-info", str(info), "--out", str(self.dir / "report.json")])
         text = buf.getvalue()
         for needle in ("SMOKE run", "one batch of replies", "partial, 40 of 99 steps", "stopped by the deadline", "OVERALL", "add", "sub", "mul", "sign p", "paired replies 12, unpaired 0", "tasks answered 12 of 12 in the evaluation set of the build",
-                       "0 replies of tasks outside the evaluation set, not scored"):
+                       "0 replies of tasks outside the evaluation set, not scored", f"adapter key {SHA} (the SFT file and the training settings), evaluation key {EVAL} (that adapter, the exclusion and the ids asked)"):
             self.assertIn(needle, text)
         self.assertEqual(json.loads((self.dir / "report.json").read_text())["paired"]["overall"]["n"], 12)
         with self.assertRaises(SystemExit):
@@ -953,9 +971,9 @@ class ReaWiring(unittest.TestCase):
     def test_a_reply_is_judged_by_the_rea_scorer(self):
         t = self.tasks[0]
         sha = outputs.prompt_sha(self.domain.messages(t, "thinking"))
-        good = {"text": THINK.format("looking at the loop", self.right(t)), "finish": "stop", "tokens": 300, "prompt_sha": sha, "config_sha": SHA}
-        bad = {"text": THINK.format("looking at the loop", "zzzz"), "finish": "stop", "tokens": 300, "prompt_sha": sha, "config_sha": SHA}
-        got = score_lora.read_arm(write_jsonl(self.dir / "r.jsonl", [{"id": t["id"], "kind": t["kind"], "outs": [good, bad]}]), {t["id"]: t}, domain=self.domain, config_sha=SHA)["rows"]
+        good = {"text": THINK.format("looking at the loop", self.right(t)), "finish": "stop", "tokens": 300, "prompt_sha": sha, **KEYS}
+        bad = {"text": THINK.format("looking at the loop", "zzzz"), "finish": "stop", "tokens": 300, "prompt_sha": sha, **KEYS}
+        got = score_lora.read_arm(write_jsonl(self.dir / "r.jsonl", [{"id": t["id"], "kind": t["kind"], "outs": [good, bad]}]), {t["id"]: t}, domain=self.domain, build=KEYS)["rows"]
         self.assertEqual((got[(t["id"], 0)]["verdict"], got[(t["id"], 1)]["verdict"]), ("accepted", "wrong"))
         from rea_bench import scoring
         self.assertTrue(scoring.score_strict(self.right(t), t))
@@ -1005,7 +1023,7 @@ class Docs(unittest.TestCase):
 
     def test_a_resume_is_spelled_out_with_the_dataset_version_and_what_it_is_tied_to(self):
         text = self.section()
-        for needle in ("kaggle datasets version -p ~/work/kaggle-lora/data", "new version", "config_sha", "same `--sft`"):
+        for needle in ("kaggle datasets version -p ~/work/kaggle-lora/data", "new version", "adapter_sha", "eval_sha", "same `--sft` and training settings", "keeps the adapter and repeats the evaluation only", "copied from the attached output"):
             self.assertIn(needle, text, needle)
         self.assertLess(text.index("kaggle datasets version"), text.index("kaggle kernels push -p ~/work/kaggle-lora/kernel\n```\n\nThe new kernel"), "the dataset first, then the kernel")
 

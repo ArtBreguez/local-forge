@@ -4,9 +4,10 @@
         --base ~/work/kaggle-lora/out/replies-base.jsonl --lora ~/work/kaggle-lora/out/replies-lora.jsonl [--run-info ~/work/kaggle-lora/out/run.json] [--out report.json]
 
 WHAT is scored is the build's, not the replies files': `--config` is the `lora-config.json` the kernel ran (`build_lora.py` wrote it), and only the tasks of its evaluation set (`built_from.eval.ids`: the held-out
-tasks that share no content with a training task, after the floor and the quota) and only the replies written under its `config_sha` enter a figure. A replies file can hold more (an output attached with
-`--resume-from` that was made by a build with other `--train-tasks` or another quota): a reply of a task outside the set is counted and printed ("N replies of tasks outside the evaluation set, not scored"),
-and so is a reply written under another build. A `--heldout` file that lacks a task of the set, or a run.json of another build, is refused.
+tasks that share no content with a training task, after the floor and the quota) and only the replies written under its two keys enter a figure: `adapter_sha` (the adapter that answered: the SFT file and
+the training settings) and `eval_sha` (the evaluation the reply belongs to: that adapter, the exclusion and the ids asked). A replies file can hold more (an output attached with `--resume-from` that was
+made by a build with other `--train-tasks` or another quota): a reply of a task outside the set is counted and printed ("N replies of tasks outside the evaluation set, not scored"), and so is a reply of
+another adapter and a reply of this adapter written under another evaluation key. The report prints both keys. A `--heldout` file that lacks a task of the set, or a run.json of another build, is refused.
 
 A reply is judged by the code `kaggle-score` runs: `score_replies.reply_of` (a cut-off reply ends in the truncation marker, a failed request is an error) and `traces.verdict`, whose last step is the subject's
 own `domain.verify` (REA: `scoring.score_strict`, the whitelist grammar on the text after the last `Answer:` line). A reply that answered another prompt than the task's now (its `prompt_sha`) is refused, as
@@ -52,26 +53,30 @@ def sign_test_p(only_a: int, only_b: int) -> float:
     return min(1.0, 2 * sum(math.comb(n, i) for i in range(min(only_a, only_b) + 1)) / 2 ** n)
 
 
+KEYS = ("adapter_sha", "eval_sha")          # the training identity and the evaluation identity of a build (`lora_eval.adapter_key`, `lora_eval.eval_key`)
+
+
 def read_build(path) -> dict:
-    """{"ids": the ids of the evaluation set, "config_sha"} of a build's `lora-config.json` (`build_lora.make_config`). SystemExit for a file that is not one: without the set there is nothing that says which
-    replies may be scored."""
+    """{"ids": the ids of the evaluation set, "adapter_sha", "eval_sha"} of a build's `lora-config.json` (`build_lora.make_config`). SystemExit for a file that is not one: without the set and the two keys there
+    is nothing that says which replies may be scored."""
     try:
         data = json.loads(pathlib.Path(path).read_text())
     except (OSError, json.JSONDecodeError):
         data = None
     built = data.get("built_from") if isinstance(data, dict) else None
     ev = built.get("eval") if isinstance(built, dict) else None
-    ids, sha = (ev.get("ids") if isinstance(ev, dict) else None), (data.get("config_sha") if isinstance(data, dict) else None)
-    if not (isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids) and isinstance(sha, str) and sha):
-        raise SystemExit(f"{path} is not the lora-config.json of a build_lora build (a `config_sha` and the ids of its evaluation set, `built_from.eval.ids`): build again with this version, the set is what is scored")
-    return {"ids": set(ids), "config_sha": sha}
+    ids, keys = (ev.get("ids") if isinstance(ev, dict) else None), {k: data.get(k) if isinstance(data, dict) else None for k in KEYS}
+    if not (isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids) and all(isinstance(v, str) and v for v in keys.values())):
+        raise SystemExit(f"{path} is not the lora-config.json of a build_lora build (an `adapter_sha`, an `eval_sha` and the ids of its evaluation set, `built_from.eval.ids`): build again with this version, the set is what is scored")
+    return {"ids": set(ids), **keys}
 
 
-def read_arm(path, tasks: dict, *, domain, config_sha: str) -> dict:
+def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
     """{"rows": {(task id, sample index): {"kind", "verdict", "finish", "tokens"}}, "info": counts, "outside": ids} of one arm's replies file. `tasks` is the evaluation set ({id: task}): the replies of a task
-    that is not in it are counted (`info["outside"]`, the task ids in `outside`) and never scored. A missing or malformed entry is counted and skipped, a reply written under another build than `config_sha`
-    (or that does not say: another adapter, or another exclusion) is counted (`info["other_build"]`) and skipped, a reply with no fingerprint is skipped as unchecked, and a reply that answered another prompt
-    is SystemExit (the same refusal as `kaggle-score`)."""
+    that is not in it are counted (`info["outside"]`, the task ids in `outside`) and never scored. A missing or malformed entry is counted and skipped. A reply is scored only when it carries BOTH keys of
+    `build` (`read_build`): one of another adapter, or that does not say (`info["other_adapter"]`), and one of this adapter written under another evaluation key, or that does not say (`info["other_eval"]`:
+    another exclusion or another set of tasks; a resume asks it again, and it stays in the file when the deadline came first), are counted and skipped, before anything else of the reply is looked at.
+    A reply with no fingerprint is skipped as unchecked, and a reply that answered another prompt is SystemExit (the same refusal as `kaggle-score`)."""
     lines, info = score_replies.read_replies(path)
     info = collections.Counter(info)
     rows, outside = {}, []
@@ -86,8 +91,11 @@ def read_arm(path, tasks: dict, *, domain, config_sha: str) -> dict:
             if not isinstance(out, dict):
                 info["missing"] += 1
                 continue
-            if out.get("config_sha") != config_sha:
-                info["other_build"] += 1
+            if out.get("adapter_sha") != build["adapter_sha"]:
+                info["other_adapter"] += 1
+                continue
+            if out.get("eval_sha") != build["eval_sha"]:
+                info["other_eval"] += 1
                 continue
             if own is None:
                 info["unchecked"] += 1
@@ -139,28 +147,32 @@ def pair(base: dict, lora: dict) -> dict:
 
 
 def score(base_path, lora_path, heldout_files, *, domain, build: dict) -> dict:
-    """The report over the evaluation set of `build` (`read_build`: its ids and its `config_sha`) and nothing else: per arm `summarize` of the replies BOTH arms have and the read counts, the `pair`, how many tasks
-    of the set were answered, and what was NOT scored: `outside` (the replies, per arm, of tasks that are not in the set, and their ids) and `other_build` (the replies written under another build). The truth
-    is read from the held-out files; SystemExit when one of the set's tasks is not in them (they are not the files the build was made from)."""
+    """The report over the evaluation set of `build` (`read_build`: its ids and its two keys) and nothing else: per arm `summarize` of the replies BOTH arms have and the read counts, the `pair`, how many tasks
+    of the set were answered, the two keys, and what was NOT scored: `outside` (the replies, per arm, of tasks that are not in the set, and their ids: of either arm), `other_adapter` (the replies of another
+    adapter) and `other_eval` (the replies of this adapter written under another evaluation key). The truth is read from the held-out files; SystemExit when one of the set's tasks is not in them (they are not
+    the files the build was made from)."""
     held = {t["id"]: t for t in domain.load_heldout([pathlib.Path(f) for f in heldout_files])}
     absent = sorted(build["ids"] - set(held))
     if absent:
         raise SystemExit(f"{len(absent)} task(s) of the build's evaluation set are not in --heldout ({', '.join(absent)[:200]}): give the held-out files the build was made from")
     tasks = {tid: held[tid] for tid in sorted(build["ids"])}
-    arms = {arm: read_arm(path, tasks, domain=domain, config_sha=build["config_sha"]) for arm, path in (("base", base_path), ("lora", lora_path))}
+    arms = {arm: read_arm(path, tasks, domain=domain, build=build) for arm, path in (("base", base_path), ("lora", lora_path))}
     common = set(arms["base"]["rows"]) & set(arms["lora"]["rows"])
     apart = lambda key: {"replies": sum(v["info"].get(key, 0) for v in arms.values()), "by_arm": {a: v["info"].get(key, 0) for a, v in arms.items()}}
     return {"arms": {a: {**summarize({k: r for k, r in v["rows"].items() if k in common}), "read": v["info"], "unpaired": len(v["rows"]) - len(common)} for a, v in arms.items()},
-            "paired": pair(arms["base"]["rows"], arms["lora"]["rows"]), "tasks_answered": len({tid for v in arms.values() for tid, _ in v["rows"]}), "tasks_in_set": len(tasks), "config_sha": build["config_sha"],
-            "outside": {**apart("outside"), "tasks": sorted({tid for v in arms.values() for tid in v["outside"]})}, "other_build": apart("other_build")}
+            "paired": pair(arms["base"]["rows"], arms["lora"]["rows"]), "tasks_answered": len({tid for v in arms.values() for tid, _ in v["rows"]}), "tasks_in_set": len(tasks),
+            **{k: build[k] for k in KEYS}, "outside": {**apart("outside"), "tasks": sorted({tid for v in arms.values() for tid in v["outside"]})}, "other_adapter": apart("other_adapter"),
+            "other_eval": apart("other_eval")}
 
 
 def check_run(run_info, build: dict, path="run.json") -> None:
-    """SystemExit when the run.json given is of another build than `--config` (its `config.config_sha`): the training summary that heads the table would be another adapter's. A run.json that does not say
-    (none given, or one with no config) is not judged here; the replies say it themselves, one by one."""
-    ran = (run_info.get("config") or {}).get("config_sha") if isinstance(run_info, dict) and isinstance(run_info.get("config"), dict) else None
-    if ran and ran != build["config_sha"]:
-        raise SystemExit(f"{path} is the run of build {ran}, and --config is build {build['config_sha']}: give the lora-config.json the kernel ran (the dataset's)")
+    """SystemExit when the run.json given is of another build than `--config`: its `config.adapter_sha` is another one (the training summary that heads the table would be another adapter's) or its
+    `config.eval_sha` is (the session asked another evaluation than the one that is scored). A run.json that does not say (none given, or one with no config or without that key) is not judged here; the
+    replies say it themselves, one by one."""
+    ran = run_info.get("config") if isinstance(run_info, dict) and isinstance(run_info.get("config"), dict) else {}
+    for key, what in (("adapter_sha", "adapter key"), ("eval_sha", "evaluation key")):
+        if ran.get(key) and ran[key] != build[key]:
+            raise SystemExit(f"{path} is the run of {what} {ran[key]}, and --config has {what} {build[key]}: give the lora-config.json the kernel ran (the dataset's)")
 
 
 def lines_of(report: dict, run_info: dict = None) -> list:
@@ -188,7 +200,9 @@ def lines_of(report: dict, run_info: dict = None) -> list:
     p = report["paired"]
     by_arm = p.get("unpaired_by_arm", {})
     out.append(f"paired replies {p['overall']['n']}, unpaired {p['unpaired']}" + (f" (base only {by_arm['base']}, adapter only {by_arm['lora']}: in no figure above)" if p["unpaired"] else "") + f"; tasks answered {report['tasks_answered']} of {report['tasks_in_set']} in the evaluation set of the build")
-    for key, what in (("outside", "of tasks outside the evaluation set"), ("other_build", f"written under another build than {report['config_sha']} (another adapter or another exclusion)")):
+    out.append(f"adapter key {report['adapter_sha']} (the SFT file and the training settings), evaluation key {report['eval_sha']} (that adapter, the exclusion and the ids asked): only the replies that carry both are scored")
+    for key, what in (("outside", "of tasks outside the evaluation set"), ("other_adapter", f"of another adapter than {report['adapter_sha']} (another --sft or training setting)"),
+                      ("other_eval", f"of this adapter written under another evaluation key than {report['eval_sha']} (another exclusion or another set of tasks: a resume asks them again)")):
         c = report[key]
         if key == "outside" or c["replies"]:
             out.append(f"{c['replies']} replies {what}, not scored" + (f" (base {c['by_arm']['base']}, adapter {c['by_arm']['lora']}" + (f"; tasks: {', '.join(c['tasks'])[:300]}" if c.get("tasks") else "") + ")" if c["replies"] else ""))
@@ -201,7 +215,7 @@ def main(argv=None) -> None:
     from distill.domains import load
     ap = argparse.ArgumentParser(description="Score the base and adapter replies of a lora_eval.py run against the held-out truth")
     ap.add_argument("--domain", default="rea", help="the subject: a package of distill/domains (default %(default)s)")
-    ap.add_argument("--config", type=pathlib.Path, required=True, help="the build's data/lora-config.json (the one the kernel ran): only the tasks of its evaluation set, and only the replies written under its config_sha, are scored")
+    ap.add_argument("--config", type=pathlib.Path, required=True, help="the build's data/lora-config.json (the one the kernel ran): only the tasks of its evaluation set, and only the replies written under its adapter key and its evaluation key, are scored")
     ap.add_argument("--heldout", type=pathlib.Path, nargs="+", required=True, help="the held-out task files the run was built from (the truth is read here)")
     ap.add_argument("--base", type=pathlib.Path, required=True, help="replies-base.jsonl")
     ap.add_argument("--lora", type=pathlib.Path, required=True, help="replies-lora.jsonl")

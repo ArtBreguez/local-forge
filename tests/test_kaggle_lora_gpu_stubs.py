@@ -19,7 +19,9 @@ from unittest import mock
 
 from .test_kaggle_lora import ARITH, HELDOUT, lora_eval, run_teacher, write_jsonl
 
-SHA = "0123456789abcdef"
+SHA = "0123456789abcdef"                   # the adapter key of the stub build
+EVAL = "fedcba9876543210"                  # and its evaluation key
+KEYS = {"adapter_sha": SHA, "eval_sha": EVAL}
 
 
 # ---- a tiny torch -----------------------------------------------------------------------------------------------------------------------------
@@ -181,7 +183,7 @@ class ChunkedLoss(unittest.TestCase):
 # ---- a tiny tokenizer, model and clock --------------------------------------------------------------------------------------------------------
 
 class TrainSummary(unittest.TestCase):
-    CFG = lora_eval.resolve_config({"config_sha": SHA, "lr": 1.5e-4})
+    CFG = lora_eval.resolve_config({**KEYS, "lr": 1.5e-4})
 
     def info(self, last, steps=100, **kw):
         return lora_eval.train_info(self.CFG, last=last, start=0, steps=steps, counts={"think": 3}, examples=3, gb=16, world=2, losses=[1.5, 0.7], wall_s=3601.4, tokens=9000, step_secs=[100.0, 80.0], peak_gib=11.456, **kw)
@@ -200,7 +202,8 @@ class TrainSummary(unittest.TestCase):
 
     def test_it_carries_the_config_and_what_was_measured(self):
         i = self.info(100)
-        self.assertEqual((i["config_sha"], i["tok_per_s_per_gpu"], i["step_s"], i["peak_gib"], i["wall_s"], i["loss_first"], i["loss_last"]), (SHA, 50.0, 90.0, 11.46, 3601, 1.5, 0.7))
+        self.assertNotIn("eval_sha", i, "an adapter is of no evaluation: the one that trained it is not the only one that may ask it")
+        self.assertEqual((i["adapter_sha"], i["tok_per_s_per_gpu"], i["step_s"], i["peak_gib"], i["wall_s"], i["loss_first"], i["loss_last"]), (SHA, 50.0, 90.0, 11.46, 3601, 1.5, 0.7))
         self.assertEqual(lora_eval.find_adapter([self.write_adapter(i)], SHA).name, "adapter", "what it writes is what find_adapter asks for")
 
     def write_adapter(self, info):
@@ -226,9 +229,9 @@ class Checkpoints(unittest.TestCase):
             for step in (10, 20, 30):
                 lora_eval.save_checkpoint(torch, model, state, state, step, ckpt, SHA)
             self.assertEqual(sorted(p.name for p in ckpt.iterdir()), ["step-20", "step-30"], "the two newest are kept, and nothing half written")
-            self.assertEqual(json.loads((ckpt / "step-30" / "DONE").read_text()), {"step": 30, "config_sha": SHA})
+            self.assertEqual(json.loads((ckpt / "step-30" / "DONE").read_text()), {"step": 30, "adapter_sha": SHA})
             self.assertEqual(lora_eval.latest_checkpoint([pathlib.Path(d)], SHA), ckpt / "step-30")
-            with self.assertRaisesRegex(SystemExit, "written under config"):
+            with self.assertRaisesRegex(SystemExit, "written under adapter key"):
                 lora_eval.latest_checkpoint([pathlib.Path(d)], "0" * 16)
 
 
@@ -348,7 +351,7 @@ def task(i: int) -> dict:
 
 class GenerateBatch(unittest.TestCase):
     def cfg(self, **kw):
-        return lora_eval.resolve_config({"max_new_tokens": 64, "seed_base": 1234, **kw})
+        return lora_eval.resolve_config({"max_new_tokens": 64, "seed_base": 1234, **KEYS, **kw})
 
     def run_arms(self, items, **kw):
         torch, tok = GenTorch(), GenTok()
@@ -379,7 +382,7 @@ class GenerateBatch(unittest.TestCase):
         self.assertEqual([o["text"] for o in base], [f"<think>\nthinking r{i}\n</think>\n\nAnswer: BASE" for i in (0, 1)])
         self.assertEqual([o["text"] for o in lora], [f"<think>\nthinking r{i}\n</think>\n\nAnswer: LORA" for i in (0, 1)])
         for out, (t, _) in zip(base, items):
-            self.assertEqual((out["finish"], out["tokens"], out["max_tokens"], out["prompt_sha"], out["config_sha"]), ("stop", 5, 64, run_teacher.prompt_sha(t["messages"]), cfg["config_sha"]))
+            self.assertEqual((out["finish"], out["tokens"], out["max_tokens"], out["prompt_sha"], out["adapter_sha"], out["eval_sha"]), ("stop", 5, 64, run_teacher.prompt_sha(t["messages"]), SHA, EVAL))
 
     def test_the_seed_follows_the_first_item_of_the_batch(self):
         for first, want in ((0, 1234), (3, 1237)):
@@ -419,7 +422,7 @@ class EvalOnStubs(unittest.TestCase):
     def adapter(self, where, name="adapter", sha=SHA):
         d = where / name
         d.mkdir(parents=True)
-        (d / "train.json").write_text(json.dumps({"status": "done", "config_sha": sha}))
+        (d / "train.json").write_text(json.dumps({"status": "done", "adapter_sha": sha}))
         (d / "adapter_model.safetensors").write_text("x")
         return d
 
@@ -429,7 +432,7 @@ class EvalOnStubs(unittest.TestCase):
         torch, clock = GenTorch(), clock or Clock()
         model, tok = StubModel(torch, clock, end=end, eos=eos), GenTok()
         GenTok._current = tok
-        cfg = lora_eval.resolve_config({"eval_batch": 2, "k": 1, "max_new_tokens": 64, "config_sha": SHA, "smoke": smoke, **cfg_kw})
+        cfg = lora_eval.resolve_config({"eval_batch": 2, "k": 1, "max_new_tokens": 64, **KEYS, "smoke": smoke, **cfg_kw})
         loads = []
 
         def load(torch_, cfg_, local, adapter=None, train=False):
@@ -469,7 +472,7 @@ class EvalOnStubs(unittest.TestCase):
             self.assertTrue(all("Answer: BASE" in o["text"] for o in line["outs"]), line)
         for line in lora:
             self.assertTrue(all("Answer: LORA" in o["text"] for o in line["outs"]), line)
-            self.assertEqual([o["config_sha"] for o in line["outs"]], [SHA])
+            self.assertEqual([(o["adapter_sha"], o["eval_sha"]) for o in line["outs"]], [(SHA, EVAL)])
             self.assertEqual(line["prompt_sha"], run_teacher.prompt_sha(next(task(i)["messages"] for i in range(4) if task(i)["id"] == line["id"])))
 
     def test_the_deadline_stops_the_next_batch_when_the_mean_batch_would_pass_it(self):
@@ -503,8 +506,8 @@ class EvalOnStubs(unittest.TestCase):
         self.adapter(self.inp / "earlier", sha="ffffffffffffffff")
         torch = GenTorch()
         GenTok._current = GenTok()
-        cfg = lora_eval.resolve_config({"config_sha": SHA})
-        with contextlib.ExitStack() as stack, self.assertRaisesRegex(SystemExit, "trained under config 'ffffffffffffffff', this build is"):
+        cfg = lora_eval.resolve_config(KEYS)
+        with contextlib.ExitStack() as stack, self.assertRaisesRegex(SystemExit, "trained under adapter key 'ffffffffffffffff', this build's is"):
             stack.enter_context(mock.patch.dict(sys.modules, {"torch": torch, "transformers": SimpleNamespace(AutoTokenizer=GenTok)}))
             stack.enter_context(mock.patch.dict(os.environ, {"LORA_DEADLINE": "1e12"}))
             for name, value in (("OUT", self.out), ("INPUT", self.inp), ("dist_setup", lambda t: (0, 1, 0)), ("log", lambda *a: None)):

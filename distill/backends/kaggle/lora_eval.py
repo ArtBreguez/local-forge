@@ -10,16 +10,20 @@ What it does, in order (`main`, no GPU library imported in this process):
   1. reads `lora-config.json`, installs the pins (the versions `modal_train.py` trains with), downloads the student once (a public repo, bf16, ~18 GB, to /tmp: never to /kaggle/working);
   2. TRAIN (`--worker train`, `torchrun` over both T4: one process per GPU, the 4-bit student in each, gradients averaged by hand): fp16 (a T4 has no bf16), NF4, gradient checkpointing, batch 1 per
      process, the loss computed in chunks over the target positions only (the student's vocabulary is 248,320 tokens: the logits of one 4096-token sequence are 4 GB in fp32, more than a T4 has next to the
-     model), LoRA on the same modules as `modal_train.py`. Skipped when a finished adapter is already in /kaggle/working or in an attached output. It stops at `train_hours` or when the evaluation would no longer
-     fit before the session deadline, saves the adapter and a `train.json`, and checkpoints every `save_every` steps (resume: the newest complete `ckpt/step-N` of this kernel or of an attached output);
+     model), LoRA on the same modules as `modal_train.py`. Skipped when a finished adapter is already in /kaggle/working or in an attached output. It stops at `train_hours` or when the evaluation (and the export, when it is on) would no longer
+     fit before the session deadline, and starts no step that would end after that (`step_can_start`), saves the adapter and a `train.json`, and checkpoints every `save_every` steps (resume: the newest complete `ckpt/step-N` of this kernel or of an attached output);
   3. EVAL (`--worker eval`, the same two processes): the base student (`model.disable_adapter()`) and base + adapter answer the same held-out tasks with the thinking template and Qwen3's thinking sampling, `k`
      replies each, the tasks split between the processes; every batch is appended at once to `replies-base.r<rank>.jsonl` / `replies-lora.r<rank>.jsonl` in the line format of `run_teacher.py`, base and
      adapter for the same tasks next to each other, so a run stopped by the deadline holds paired answers. Resume asks only what is missing, failed or stale (`run_teacher.pending`);
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
 `--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, so that it can never be taken for a result): it measures the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
-Resume is tied to `config_sha` (the training records, the training settings and the content exclusion of the evaluation: `config_sha`): an attached adapter or checkpoint of another one is refused, and a
-reply of another one is asked again. The merged replies files hold the tasks of this build's `eval_tasks.jsonl` and no other (`merge_shards`): an attached output never brings a task back.
+Resume is tied to TWO keys of the build, because what makes an adapter and what makes an evaluation are not the same thing. The ADAPTER key (`adapter_sha`, `adapter_key`: the SFT file, the settings of
+`TRAIN_KEYS`, the base student among them) is what the weights are a function of: an attached adapter or checkpoint of another one is refused. The EVALUATION key (`eval_sha`, `eval_key`: the adapter key, the
+content exclusion and the ids that are asked) says which evaluation a reply belongs to: a reply written under another one is asked again, and the adapter is KEPT when only the evaluation changed (other
+`--train-tasks` that exclude other held-out tasks, another quota: neither is read by the training worker). Every reply carries both keys. A finished adapter that is found in an attached output is copied
+into this session's output (`carry_adapter`), so that the next resume, which attaches this one, still has it. The merged replies files hold the tasks of this build's `eval_tasks.jsonl` and no other
+(`merge_shards`): an attached output never brings a task back.
 Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
 """
 from __future__ import annotations
@@ -99,11 +103,12 @@ DEFAULTS = {
     "smoke": False,
     "smoke_steps": 4,
     "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
-    "config_sha": "",                        # the builder's: the training records, the training settings and the content exclusion (`config_sha`); an adapter, a checkpoint or a reply of another one is refused or asked again
+    "adapter_sha": "",                       # the builder's ADAPTER key (`adapter_key`: the training records and the settings of `TRAIN_KEYS`); an adapter or a checkpoint of another one is refused
+    "eval_sha": "",                          # the builder's EVALUATION key (`eval_key`: the adapter key, the content exclusion and the ids asked); a reply of another one is asked again, and never scored
     "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
-TRAIN_KEYS = ("student", "max_len", "rank", "dropout", "epochs", "lr", "global_batch", "mix", "seed")          # the settings that make one adapter another (the time controls, max_steps and train_hours, do not); `config_sha` adds the records and the content exclusion
+TRAIN_KEYS = ("student", "max_len", "rank", "dropout", "epochs", "lr", "global_batch", "mix", "seed")          # the settings that make one adapter another, the base model among them (the time controls, max_steps and train_hours, do not); `adapter_key` adds the records
 
 
 def log(*a):
@@ -124,11 +129,18 @@ def resolve_config(user: dict) -> dict:
     return cfg
 
 
-def config_sha(train_sha: str, cfg: dict, excluded_sha: str) -> str:
-    """What an adapter, a checkpoint and the replies of an adapter are tied to: the training records (`train_sha`, the sha of the SFT file the builder read), the settings of `TRAIN_KEYS`, and the content
-    exclusion of the evaluation (`excluded_sha`: `build_lora.excluded_sha`, the rules and the held-out tasks they exclude, which is what `--train-tasks` decides). A resume that attaches an output of another one (another
-    --sft, --max-len, --rank, ..., or other --train-tasks that exclude other held-out tasks) would otherwise evaluate or continue the old adapter, or carry its replies, without a word."""
-    return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}, excluded_sha], sort_keys=True).encode()).hexdigest()[:16]
+def adapter_key(train_sha: str, cfg: dict) -> str:
+    """The TRAINING identity, what an adapter and a checkpoint are tied to: the training records (`train_sha`, the sha of the SFT file the builder read) and the settings of `TRAIN_KEYS` (the base student is
+    one of them). Nothing of the evaluation is in it: the training worker reads `train.jsonl` and these settings and nothing else (`train_worker`), so the held-out tasks that are asked or excluded cannot
+    change a weight. A resume that attaches the adapter of another one (another --sft, --max-len, --rank, ...) would otherwise evaluate or continue the old adapter without a word."""
+    return hashlib.sha256(json.dumps([train_sha, {k: cfg[k] for k in TRAIN_KEYS}], sort_keys=True).encode()).hexdigest()[:16]
+
+
+def eval_key(adapter_sha: str, excluded_sha: str, ids) -> str:
+    """The EVALUATION identity, what a reply is tied to: the adapter that answered (`adapter_sha`: another adapter is another evaluation), the content exclusion (`excluded_sha`: `build_lora.excluded_sha`, the
+    rules and the held-out tasks they exclude, which is what `--train-tasks` decides) and the `ids` of the tasks that are asked. A reply written under another one is asked again (`work_items`) and never
+    scored (`score_lora.read_arm`); the adapter is not touched by it."""
+    return hashlib.sha256(json.dumps([adapter_sha, excluded_sha, sorted(ids)]).encode()).hexdigest()[:16]
 
 
 # ---- what training does with its steps (pure) -------------------------------------------------------------------------------------------------
@@ -172,8 +184,15 @@ def chunk_bounds(n: int, chunk: int) -> list:
 
 
 def train_deadline(now: float, session_deadline: float, train_hours: float, eval_reserve_s: float) -> float:
-    """When training must stop: `train_hours` from `now`, and never so late that the evaluation (`eval_reserve_s`, its upper bound) no longer fits before the session deadline."""
+    """When training must stop: `train_hours` from `now`, and never so late that what comes after it no longer fits before the session deadline. `eval_reserve_s` is the builder's (`build_lora.plan`): the
+    evaluation's upper bound with its model load and, when the GGUF export is on, the export's reserve too (the evaluation then has to end `export_reserve_s` before the session deadline: `main`)."""
     return min(now + train_hours * 3600, session_deadline - eval_reserve_s)
+
+
+def step_can_start(now: float, deadline: float, step_secs: list) -> bool:
+    """True when an optimizer step that takes the mean time of the finished ones (`step_secs`) still ENDS by the training deadline: the rule of the evaluation's batches (`run_teacher.can_start`). The first
+    step always starts while the deadline has not come. A step that only had to START before the deadline would run past it by up to its own length, out of what `train_deadline` left for the evaluation."""
+    return run_teacher.can_start(now, deadline, sum(step_secs) / len(step_secs) if step_secs else 0.0)
 
 
 def smoke_examples(examples: list, steps: int, global_batch: int) -> list:
@@ -183,10 +202,10 @@ def smoke_examples(examples: list, steps: int, global_batch: int) -> list:
 
 def train_info(cfg: dict, *, last: int, start: int, steps: int, counts: dict, examples: int, gb: int, world: int, losses: list, wall_s: float, tokens: int, step_secs: list, peak_gib: float) -> dict:
     """The adapter's `train.json`: `done` when the schedule's `steps` were all taken, else `partial` (the clock stopped it: `deadline_hit`, and the learning rate it stopped at, `lr_last` of `lr_peak`, which is
-    how far the cosine got), the `config_sha` that ties it to the records and settings it was trained with, and what was measured (`tok_per_s_per_gpu`, `step_s`, `peak_gib`)."""
+    how far the cosine got), the `adapter_sha` that ties it to the records and settings it was trained with (and to nothing of the evaluation), and what was measured (`tok_per_s_per_gpu`, `step_s`, `peak_gib`)."""
     done = last >= steps
     return {"status": "done" if done else "partial", "steps_done": last, "steps_planned": steps, "resumed_from_step": start, "records": counts, "examples": examples, "global_batch": gb, "gpus": world,
-            "loss_first": losses[0] if losses else None, "loss_last": losses[-1] if losses else None, "wall_s": round(wall_s), "deadline_hit": not done, "config_sha": cfg["config_sha"], "lr_peak": cfg["lr"],
+            "loss_first": losses[0] if losses else None, "loss_last": losses[-1] if losses else None, "wall_s": round(wall_s), "deadline_hit": not done, "adapter_sha": cfg["adapter_sha"], "lr_peak": cfg["lr"],
             "lr_last": lr_at(last - 1, steps, cfg["lr"]) if last else None, "tok_per_s_per_gpu": round(tokens / max(sum(step_secs), 1e-9), 1), "step_s": round(sum(step_secs) / max(len(step_secs), 1), 1),
             "peak_gib": round(peak_gib, 2)}
 
@@ -206,10 +225,11 @@ def encode_records(tok, rows: list, max_len: int, mix: bool) -> tuple:
 
 # ---- the checkpoints and the finished adapter (pure: files only) ------------------------------------------------------------------------------
 
-def find_adapter(roots, config_sha: str = None) -> "pathlib.Path | None":
+def find_adapter(roots, adapter_sha: str = None) -> "pathlib.Path | None":
     """The finished adapter of an earlier session: a folder `adapter/` with `adapter_model.safetensors` and a `train.json` that says `done` or `partial`, under one of `roots` (this kernel's output first, then
-    attached outputs). Training is skipped when there is one. A smoke run's is `adapter-smoke` and never matches. With `config_sha`, an adapter whose train.json says another one (or none) is SystemExit: it was
-    trained on other records or with other settings than this build, and evaluating it under this build's name would be a wrong answer."""
+    attached outputs). Training is skipped when there is one. A smoke run's is `adapter-smoke` and never matches. With `adapter_sha` (the build's ADAPTER key), an adapter whose train.json says another one
+    (or none) is SystemExit: it was trained on other records or with other settings than this build, and evaluating it under this build's name would be a wrong answer. The evaluation key is not looked at:
+    an adapter is kept by a build that asks other held-out tasks."""
     for root in roots:
         root = pathlib.Path(root)
         for marker in sorted(root.rglob("train.json")) if root.exists() else []:
@@ -218,23 +238,23 @@ def find_adapter(roots, config_sha: str = None) -> "pathlib.Path | None":
             except (OSError, json.JSONDecodeError):
                 continue
             if marker.parent.name == "adapter" and (marker.parent / "adapter_model.safetensors").exists() and info.get("status") in ("done", "partial"):
-                if config_sha and info.get("config_sha") != config_sha:
-                    raise SystemExit(f"the adapter {marker.parent} was trained under config {info.get('config_sha')!r}, this build is {config_sha!r} (another --sft or training setting, or --train-tasks that exclude other held-out tasks): build again with the same ones, or without --resume-from")
+                if adapter_sha and info.get("adapter_sha") != adapter_sha:
+                    raise SystemExit(f"the adapter {marker.parent} was trained under adapter key {info.get('adapter_sha')!r}, this build's is {adapter_sha!r} (another --sft or another training setting): build again with the same ones, or without --resume-from")
                 return marker.parent
     return None
 
 
-def latest_checkpoint(roots, config_sha: str = None) -> "pathlib.Path | None":
-    """The newest COMPLETE checkpoint `ckpt/step-<n>/` (it has the `DONE` file, written last: `{"step", "config_sha"}`) under one of `roots`, None when there is none. A checkpoint a killed session left half written
-    has no DONE. With `config_sha`, a complete one of another config (or none) is SystemExit, as for `find_adapter`: it would be continued under settings it was not trained with."""
+def latest_checkpoint(roots, adapter_sha: str = None) -> "pathlib.Path | None":
+    """The newest COMPLETE checkpoint `ckpt/step-<n>/` (it has the `DONE` file, written last: `{"step", "adapter_sha"}`) under one of `roots`, None when there is none. A checkpoint a killed session left half written
+    has no DONE. With `adapter_sha`, a complete one of another adapter key (or none) is SystemExit, as for `find_adapter`: it would be continued under settings it was not trained with."""
     best, best_step = None, -1
     for root in roots:
         root = pathlib.Path(root)
         for marker in root.rglob("DONE") if root.exists() else []:
             d = marker.parent
             if d.parent.name == "ckpt" and d.name.startswith("step-") and d.name[5:].isdigit():
-                if config_sha and _done_sha(marker) != config_sha:
-                    raise SystemExit(f"the checkpoint {d} was written under config {_done_sha(marker)!r}, this build is {config_sha!r} (another --sft or training setting, or --train-tasks that exclude other held-out tasks): build again with the same ones, or without --resume-from")
+                if adapter_sha and _done_sha(marker) != adapter_sha:
+                    raise SystemExit(f"the checkpoint {d} was written under adapter key {_done_sha(marker)!r}, this build's is {adapter_sha!r} (another --sft or another training setting): build again with the same ones, or without --resume-from")
                 if int(d.name[5:]) > best_step:
                     best, best_step = d, int(d.name[5:])
     return best
@@ -245,7 +265,21 @@ def _done_sha(marker: pathlib.Path):
         data = json.loads(marker.read_text())
     except (OSError, json.JSONDecodeError):
         return None
-    return data.get("config_sha") if isinstance(data, dict) else None
+    return data.get("adapter_sha") if isinstance(data, dict) else None
+
+
+def carry_adapter(found: pathlib.Path, out: pathlib.Path = OUT) -> pathlib.Path:
+    """The finished adapter `found` as `out/adapter`: itself when it is there already, else a copy (written to `adapter.tmp` and renamed, so a killed copy is never taken for an adapter). An adapter that a
+    resume KEEPS sits in an attached output, and the next resume attaches THIS session's output: without the copy it would find no adapter there and train again."""
+    dest = pathlib.Path(out) / "adapter"
+    if pathlib.Path(found).resolve() == dest.resolve():
+        return dest
+    tmp = dest.with_name("adapter.tmp")
+    shutil.rmtree(tmp, ignore_errors=True)
+    shutil.copytree(found, tmp, copy_function=shutil.copyfile)          # the bytes, not the modes: an attached output is mounted read-only
+    shutil.rmtree(dest, ignore_errors=True)
+    os.replace(tmp, dest)
+    return dest
 
 
 # ---- what evaluation does (pure) --------------------------------------------------------------------------------------------------------------
@@ -266,19 +300,21 @@ def eval_cfg(cfg: dict) -> dict:
     return {"k": cfg["k"], "max_tokens": cfg["max_new_tokens"], "max_tokens_by_family": {}, "trust_unfingerprinted": False}
 
 
-def other_config(rec, sha: str, k: int) -> list:
-    """The sample indices below `k` of the line `rec` whose reply was written under another `config_sha` than `sha` (none when `sha` is empty: nothing to compare with). A reply with no `config_sha` is another one."""
-    if not sha or not rec:
+def other_eval(rec, cfg: dict, k: int) -> list:
+    """The sample indices below `k` of the line `rec` whose reply was written under another evaluation than `cfg`'s: its `eval_sha` is not the build's, or its `adapter_sha` is not (a reply that names this
+    evaluation and another adapter contradicts itself). A reply that carries neither is another one. None when `cfg` has no `eval_sha` (a hand-made config: nothing to compare with)."""
+    if not cfg.get("eval_sha") or not rec:
         return []
-    return [i for i, out in enumerate((rec.get("outs") or [])[:k]) if isinstance(out, dict) and out.get("config_sha") != sha]
+    return [i for i, out in enumerate((rec.get("outs") or [])[:k]) if isinstance(out, dict) and (out.get("eval_sha") != cfg["eval_sha"] or out.get("adapter_sha") != cfg.get("adapter_sha"))]
 
 
 def work_items(tasks: list, previous: dict, cfg: dict) -> list:
     """[(task, sample index)] the evaluation still has to ask: for each task, every sample index that is missing, failed or stale in EITHER arm (`previous` = {arm: {id: line}}), so that the two arms stay
-    on the same samples. Stale includes a reply written under another `config_sha` than `cfg`'s (another adapter). Sorted by prompt length (the batches pad less), longest first, ties by id."""
+    on the same samples. Stale includes a reply written under another evaluation key than `cfg`'s (`other_eval`: another adapter, another exclusion or another set of tasks). Sorted by prompt length (the
+    batches pad less), longest first, ties by id."""
     ec, items = eval_cfg(cfg), []
     for t in tasks:
-        todo = sorted({i for arm in ARMS for i in [*run_teacher.pending(ec, t, previous.get(arm, {}).get(t["id"])), *other_config(previous.get(arm, {}).get(t["id"]), cfg.get("config_sha"), cfg["k"])]})
+        todo = sorted({i for arm in ARMS for i in [*run_teacher.pending(ec, t, previous.get(arm, {}).get(t["id"])), *other_eval(previous.get(arm, {}).get(t["id"]), cfg, cfg["k"])]})
         items += [(t, i) for i in todo]
     return sorted(items, key=lambda it: (-sum(len(m["content"]) for m in it[0]["messages"]), it[0]["id"], it[1]))
 
@@ -406,12 +442,12 @@ def all_reduce_mean(torch, params, world: int) -> None:
 
 
 def save_checkpoint(torch, model, opt, scaler, step: int, ckpt: pathlib.Path, sha: str = "") -> None:
-    """`ckpt/step-<step>/` (adapter, optimizer, scaler) written to a `.tmp` folder and renamed, `DONE` last (the step and the `config_sha` it was trained under); the two newest are kept. Process 0 only."""
+    """`ckpt/step-<step>/` (adapter, optimizer, scaler) written to a `.tmp` folder and renamed, `DONE` last (the step and the `adapter_sha` it was trained under); the two newest are kept. Process 0 only."""
     tmp, final = ckpt / f"step-{step}.tmp", ckpt / f"step-{step}"
     shutil.rmtree(tmp, ignore_errors=True)
     model.save_pretrained(str(tmp / "adapter"))
     torch.save({"opt": opt.state_dict(), "scaler": scaler.state_dict(), "step": step}, tmp / "state.pt")
-    (tmp / "DONE").write_text(json.dumps({"step": step, "config_sha": sha}))
+    (tmp / "DONE").write_text(json.dumps({"step": step, "adapter_sha": sha}))
     shutil.rmtree(final, ignore_errors=True)
     os.replace(tmp, final)
     for old in sorted((d for d in ckpt.glob("step-*") if d.name[5:].isdigit()), key=lambda d: int(d.name[5:]))[:-2]:
@@ -435,7 +471,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     steps = cfg["smoke_steps"] if cfg["smoke"] else total_steps(len(examples), cfg["epochs"], gb, cfg["max_steps"])
     deadline = float(os.environ["LORA_TRAIN_DEADLINE"])
     ckpt = OUT / "ckpt"
-    resume = None if cfg["smoke"] else latest_checkpoint([OUT, INPUT], cfg["config_sha"])
+    resume = None if cfg["smoke"] else latest_checkpoint([OUT, INPUT], cfg["adapter_sha"])
     model = load_student(torch, cfg, local, adapter=resume / "adapter" if resume else None, train=True)
     params = [p for p in model.parameters() if p.requires_grad]
     opt = torch.optim.AdamW(params, lr=cfg["lr"], weight_decay=0.0)
@@ -452,7 +488,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     model.train()
     t_run, tokens, step_secs, bad, losses, last = time.time(), 0, [], 0, [], start
     for step in range(start, steps):
-        stop = torch.tensor([int(time.time() >= deadline)], device=f"cuda:{local}")
+        stop = torch.tensor([int(not step_can_start(time.time(), deadline, step_secs))], device=f"cuda:{local}")
         if world > 1:
             torch.distributed.broadcast(stop, 0)          # one decision for every process: a process that stopped alone would leave the others waiting in the all-reduce
         if int(stop):
@@ -488,7 +524,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
         if rank == 0:
             log(f"step {last}/{steps} loss {step_loss:.4f} lr {lr_at(step, steps, cfg['lr']):.2e} {step_tokens / step_secs[-1]:.0f} tok/s (this process) peak {torch.cuda.max_memory_allocated() / 2**30:.1f} GiB")
             if not cfg["smoke"] and last % cfg["save_every"] == 0 and last < steps:
-                save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["config_sha"])
+                save_checkpoint(torch, model, opt, scaler, last, ckpt, cfg["adapter_sha"])
         if world > 1:
             torch.distributed.barrier()
     if rank == 0:
@@ -504,7 +540,7 @@ def train_worker(cfg: dict, data_dir: pathlib.Path) -> None:
 
 def generate_batch(torch, model, tok, items: list, arm: str, cfg: dict, eos_ids: set, local: int) -> tuple:
     """([reply], decode steps) for each (task, sample index) of `items` (one batch), by the thinking template and the config's sampling: [{"text", "finish", "tokens", "prompt_tokens", "secs", "prompt_sha",
-    "max_tokens", "config_sha"}], the format of `run_teacher.ask_one` and the adapter's `config_sha`. `secs` is the whole batch's time. `arm` "base" runs with the adapter off, on the very weights the adapter sits on."""
+    "max_tokens", "adapter_sha", "eval_sha"}], the format of `run_teacher.ask_one` and the build's two keys (the adapter that answered, the evaluation the reply belongs to). `secs` is the whole batch's time. `arm` "base" runs with the adapter off, on the very weights the adapter sits on."""
     import contextlib
     prompts = [tok.apply_chat_template(t["messages"], tokenize=False, add_generation_prompt=True, enable_thinking=True) for t, _ in items]
     enc = tok(prompts, return_tensors="pt", padding=True, add_special_tokens=False).to(f"cuda:{local}")
@@ -518,7 +554,7 @@ def generate_batch(torch, model, tok, items: list, arm: str, cfg: dict, eos_ids:
         finish, tokens, ids = finish_and_tokens(row, eos_ids)
         reasoning, content = split_generation(tok.decode(ids, skip_special_tokens=False))
         outs.append({"text": run_teacher.stored_text(content, reasoning, True), "finish": finish, "tokens": tokens, "prompt_tokens": int(mask.sum()), "secs": secs,
-                     "prompt_sha": run_teacher.prompt_sha(t["messages"]), "max_tokens": cfg["max_new_tokens"], "config_sha": cfg["config_sha"]})
+                     "prompt_sha": run_teacher.prompt_sha(t["messages"]), "max_tokens": cfg["max_new_tokens"], "adapter_sha": cfg["adapter_sha"], "eval_sha": cfg["eval_sha"]})
     return outs, int(new.shape[1])
 
 
@@ -527,7 +563,7 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     from transformers import AutoTokenizer
     rank, world, local = dist_setup(torch)
     prefix = "smoke-" if cfg["smoke"] else ""
-    adapter = OUT / "adapter-smoke" if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
+    adapter = OUT / "adapter-smoke" if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["adapter_sha"])
     if adapter is None:
         raise SystemExit("no finished adapter to evaluate (train.json with status done or partial)")
     tasks = [json.loads(line) for line in (data_dir / "eval_tasks.jsonl").read_text().splitlines() if line.strip()]
@@ -639,13 +675,14 @@ def main() -> None:
     snapshot_download(cfg["student"], local_dir=str(STUDENT_DIR), allow_patterns=["*.json", "*.safetensors", "*.jinja", "*.txt", "tokenizer*"])
     log("student downloaded", cfg["student"])
     info = {"smoke": cfg["smoke"], "gpus": gpus, "started": time.strftime("%Y-%m-%d %H:%M:%S", time.gmtime(T0)), "config": cfg}
-    existing = None if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
+    existing = None if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["adapter_sha"])
     if existing is None:
         stop = train_deadline(time.time(), deadline, cfg["train_hours"], cfg["eval_reserve_s"])
         info["train_rc"] = run_worker("train", gpus, data_dir, {"LORA_TRAIN_DEADLINE": str(stop)})
     else:
-        log(f"finished adapter found: {existing}: training skipped")
-    final = (OUT / "adapter-smoke") if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["config_sha"])
+        kept = carry_adapter(existing)
+        log(f"finished adapter found: {existing} (adapter key {cfg['adapter_sha']}): training skipped" + ("" if kept == existing else f"; copied to {kept}, so that the next resume finds it in this session's output"))
+    final = (OUT / "adapter-smoke") if cfg["smoke"] else find_adapter([OUT, INPUT], cfg["adapter_sha"])
     if final is None or not (final / "train.json").exists():
         info["error"] = "training left no adapter"
     elif time.time() < deadline:
