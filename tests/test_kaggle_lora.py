@@ -1113,7 +1113,7 @@ class Docs(unittest.TestCase):
         self.assertEqual(advice.split(", of the ")[0], f"total:    {smoke['total_upper_s'] / 3600:.1f} h with its one batch run to its token budget", "a smoke plan has one figure: no share of the budget is assumed")
         self.assertIn("assuming 75% of it", build_lora.describe(kinds["full"], 8.0, 7.5)[-2])
         self.assertIn(f"a smoke run has one size, {smoke['total_upper_s'] / 3600:.2f} h here", advice)
-        self.assertIn(f"it has one size ({smoke['total_upper_s'] / 3600:.1f} h in this estimate, so `--gpu-hours` {build_lora.smoke_need_h(smoke):g} with the {build_lora.DEADLINE_MARGIN_H} h the deadline leaves), and only a lower "
+        self.assertIn(f"A `--smoke` build that does not fit is told something else, because a smoke run reads none of the four: it has one size ({smoke['total_upper_s'] / 3600:.1f} h in this estimate, so `--gpu-hours` {build_lora.smoke_need_h(smoke):g} with the {build_lora.DEADLINE_MARGIN_H} h the deadline leaves), and only a lower "
                       f"`--max-len` shortens it, by part of the few minutes of its {smoke['steps']} steps", self.section(), "the README's sentence about a smoke build that does not fit has the builder's numbers")
 
 
