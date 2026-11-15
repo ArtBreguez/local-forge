@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 import unittest
 
 from .test_kaggle_lora import Kit, build_lora, lora_eval
@@ -91,6 +92,39 @@ class Deadline(Kit):
         cfg = self.build(smoke=True)
         self.assertEqual(cfg["deadline_h"], 7.5)
         self.assertNotIn("smoke_s", cfg["built_from"]["estimate"])
+
+    def test_a_smoke_build_that_does_not_fit_is_not_told_to_lower_what_a_smoke_run_does_not_read(self):
+        """PR 34 eighth review, m1: it got the full run's advice, "lower --train-hours, --k, --per-family or --max-new-tokens", and a smoke build with each of them lowered is the same run and the same line."""
+        total = lambda cfg: next(x for x in cfg["plan_lines"] if x.startswith("total:"))
+        cfg = self.build(smoke=True, gpu_hours=0.7)
+        est = cfg["built_from"]["estimate"]
+        size, need = est["total_upper_s"] / 3600, float(re.search(r"it needs --gpu-hours ([\d.]+) or more", total(cfg)).group(1))
+        self.assertEqual(cfg["deadline_h"], 0.44, "0.7 less the margin, in hundredths and never later")
+        self.assertTrue(size + 0.25 <= need < size + 0.25 + 0.02, (size, need))
+        self.assertEqual(total(cfg), f"total:    {size:.1f} h with its one batch run to its token budget, of the 0.7 h of quota left: IT DOES NOT FIT (inside the quota, but this run needs {size:.2f} h, {math.ceil((size - 0.44) * 60)} min past the 0.44 h after which the kernel starts nothing: "
+                         f"it would stop training early or leave the last batches unasked): a smoke run has one size, {size:.2f} h here, and the kernel's deadline is at most the quota left less 0.25 h: it needs "
+                         f"--gpu-hours {need:g} or more (and no --deadline-h under its size). --train-hours, --k, --per-family and --max-new-tokens change nothing of a smoke run; only a lower --max-len shortens it, "
+                         f"by part of the {est['steps'] * est['step_s']:.0f} s of its {est['steps']} steps, which run on the longest records it keeps (and the memory the run measures is then that window's)")
+        self.assertNotIn("lower --train-hours", total(cfg))
+        same = self.build(smoke=True, gpu_hours=0.7, train_hours=0.5, k=3, per_family=5, max_new_tokens=512, out=self.dir / "lowered")
+        self.assertEqual((total(same), same["built_from"]["estimate"]), (total(cfg), est), "the four flags the advice names change nothing of a smoke run")
+        over = self.build(smoke=True, gpu_hours=0.5, out=self.dir / "over")
+        self.assertIn(f"IT DOES NOT FIT (more than the quota): a smoke run has one size, {size:.2f} h here", total(over))
+        self.assertIn("it fits", total(self.build(smoke=True, gpu_hours=need, out=self.dir / "enough")), "the hours the advice names are enough")
+        self.assertIn("IT DOES NOT FIT", total(self.build(smoke=True, gpu_hours=round(need - 0.01, 2), out=self.dir / "short")), "and a hundredth less is not")
+        self.assertIn("IT DOES NOT FIT (inside the quota", total(self.build(smoke=True, deadline_h=0.5, out=self.dir / "early")), "a --deadline-h under its size")
+        lengths = sorted(set(build_lora.trainable_lengths(build_lora.read_sft(self.sft), cfg["max_len"], False)))
+        window = self.build(smoke=True, gpu_hours=0.7, max_len=lengths[-2], out=self.dir / "window")["built_from"]["estimate"]
+        self.assertEqual((est["step_s"], window["step_s"]), (round(2 * lengths[-1] / 150, 1), round(2 * lengths[-2] / 150, 1)), "--max-len is the one flag that does: the steps run on the longest record it keeps")
+        kw = dict(gpus=2, steps=4, max_new_tokens=256, eval_batch=8, rates=build_lora.RATES)
+        long, short = build_lora.smoke_plan(4000, **kw), build_lora.smoke_plan(1000, **kw)
+        self.assertEqual(long["total_upper_s"] - short["total_upper_s"], round(4 * 2 * 3000 / 150))
+        self.assertGreater(build_lora.smoke_plan(1, **kw)["total_upper_s"], long["total_upper_s"] - 4 * long["step_s"] - 1, "and by no more than its steps: the rest of a smoke run follows no flag")
+        self.assertIn(f"by part of the {4 * long['step_s'] / 60:.0f} min of its 4 steps", build_lora.describe(long, 0.5, 0.25)[-2])
+        for kind in ({}, {"resume_from": "someone/example-arith-lora-eval"}):
+            full = self.build(gpu_hours=1.0, deadline_h=0.1, out=self.dir / f"full{len(kind)}", **kind)
+            self.assertIn("lower --train-hours, --k, --per-family or --max-new-tokens", total(full), "a full run reads all four")
+            self.assertNotIn("a smoke run has one size", total(full))
 
     def test_the_deadline_is_what_the_kernel_reads(self):
         cfg = self.build()

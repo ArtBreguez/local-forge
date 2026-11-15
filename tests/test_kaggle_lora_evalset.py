@@ -282,7 +282,10 @@ class TwoKeys(Kit):
         self.assertEqual(build_lora.keys_line(cfg), f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the cap on the steps among them: a resume keeps an adapter or a checkpoint of this key and refuses any other), "
                          f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)")
         smoke = self.build(out=self.dir / "smoke", smoke=True)
-        self.assertEqual(build_lora.keys_line(smoke), build_lora.keys_line({**smoke, "smoke": False}) + " [SMOKE build: keys of its own, never a full run's]")
+        self.assertEqual(build_lora.keys_line(smoke), f"adapter key {smoke['adapter_sha']} (the training records and the training settings, the smoke flag among them: no session keeps a smoke run's adapter, it trains its "
+                         f"steps every time), evaluation key {smoke['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a smoke run asks its batch every time, and its "
+                         "replies are scored by this config alone, under the smoke warning) [SMOKE build: keys of its own, never a full run's]")
+        self.assertNotIn("a resume keeps", build_lora.keys_line(smoke), "a smoke run is resumed by none: the full run's sentence is not its own")
 
     def test_the_command_prints_both_keys(self):
         buf = io.StringIO()

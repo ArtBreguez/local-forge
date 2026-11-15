@@ -685,7 +685,7 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     for b in range(0, len(items), cfg["eval_batch"]):
         batch = items[b:b + cfg["eval_batch"]]
         if not run_teacher.can_start(time.time(), deadline, 2 * mean_secs):
-            log(f"eval (process {rank}): deadline, {len(items) - b} replies left for a later session")
+            log(f"eval (process {rank}): deadline, {len(items) - b} replies " + ("not asked: a smoke run is not resumed, and one that is run again asks its whole batch" if cfg["smoke"] else "left for a later session"))
             break
         t_batch = time.time()
         for arm in ARMS:

@@ -1076,6 +1076,73 @@ class Docs(unittest.TestCase):
         self.assertEqual(set(re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", self.section())) - known, elsewhere)
         self.assertNotIn("--max-steps", "".join(str(a.help) for a in ap._actions) + build_lora.__doc__ + lora_eval.__doc__ + score_lora.__doc__)
 
+    def test_every_flag_the_plan_lines_name_is_a_flag_of_the_builder(self):
+        """PR 34 eighth review, m2: the `--max-steps` the seventh round took out of the texts was in a line `describe` prints, where the test above did not look, and putting it back failed nothing."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        build_lora.add_arguments(ap)
+        known = {o for a in ap._actions for o in a.option_strings}
+        p = build_lora.plan([3000] * 1200, [2000] * 70, epochs=2.0, gpus=2, global_batch=16, train_hours=3.0, k=1, max_new_tokens=4096, eval_batch=8, export=True, rates=build_lora.RATES)
+        smoke = build_lora.smoke_plan(4000, gpus=2, steps=4, max_new_tokens=256, eval_batch=8, rates=build_lora.RATES)
+        self.assertTrue(0 < p["max_steps"] < p["steps_full"], "a plan whose training budget binds")
+        loose = build_lora.plan([3000] * 40, [2000] * 9, epochs=2.0, gpus=2, global_batch=16, train_hours=3.0, k=1, max_new_tokens=4096, eval_batch=8, export=False, rates=build_lora.RATES)
+        kinds = {"full": {**p, "smoke_s": smoke["total_upper_s"], "smoke_done": False}, "after --measured": {**p, "smoke_s": 0, "smoke_done": True}, "loose": loose, "smoke": smoke,
+                 "resume": {**p, "smoke_s": 0, "smoke_done": False, "smoke_none": True}, "resume, adapter attached": build_lora.resumed_plan({**p, "smoke_s": 0, "smoke_done": False, "smoke_none": True})}
+        seen = set()
+        for name, plan in kinds.items():
+            for hours, deadline in ((8.0, 7.5), (0.5, 0.25), (8.0, 0.25)):          # it fits, more than the quota, past the deadline: each has its own words
+                text = "\n".join(build_lora.describe(plan, hours, deadline))
+                flags = set(re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", text))
+                self.assertEqual(flags - known, set(), f"{name}, {hours} h: a flag no command has")
+                self.assertNotIn("max-steps", text, name)
+                seen |= flags
+        self.assertEqual(seen, {"--measured", "--gpu-hours", "--resume-from", "--k", "--per-family", "--max-new-tokens", "--train-hours", "--max-len", "--deadline-h"}, "the flags the lines name, all of them looked at")
+        binds = build_lora.describe(kinds["full"], 8.0, 7.5)[1]
+        self.assertIn(f"; the training budget BINDS: max_steps {p['max_steps']} in the config sizes the cosine schedule to these steps, ", binds, "the setting, by the name it has in lora-config.json")
+        self.assertEqual(build_lora.describe(loose, 8.0, 7.5)[1].rsplit("; ", 1)[1], "the training budget does not bind")
+        advice = build_lora.describe(smoke, 0.7, 0.44)[-2]
+        self.assertEqual(advice.split(", of the ")[0], f"total:    {smoke['total_upper_s'] / 3600:.1f} h with its one batch run to its token budget", "a smoke plan has one figure: no share of the budget is assumed")
+        self.assertIn("assuming 75% of it", build_lora.describe(kinds["full"], 8.0, 7.5)[-2])
+        self.assertIn(f"a smoke run has one size, {smoke['total_upper_s'] / 3600:.2f} h here", advice)
+        self.assertIn(f"it has one size ({smoke['total_upper_s'] / 3600:.1f} h in this estimate, so `--gpu-hours` {build_lora.smoke_need_h(smoke):g} with the {build_lora.DEADLINE_MARGIN_H} h the deadline leaves), and only a lower "
+                      f"`--max-len` shortens it, by part of the few minutes of its {smoke['steps']} steps", self.section(), "the README's sentence about a smoke build that does not fit has the builder's numbers")
+
+
+    def test_the_last_line_names_the_command_that_works_for_the_build_it_is(self):
+        """`kaggle datasets create` fails for a dataset that exists (the resume paragraph says so), and the builder's last line gave it to a resume, whose dataset is the earlier run's; step 4 gave it to
+        the full build, whose dataset the smoke build of step 2 created."""
+        out, text = "~/work/kaggle-lora", self.section()
+        tail = "   then   kaggle kernels push -p ~/work/kaggle-lora/kernel   (set the kernel's accelerator to GPU T4 x2; distill/backends/kaggle/README.md)"
+        full, smoke = lora_eval.resolve_config({}), lora_eval.resolve_config({"smoke": True})
+        self.assertEqual(build_lora.next_line(out, full, "someone/rea-lora-eval"),
+                         'next: kaggle datasets version -p ~/work/kaggle-lora/data -m "resume"   (the dataset of the earlier run exists, and this build is its new version: `kaggle datasets create` only under another --dataset-slug)' + tail)
+        self.assertEqual(build_lora.next_line(out, full), "next: kaggle datasets create -p ~/work/kaggle-lora/data   (or, when the dataset exists, as it does after a smoke build pushed under the same --dataset-slug: "
+                         'kaggle datasets version -p ~/work/kaggle-lora/data -m "full run")' + tail)
+        self.assertIn('kaggle datasets version -p ~/work/kaggle-lora/data -m "smoke run")', build_lora.next_line(out, smoke))
+        self.assertIn("accelerator to GPU P100;", build_lora.next_line(out, {**full, "gpu_name": "P100"}))
+        for command in ('kaggle datasets version -p ~/work/kaggle-lora/data -m "resume"', 'kaggle datasets version -p ~/work/kaggle-lora/data -m "full run"'):
+            self.assertIn(command, text, "the README gives the same command")
+        self.assertNotIn("kaggle datasets create -p ~/work/kaggle-lora/data", text, "step 2 created the dataset the full build has: only the smoke build's folder is created")
+        self.assertIn("kaggle datasets create -p ~/work/kaggle-lora-smoke/data", text)
+        import argparse
+        ap = argparse.ArgumentParser()
+        build_lora.add_arguments(ap)
+        self.assertEqual({a.default for a in ap._actions if "--dataset-slug" in a.option_strings}, {None}, "one default for the smoke build and the full one: the same dataset")
+
+    def test_the_numbers_of_a_smoke_run_in_the_help_and_in_the_scorers_warning_are_the_kits(self):
+        import argparse
+        ap = argparse.ArgumentParser()
+        build_lora.add_arguments(ap)
+        d = lora_eval.DEFAULTS
+        help_ = next(a.help for a in ap._actions if "--smoke" in a.option_strings)
+        self.assertIn(f"build the SMOKE run: {d['smoke_steps']} steps on the longest records and one batch of --eval-batch replies (default {d['eval_batch']}) per process and arm,", help_)
+        report = {"smoke": True, "arms": {arm: {"overall": None, "by_kind": {}} for arm in ("base", "lora")}, "paired": {"overall": {"n": 0}, "unpaired": 0}, "tasks_answered": 0, "tasks_in_set": 0, "adapter_sha": "a", "eval_sha": "e",
+                  "outside": {"replies": 0}, "other_adapter": {"replies": 0}, "other_eval": {"replies": 0}}
+        with mock.patch.dict(lora_eval.DEFAULTS, {"smoke_steps": 6}):
+            self.assertEqual(score_lora.lines_of(report)[0], "WARNING: this is a SMOKE run (6 steps, one batch of replies): its numbers say nothing about the adapter")
+        self.assertEqual(score_lora.lines_of(report)[0], f"WARNING: this is a SMOKE run ({d['smoke_steps']} steps, one batch of replies): its numbers say nothing about the adapter")
+
+
 
 if __name__ == "__main__":
     unittest.main()

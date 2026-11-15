@@ -496,6 +496,17 @@ class EvalOnStubs(unittest.TestCase):
         self.assertTrue(any("deadline, 2 replies left" in " ".join(map(str, a)) for a in self.logs), self.logs)
         self.assertEqual(sum(len(l["outs"]) for l in self.shard("lora")), 2)
 
+    def test_a_smoke_run_the_deadline_stops_is_not_told_of_a_later_session(self):
+        """A full run's unasked replies are asked by the session that resumes it; a smoke run is resumed by none (it asks its batch whatever is attached), and its line said "left for a later session"."""
+        said = lambda: [" ".join(map(str, a)) for a in self.logs if "deadline" in " ".join(map(str, a))]
+        self.run_eval(n=4, smoke=True, eval_batch=2, smoke_new_tokens=32, deadline=999)          # the load ended past the deadline: not even the one batch starts
+        self.assertEqual((self.model.calls, said()), ([], ["eval (process 0): deadline, 2 replies not asked: a smoke run is not resumed, and one that is run again asks its whole batch"]))
+        self.logs.clear()
+        self.out.rename(self.root / "smoke-out")
+        self.out.mkdir()
+        self.run_eval(n=4, deadline=999)
+        self.assertEqual((self.model.calls, said()), ([], ["eval (process 0): deadline, 4 replies left for a later session"]))
+
     def test_the_deadline_lets_a_batch_start_that_fits(self):
         self.run_eval(deadline=1000 + 200 + 200 + 1, clock=Clock())
         self.assertEqual(len(self.model.calls), 4, "the second batch is expected to end at 1400, before 1401")
@@ -531,6 +542,22 @@ class EvalOnStubs(unittest.TestCase):
         self.assertEqual([c["adapter_on"] for c in self.model.calls], [False, True], "the review: 0 calls")
         self.assertEqual(self.rank_info("smoke-"), first, "the same batch, measured again: the review's {batches: 0, gen_tokens: 0, gen_step_s: 0.0}")
         self.assertEqual(len(self.shard("lora", "smoke-")), 2)
+
+    def test_a_smoke_evaluation_loads_its_own_adapter_whatever_adapter_is_attached(self):
+        """PR 34 eighth review, m2: the worker's own choice (`main` has the same one, and a test) ran in no test with an `adapter/` attached. A smoke worker that looked for one stopped on the full output's
+        adapter (another key: `smoke` is in it) after the smoke training was paid, and took a smoke adapter renamed `adapter/`."""
+        kw = dict(n=4, smoke=True, eval_batch=2, smoke_new_tokens=32)
+        self.adapter(self.inp / "full", sha="ffffffffffffffff")
+        self.run_eval(**kw)
+        self.assertEqual(self.loads, [(self.out / "adapter-smoke", False)], "an attached adapter of another key is not looked at: nothing to refuse")
+        self.assertEqual([c["adapter_on"] for c in self.model.calls], [False, True])
+        self.next_session()
+        self.adapter(self.inp / "renamed")
+        self.run_eval(**kw)
+        self.assertEqual(self.loads, [(self.out / "adapter-smoke", False)], "nor is one that says this build's key: the smoke run evaluates the adapter it has just trained")
+        with self.assertRaisesRegex(SystemExit, "trained under adapter key 'ffffffffffffffff', this build's is"):
+            lora_eval.find_adapter([self.inp], SHA)          # what a worker that looked would have met: the test is about two adapters that are there to be found
+        self.assertEqual(lora_eval.find_adapter([self.inp / "renamed"], SHA), self.inp / "renamed" / "adapter")
 
     def test_a_full_run_does_take_the_replies_that_are_attached(self):
         """The other side of the same line: what a smoke run leaves alone is what a resume of a full run starts from."""

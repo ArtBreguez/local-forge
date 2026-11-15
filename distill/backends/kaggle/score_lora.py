@@ -198,7 +198,7 @@ def lines_of(report: dict, run_info: dict = None) -> list:
     and the overall row."""
     out = []
     if report.get("smoke") or (run_info or {}).get("smoke"):
-        out.append("WARNING: this is a SMOKE run (4 steps, one batch of replies): its numbers say nothing about the adapter")
+        out.append(f"WARNING: this is a SMOKE run ({lora_eval.DEFAULTS['smoke_steps']} steps, one batch of replies): its numbers say nothing about the adapter")
     if run_info:
         t = run_info.get("train") or {}
         lr_last, lr_peak = t.get("lr_last"), t.get("lr_peak")

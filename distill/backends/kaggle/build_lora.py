@@ -361,10 +361,36 @@ def fit_verdict(p: dict, gpu_hours: float, deadline_h: float) -> str:
     return ""
 
 
+def default_deadline(limit_h: float) -> float:
+    """The deadline `build` gives a kernel whose deadline can be at most `limit_h` (the quota left, less the smoke run still to come, less `DEADLINE_MARGIN_H`): never later than it, in hundredths of an hour,
+    and never later than the kit's own (`lora_eval.DEFAULTS`)."""
+    return min(lora_eval.DEFAULTS["deadline_h"], math.floor(limit_h * 100) / 100)
+
+
+def smoke_need_h(p: dict) -> float:
+    """The least --gpu-hours, in hundredths, with which a `smoke_plan` fits the deadline `build` gives it by default (`default_deadline` of the quota less `DEADLINE_MARGIN_H`): found with that very
+    arithmetic, so the hours `smoke_advice` names are hours with which the build says `it fits`."""
+    need = math.ceil(p["total_upper_s"] / 36) / 100 + DEADLINE_MARGIN_H
+    while default_deadline(round(need, 2) - DEADLINE_MARGIN_H) * 3600 < p["total_upper_s"]:
+        need += 0.01
+    return round(need, 2)
+
+
+def smoke_advice(p: dict) -> str:
+    """What `describe` tells a `smoke_plan` that does not fit. Not what it tells a full run: `smoke_plan` reads no --train-hours, --k, --per-family or --max-new-tokens (`smoke_steps` steps, one batch per
+    process and arm, `smoke_new_tokens`), so lowering them leaves the same run. Its size is the setup, the two loads, the batch and the steps; only the steps follow a flag: they run on the longest records that
+    --max-len keeps."""
+    steps_s = p["steps"] * p["step_s"]
+    steps = f"{steps_s / 60:.0f} min" if steps_s >= 90 else f"{steps_s:.0f} s"
+    return (f"a smoke run has one size, {p['total_upper_s'] / 3600:.2f} h here, and the kernel's deadline is at most the quota left less {DEADLINE_MARGIN_H} h: it needs --gpu-hours {smoke_need_h(p):g} or more "
+            "(and no --deadline-h under its size). --train-hours, --k, --per-family and --max-new-tokens change nothing of a smoke run; only a lower --max-len shortens it, by part of the "
+            f"{steps} of its {p['steps']} steps, which run on the longest records it keeps (and the memory the run measures is then that window's)")
+
+
 def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     """The lines the builder prints about a plan (`plan` or `smoke_plan`): what is assumed, what each stage costs, whether it fits `gpu_hours` (the quota that is left when the kernel starts, with the smoke run
     that has still to be run added: `p["smoke_s"]`, 0 after --measured and on a resume, and the `smoke:` line says which) AND the kernel's own deadline (`fit_verdict`), and what the kernel does at the deadline. A `resumed_plan` says that its session does not train, counts
-    no training, and is not told to lower --train-hours."""
+    no training, and is not told to lower --train-hours. A `smoke_plan` that does not fit is told none of the four flags of a full run: it reads none of them (`smoke_advice`)."""
     h = lambda s: f"{s / 3600:.1f} h"
     r = p["rates"]
     where = "assumed" if r == RATES else "assumed, with the numbers of --measured"
@@ -391,8 +417,10 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     extra = p.get("smoke_s", 0)
     total, typical = p["total_upper_s"] + extra, p["total_typical_s"] + extra
     verdict = fit_verdict(p, gpu_hours, deadline_h)
-    out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
+    out.append(f"total:    {h(total)}" + (" with its one batch run to its token budget" if p.get("smoke") else f" assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it")
+               + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
                + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): " + (
+                   smoke_advice(p) if p.get("smoke") else
                    "lower --k, --per-family or --max-new-tokens (another evaluation of the same adapter: the adapter is kept and the replies are asked again); --train-hours is the adapter's and no part "
                    "of this total: keep it" if p.get("resumed") else
                    "lower --train-hours, --k, --per-family or --max-new-tokens (on a resume: a --train-hours that changes the cap on "
@@ -491,7 +519,7 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
     if limit_h <= 0 or (deadline_h is not None and deadline_h > limit_h):
         raise SystemExit(f"--gpu-hours {gpu_hours:g}: the kernel's deadline can be at most {max(limit_h, 0):.2f} h (the quota left, " + (f"less {p['smoke_s'] / 3600:.1f} h for the smoke run that is still to come, " if p.get("smoke_s") else "") + f"less {DEADLINE_MARGIN_H} h)"
                          + ("" if deadline_h is None else f", and --deadline-h is {deadline_h:g}"))
-    given["deadline_h"] = deadline_h or min(d["deadline_h"], math.floor(limit_h * 100) / 100)          # never later than the limit, in hundredths of an hour
+    given["deadline_h"] = deadline_h or default_deadline(limit_h)          # never later than the limit, in hundredths of an hour
     train_lines = [json.dumps(r) for r in rows]          # `train.jsonl`, as it is written below: its sha is what the adapter key holds, and what the kernel computes again from the file it is given
     facts = {**facts, "files": [pathlib.Path(sft_path).name], "sha256": hashlib.sha256(pathlib.Path(sft_path).read_bytes()).hexdigest()[:16],
              "train_sha256": lines_sha(train_lines), "est_examples": len(lengths)}
@@ -586,7 +614,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--gpu-hours", type=float, default=8.0, help="GPU hours of quota left when the kernel starts, what the estimate and the deadline are judged against (default %(default)s). For a full build without --measured the smoke run that comes first is taken out of it; with --measured it has been run, so give what is left after it. With --resume-from no smoke run is counted, with or without --measured: none comes before a resume. A --smoke build is charged none either")
     ap.add_argument("--export-gguf", action="store_true", help="also merge the adapter into fp16 weights and write a Q4_K_M GGUF to /kaggle/working/gguf (about 5.6 GB; not what was evaluated; not tried on Kaggle)")
     ap.add_argument("--fla", action="store_true", help="install flash-linear-attention in the kernel (fast kernels for the student's linear-attention layers; not tried on a T4)")
-    ap.add_argument("--smoke", action="store_true", help="build the SMOKE run: 4 steps on the longest records and one batch of 8 replies per process and arm, its replies named smoke-replies-*, its adapter adapter-smoke/, and keys of its own (nothing of it is resumed or scored as a full run's); it measures the step time, the generation speed (at the full run's batch) and the peak memory")
+    ap.add_argument("--smoke", action="store_true", help=f"build the SMOKE run: {d['smoke_steps']} steps on the longest records and one batch of --eval-batch replies (default {d['eval_batch']}) per process and arm, its replies named smoke-replies-*, its adapter adapter-smoke/, and keys of its own (nothing of it is resumed or scored as a full run's); it measures the step time, the generation speed (at the full run's batch) and the peak memory")
     ap.add_argument("--measured", type=pathlib.Path, default=None, help="the run.json of a smoke run: its measured training speed (tokens per second per GPU) and generation step time replace the assumed ones in the estimate")
     ap.add_argument("--dataset-slug", default=None, help="default <domain>-lora-data")
     ap.add_argument("--kernel-slug", default=None, help="default <domain>-lora-eval")
@@ -606,14 +634,27 @@ def run(a: argparse.Namespace, domain) -> None:
     print(excluded_line(t["eval"]["excluded"]))
     print(keys_line(cfg))
     print("\n".join(cfg["plan_lines"]))
-    print(f"next: kaggle datasets create -p {a.out}/data   then   kaggle kernels push -p {a.out}/kernel   (set the kernel's accelerator to {lora_eval.accelerator(cfg['gpu_name'])[0]}; distill/backends/kaggle/README.md)")
+    print(next_line(a.out, cfg, a.resume_from))
+
+
+def next_line(out, cfg: dict, resume_from: str = "") -> str:
+    """The builder's last line: the two commands that come next. The dataset first, as a NEW VERSION when it exists: `kaggle datasets create` fails for a dataset that exists, and it does exist on a resume
+    (`resume_from`: the run that is resumed was pushed with it) and for the full build that follows a smoke build (the two have the same dataset unless --dataset-slug says otherwise)."""
+    version = f'kaggle datasets version -p {out}/data -m "{"resume" if resume_from else "smoke run" if cfg["smoke"] else "full run"}"'
+    dataset = (f"{version}   (the dataset of the earlier run exists, and this build is its new version: `kaggle datasets create` only under another --dataset-slug)" if resume_from else
+               f"kaggle datasets create -p {out}/data   (or, when the dataset exists, as it does after a smoke build pushed under the same --dataset-slug: {version})")
+    return f"next: {dataset}   then   kaggle kernels push -p {out}/kernel   (set the kernel's accelerator to {lora_eval.accelerator(cfg['gpu_name'])[0]}; distill/backends/kaggle/README.md)"
 
 
 def keys_line(cfg: dict) -> str:
-    """The two keys of a build, for its output: what a resume keeps (the adapter, by `adapter_sha`) and what it asks again (the replies of another `eval_sha`)."""
+    """The two keys of a build, for its output: what a resume keeps (the adapter, by `adapter_sha`) and what it asks again (the replies of another `eval_sha`). A smoke build's are said for what they are:
+    its kernel keeps nothing (`lora_eval.attached_adapter`, `eval_worker`), and nothing of it is a full run's."""
+    if cfg["smoke"]:
+        return (f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the smoke flag among them: no session keeps a smoke run's adapter, it trains its steps every time), "
+                f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a smoke run asks its batch every time, and its replies are scored "
+                "by this config alone, under the smoke warning) [SMOKE build: keys of its own, never a full run's]")
     return (f"adapter key {cfg['adapter_sha']} (the training records and the training settings, the cap on the steps among them: a resume keeps an adapter or a checkpoint of this key and refuses any other), "
-            f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)"
-            + (" [SMOKE build: keys of its own, never a full run's]" if cfg["smoke"] else ""))
+            f"evaluation key {cfg['eval_sha']} (the adapter key, the exclusion, the tasks asked, the reply budget, the sampling and k: a reply of another evaluation key is asked again and never scored)")
 
 
 def excluded_line(info: dict) -> str:
