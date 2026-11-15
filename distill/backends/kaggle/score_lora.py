@@ -9,10 +9,12 @@ the training settings) and `eval_sha` (the evaluation the reply belongs to: that
 are another adapter's for a full build, and with the smoke build's own config the report starts with the smoke warning. A replies file can hold more (an output attached with `--resume-from` that was
 made by a build with other `--train-tasks` or another quota): a reply of a task outside the set is counted and printed ("N replies of tasks outside the evaluation set, not scored"), and so is a reply of
 another adapter and a reply of this adapter written under another evaluation key. The report prints both keys. A `--heldout` file that lacks a task of the set, or a run.json of another build, is refused.
+The config's word is not taken for its keys: both are computed again from its settings and the shas it records of the two files of the dataset (`lora_eval.check_keys`, the kernel's own check), and a config
+that was edited after the build (a smoke build's with `smoke` set to false, another budget) is refused, as the kernel refuses it.
 
 A reply is judged by the code `kaggle-score` runs: `score_replies.reply_of` (a cut-off reply ends in the truncation marker, a failed request is an error) and `traces.verdict`, whose last step is the subject's
-own `domain.verify` (REA: `scoring.score_strict`, the whitelist grammar on the text after the last `Answer:` line). A reply that answered another prompt than the task's now (its `prompt_sha`) is refused, as
-`kaggle-score` refuses it: the prompts are in the evaluation key (the bytes of the build's `eval_tasks.jsonl`), so a reply that carries the key and another prompt means the `--heldout` files, or the
+own `domain.verify` (REA: `scoring.score_strict`, the whitelist grammar on the text after the last `Answer:` line). A reply that answered another prompt than the task's now (its `prompt_sha`) is refused
+(SystemExit; `kaggle-score` skips and counts such a reply): the prompts are in the evaluation key (the bytes of the build's `eval_tasks.jsonl`), so a reply that carries the key and another prompt means the `--heldout` files, or the
 subject's prompt code, are not the build's. The FAMILY of a row is the task's in the held-out file (where the truth is), never what the replies file says. For the generated families `scoring.score` (the evaluation scorer of rea-bench's held-out arm) and `score_strict` are the same function; they differ only for the legacy templates.
 
 Per family and arm: replies, accepted (accuracy, with its 95% Wilson interval), wrong, no `Answer:` line, truncated, errors, the share cut off at the budget (`finish == "length"`) and the mean completion tokens,
@@ -30,10 +32,13 @@ import math
 import pathlib
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parents[3]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+HERE = pathlib.Path(__file__).resolve().parent
+ROOT = HERE.parents[2]
+for _p in (ROOT, HERE):
+    if str(_p) not in sys.path:
+        sys.path.insert(0, str(_p))
 from distill import outputs, score_replies, traces  # noqa: E402
+import lora_eval  # noqa: E402  (the kernel's own `resolve_config` and `check_keys`: the keys of a config are computed again here as the kernel computes them)
 
 ARMS = ("base", "lora")
 
@@ -60,7 +65,10 @@ KEYS = ("adapter_sha", "eval_sha")          # the training identity and the eval
 
 def read_build(path) -> dict:
     """{"ids": the ids of the evaluation set, "adapter_sha", "eval_sha", "smoke"} of a build's `lora-config.json` (`build_lora.make_config`). SystemExit for a file that is not one: without the set and the two
-    keys there is nothing that says which replies may be scored. `smoke`: the build is a smoke run's (its keys are its own: only smoke replies carry them, and the report says what they are worth)."""
+    keys there is nothing that says which replies may be scored. `smoke`: the build is a smoke run's (its keys are its own: only smoke replies carry them, and the report says what they are worth).
+    The config's word is not taken for its keys, nor for `smoke`, which is a setting in both: the two keys are computed again from its settings and the shas it records of `train.jsonl` and
+    `eval_tasks.jsonl`, by the kernel's own check (`lora_eval.check_keys`, here without the dataset), and a config whose keys are not the keys of its settings is SystemExit, as it is in the kernel: a
+    smoke build's config with `smoke` edited to false would otherwise have its smoke replies scored (they carry the keys the file still has) with no warning."""
     try:
         data = json.loads(pathlib.Path(path).read_text())
     except (OSError, json.JSONDecodeError):
@@ -70,7 +78,14 @@ def read_build(path) -> dict:
     ids, keys = (ev.get("ids") if isinstance(ev, dict) else None), {k: data.get(k) if isinstance(data, dict) else None for k in KEYS}
     if not (isinstance(ids, list) and ids and all(isinstance(i, str) for i in ids) and all(isinstance(v, str) and v for v in keys.values())):
         raise SystemExit(f"{path} is not the lora-config.json of a build_lora build (an `adapter_sha`, an `eval_sha` and the ids of its evaluation set, `built_from.eval.ids`): build again with this version, the set is what is scored")
-    return {"ids": set(ids), **keys, "smoke": data.get("smoke") is True}
+    try:
+        cfg = lora_eval.resolve_config(data)
+        lora_eval.check_keys(cfg)
+    except (ValueError, TypeError) as e:
+        raise SystemExit(f"{path} is not the lora-config.json of a build_lora build (the kernel would not take its settings: {e})")
+    except SystemExit as e:
+        raise SystemExit(f"{path}: {e}")
+    return {"ids": set(ids), **keys, "smoke": cfg["smoke"] is True}
 
 
 def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
@@ -79,7 +94,7 @@ def read_arm(path, tasks: dict, *, domain, build: dict) -> dict:
     that is not in it are counted (`info["outside"]`, the task ids in `outside`) and never scored. A missing or malformed entry is counted and skipped. A reply is scored only when it carries BOTH keys of
     `build` (`read_build`): one of another adapter, or that does not say (`info["other_adapter"]`), and one of this adapter written under another evaluation key, or that does not say (`info["other_eval"]`:
     another exclusion, another set of tasks or another prompt of a task; a resume asks it again, and it stays in the file when the deadline came first), are counted and skipped, before anything else of the reply is looked at.
-    A reply with no fingerprint is skipped as unchecked, and a reply that answered another prompt is SystemExit (the same refusal as `kaggle-score`)."""
+    A reply with no fingerprint is skipped as unchecked, and a reply that answered another prompt is SystemExit (`kaggle-score` skips and counts one; here it carries the build's evaluation key, which holds the prompts)."""
     lines, info = score_replies.read_replies(path)
     info = collections.Counter(info)
     rows, outside = {}, []
@@ -219,7 +234,7 @@ def main(argv=None) -> None:
     from distill.domains import load
     ap = argparse.ArgumentParser(description="Score the base and adapter replies of a lora_eval.py run against the held-out truth")
     ap.add_argument("--domain", default="rea", help="the subject: a package of distill/domains (default %(default)s)")
-    ap.add_argument("--config", type=pathlib.Path, required=True, help="the build's data/lora-config.json (the one the kernel ran): only the tasks of its evaluation set, and only the replies written under its adapter key and its evaluation key, are scored")
+    ap.add_argument("--config", type=pathlib.Path, required=True, help="the build's data/lora-config.json (the one the kernel ran): only the tasks of its evaluation set, and only the replies written under its adapter key and its evaluation key, are scored; a config whose keys are not the keys of its settings (edited after the build) is refused")
     ap.add_argument("--heldout", type=pathlib.Path, nargs="+", required=True, help="the held-out task files the run was built from (the truth is read here)")
     ap.add_argument("--base", type=pathlib.Path, required=True, help="replies-base.jsonl")
     ap.add_argument("--lora", type=pathlib.Path, required=True, help="replies-lora.jsonl")

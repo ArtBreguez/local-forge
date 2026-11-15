@@ -14,6 +14,7 @@ from __future__ import annotations
 import contextlib
 import io
 import json
+import math
 import os
 import pathlib
 import sys
@@ -572,6 +573,26 @@ class BuilderRefusesTheResume(Kit):
         self.assertIn("training is skipped", cfg["plan_lines"][-1])
         self.assertEqual((keys_of(cfg), est), (keys_of(whole), whole["built_from"]["estimate"]), "the config is the whole plan's: the cap on the steps and the reserves are its numbers, and the keys with them")
         self.assertEqual(json.loads((self.dir / "kept" / "data" / "lora-config.json").read_text())["built_from"]["estimate"], est)
+
+    def test_a_resume_built_without_measured_that_skips_training_has_to_fit_what_its_session_does(self):
+        """The seventh review's second note: the finished adapter in --resume-output, no --measured (the run that is resumed was built without it, and the resume keeps that): the smoke run "that comes
+        first" was added to a session that runs none, and the plan did not fit hours that hold the setup, one model load and the evaluation."""
+        first = self.build(out=self.dir / "plain")
+        put_adapter(self.fetched, first["adapter_sha"])
+        est = first["built_from"]["estimate"]
+        left = est["total_upper_s"] - est["train_s"] - 300
+        hours = math.ceil((left / 3600 + build_lora.DEADLINE_MARGIN_H) * 100) / 100          # the least quota whose deadline (the quota less the margin) holds what is left to do
+        self.assertGreater(left + est["smoke_s"], hours * 3600, "the fixture: with the smoke run on top it is more than the quota")
+        cfg = self.resume(out=self.dir / "kept", measured=None, train_hours=None, gpu_hours=hours)
+        total = next(x for x in cfg["plan_lines"] if x.startswith("total:"))
+        self.assertEqual(total, f"total:    {left / 3600:.1f} h assuming every batch of the evaluation runs to the token budget, ~{(est['total_typical_s'] - est['train_s'] - 300) / 3600:.1f} h assuming 75% of it, of the {hours:g} h of quota left: it fits")
+        self.assertEqual(cfg["deadline_h"], math.floor((hours - build_lora.DEADLINE_MARGIN_H) * 100) / 100, "the quota less the margin: no smoke run is taken out of it")
+        self.assertIn("smoke:    none is counted: a resume (--resume-from) continues a run that was started, and no smoke run comes before it: --gpu-hours is the quota that is left now", cfg["plan_lines"])
+        self.assertFalse([x for x in cfg["plan_lines"] if x.startswith("smoke:    +")])
+        self.assertIn("overhead: 0.4 h (pip install, download, one model load)", cfg["plan_lines"])
+        self.assertIn("training is skipped", cfg["plan_lines"][-1])
+        self.assertEqual(keys_of(cfg), keys_of(first))
+        self.assertIn("IT DOES NOT FIT", next(x for x in self.build(out=self.dir / "fresh", gpu_hours=hours)["plan_lines"] if x.startswith("total:")), "a build that resumes nothing still pays its smoke run and its training")
 
     def test_a_resume_that_skips_training_and_still_does_not_fit_is_told_what_is_left_to_lower(self):
         put_adapter(self.fetched, self.first["adapter_sha"])

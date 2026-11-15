@@ -2,8 +2,8 @@
 `python3 -m distill.backends.kaggle.score_lora` (on your machine, where the truth is) can say whether the adapter helps. `build_lora.py` writes the dataset and the kernel; the README of this folder has the
 commands.
 
-It is the file of the dataset's `lib`, NOT pushed as the kernel's `run.py` (which is a launcher that imports it: a script kernel ships one file, and the workers below need to start this one by path). Next to it in
-the dataset are `run_teacher.py` (reused: the checkpoint format, resume and deadline rules of the teacher kernel) and `distill.<module>.py` (the stdlib-only core: `config`, `traces`, `domain`, `sft`, rebuilt by
+It is a file of the dataset, NOT pushed as the kernel's `run.py` (which is a launcher that imports it: a script kernel ships one file, and the workers below need to start this one by path). Next to it in
+the dataset are `run_teacher.py` (reused: the checkpoint format, resume and deadline rules of the teacher kernel) and `distill.<module>.py` (the stdlib-only core: `config`, `traces`, `domain`, `sft` and the package's `__init__`, rebuilt by
 `unpack_lib` as the package `distill`, because the Kaggle CLI uploads the files of a folder and skips its sub-folders). The record -> training example code is `distill/sft.py`, the code of the Modal trainer.
 
 What it does, in order (`main`, no GPU library imported in this process):
@@ -16,7 +16,7 @@ What it does, in order (`main`, no GPU library imported in this process):
      replies each, the tasks split between the processes; every batch is appended at once to `replies-base.r<rank>.jsonl` / `replies-lora.r<rank>.jsonl` in the line format of `run_teacher.py`, base and
      adapter for the same tasks next to each other, so a run stopped by the deadline holds paired answers. Resume asks only what is missing, failed or stale (`run_teacher.pending`);
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
-`--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, and a smoke build has two keys of its own, so that neither its
+`--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (its replies and its `eval-rank` files are named `smoke-...`, its adapter is `adapter-smoke/`, and a smoke build has two keys of its own, so that neither its
 adapter nor a reply of it can be resumed or scored as a full run's, whatever the file is called; and a smoke run itself resumes nothing of an attached output, not even the replies of a smoke run of the
 same build, `replies_root`: it always asks its batch): it measures the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
@@ -27,11 +27,12 @@ another one is refused, so a checkpoint is never continued under another schedul
 reply belongs to: a reply written under another one is asked
 again, and the adapter is KEPT when only the evaluation changed (other `--train-tasks` that exclude other held-out tasks, another quota, another budget: none is read by the training worker). Every reply
 carries both keys. Every setting of `DEFAULTS` is in one of the two or in `NOT_KEYED` with the reason (a test refuses a new setting that is in none), and the kernel computes both keys again from the files
-it is given before it does anything (`check_keys`): a config, a `train.jsonl` or an `eval_tasks.jsonl` changed after the build stops it, by one byte of a prompt or of a family as by a task. An attached
+it is given before it does anything (`check_keys`): a config, a `train.jsonl` or an `eval_tasks.jsonl` changed after the build stops it, by one byte of a prompt or of a family as by a task
+(`score_lora` runs the same check on the config it is given, with the shas the config records in place of the files). An attached
 adapter or checkpoint of another adapter key stops it there too, before anything is installed or downloaded (`attached_adapter`). A finished adapter that is found in an attached output is copied
 into this session's output (`carry_adapter`), so that the next resume, which attaches this one, still has it. The merged replies files hold the tasks of this build's `eval_tasks.jsonl` and no other
 (`merge_shards`): an attached output never brings a task back.
-Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the batch's first item): the same replies are not reproducible batch by batch.
+Nothing is scored here: the truth is not in the dataset. HF `generate` seeds a batch, not a reply (seed = seed_base + the sample index of the batch's first item): the same replies are not reproducible batch by batch.
 """
 from __future__ import annotations
 
@@ -82,7 +83,7 @@ from distill import config, sft  # noqa: E402
 
 DEFAULTS = {
     "student": config.DEFAULT_STUDENT,       # the base model of modal_train.py
-    "max_len": 4096,                         # training window in tokens (a longer record is dropped, never cut); the Modal thinking config is 8192, which a T4 cannot hold
+    "max_len": 4096,                         # training window in tokens (a longer record is dropped, never cut); Modal's recommended thinking window is 8192 (`config.THINKING_WINDOW`), which a T4 cannot hold
     "rank": 16,                              # modal_train.py: 32; halved for the T4's memory (the optimizer state of the adapter is fp32); alpha is 2 x rank as there
     "dropout": 0.05,
     "epochs": 2.0,
@@ -114,7 +115,7 @@ DEFAULTS = {
     "smoke_new_tokens": 256,                 # the smoke run's reply budget: one batch of `eval_batch` replies per process and arm, so that `gen_step_s` is measured at the batch the full run uses
     "adapter_sha": "",                       # the builder's ADAPTER key (`adapter_key`: the training records and the settings of `TRAIN_KEYS`); an adapter or a checkpoint of another one is refused
     "eval_sha": "",                          # the builder's EVALUATION key (`eval_key`: the adapter key, the content exclusion, the tasks asked and the settings of `EVAL_KEYS`); a reply of another one is asked again, and never scored
-    "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # modal_train.py's, plus bitsandbytes
+    "pins": ["transformers==5.22.2", "peft==0.21.2", "accelerate>=1.12", "bitsandbytes>=0.46", "huggingface_hub>=1.31,<3", "hf_transfer", "sentencepiece", "protobuf"],      # transformers and peft are modal_train.py's pins (a test compares the two); the rest follows its list without datasets, plus bitsandbytes and hf_transfer
 }
 EOS_TEXT = ("<|im_end|>", "<|endoftext|>")
 THINKING = True          # the replies are asked with the thinking template and the thinking sampling; this kit has no other mode, and the evaluation key says so
@@ -177,21 +178,32 @@ def eval_key(adapter_sha: str, excluded_sha: str, tasks_sha: str, cfg: dict) -> 
     return hashlib.sha256(json.dumps([adapter_sha, excluded_sha, tasks_sha, {k: cfg[k] for k in EVAL_KEYS}, {"thinking": THINKING}], sort_keys=True).encode()).hexdigest()[:16]
 
 
-def check_keys(cfg: dict, data_dir: pathlib.Path) -> None:
+def check_keys(cfg: dict, data_dir: "pathlib.Path | None" = None) -> None:
     """SystemExit unless the two keys of the config are the keys of what this kernel is about to read: `adapter_key` of the dataset's `train.jsonl` and the settings of `cfg` (resolved), `eval_key` of that,
     the exclusion the config names (`built_from.eval.excluded.sha`) and the dataset's `eval_tasks.jsonl` (its bytes: a prompt or a family edited there is another evaluation, as a task added or dropped is).
     The builder wrote both; a `lora-config.json` edited by hand after the build (another budget, another `max_steps`), a config with no key, or a training or evaluation file that is not the build's would
     stamp an adapter and replies with keys that do not describe them. And unless the set the config names (`built_from.eval.ids`: what `score_lora --config` scores) is the set of that file (what is asked
-    here): the two are written by the same build."""
+    here): the two are written by the same build.
+    Without `data_dir` (`score_lora.read_build`: the scorer is given the config, not the dataset) the two files are not read: their shas are the ones the build recorded in the config
+    (`built_from.train.train_sha256`, `built_from.eval.sha256`), and the keys are computed from them and from the config's settings in the same way. That stops a setting edited in the config after the
+    build (`smoke` set to false in a smoke build's config: its replies would be scored with no warning), since the keys the config carries, and its replies with it, are of the settings as they were built.
+    The set of ids is not compared there: there is no file to compare it with."""
     built = cfg.get("built_from") if isinstance(cfg.get("built_from"), dict) else {}
     ev = built.get("eval") if isinstance(built.get("eval"), dict) else {}
-    excluded = (ev.get("excluded") or {}).get("sha")
-    adapter = adapter_key(file_sha(pathlib.Path(data_dir) / "train.jsonl"), cfg)
-    for name, what, mine in (("adapter_sha", "adapter key", adapter), ("eval_sha", "evaluation key", eval_key(adapter, excluded, file_sha(pathlib.Path(data_dir) / "eval_tasks.jsonl"), cfg))):
+    excluded = ev["excluded"].get("sha") if isinstance(ev.get("excluded"), dict) else None
+    if data_dir is None:
+        train_sha, tasks_sha = (built.get("train") if isinstance(built.get("train"), dict) else {}).get("train_sha256"), ev.get("sha256")
+        made, changed = "its own settings and the two files it records (built_from) make", "the config was changed after the build (or it is of another version of the kit)"
+        then = "Give the lora-config.json as build_lora.py wrote it (the dataset's); a setting is never edited in it"
+    else:
+        train_sha, tasks_sha = file_sha(pathlib.Path(data_dir) / "train.jsonl"), file_sha(pathlib.Path(data_dir) / "eval_tasks.jsonl")
+        made, changed = "the files and settings of this dataset make", "the config, train.jsonl or eval_tasks.jsonl was changed after the build (or the dataset is of another version of the kit)"
+        then = "Build again with build_lora.py; a setting is never edited in the dataset"
+    adapter = adapter_key(train_sha, cfg)
+    for name, what, mine in (("adapter_sha", "adapter key", adapter), ("eval_sha", "evaluation key", eval_key(adapter, excluded, tasks_sha, cfg))):
         if cfg.get(name) != mine:
-            raise SystemExit(f"lora-config.json says {what} {cfg.get(name)!r}, and the files and settings of this dataset make {mine!r}: the config, train.jsonl or eval_tasks.jsonl was changed after the build "
-                             "(or the dataset is of another version of the kit). Build again with build_lora.py; a setting is never edited in the dataset")
-    if ev.get("ids") != sorted(eval_ids(data_dir)):
+            raise SystemExit(f"lora-config.json says {what} {cfg.get(name)!r}, and {made} {mine!r}: {changed}. {then}")
+    if data_dir is not None and ev.get("ids") != sorted(eval_ids(data_dir)):
         raise SystemExit("lora-config.json names another evaluation set (built_from.eval.ids, what score_lora scores) than the tasks of eval_tasks.jsonl (what is asked here): the config was changed after "
                          "the build. Build again with build_lora.py")
 

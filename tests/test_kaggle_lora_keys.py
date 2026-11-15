@@ -337,12 +337,94 @@ class Smoke(Kit):
         self.assertFalse(any("SMOKE" in x for x in score_lora.lines_of(full, {"train": {}})))
         self.assertEqual(sum("SMOKE" in x for x in score_lora.lines_of(full, {"smoke": True, "train": {}})), 1, "a run.json that says smoke still says it")
 
-    def test_a_config_whose_smoke_is_not_true_is_not_a_smoke_build(self):
+    def test_a_smoke_config_edited_to_say_it_is_not_one_is_refused_by_the_scorer(self):
+        """The seventh review's first note: a smoke build's `lora-config.json` with `"smoke": false` written into it by hand, no --run-info: the 16 smoke replies were scored (the keys are the file's,
+        unchanged) and no warning was printed. The kernel refuses that file (`check_keys`); the scorer now does, by the same function."""
+        base, lora = self.replies(keys_of(self.smoke))
+        data = json.loads(self.config("smoke").read_text())
+        self.assertIs(data["smoke"], True)
+        edited = self.dir / "edited.json"
+        edited.write_text(json.dumps({**data, "smoke": False}))
+        args = ["--domain", "example_arith", "--heldout", str(self.heldout), "--base", str(base), "--lora", str(lora), "--out", str(self.dir / "report.json")]
+        buf = io.StringIO()
+        made = lora_eval.adapter_key(data["built_from"]["train"]["train_sha256"], kernel_cfg({**data, "smoke": False}))
+        self.assertEqual(made, self.full["adapter_sha"], "the fixture: what the edit pretends to be is the full build of the same files")
+        with contextlib.redirect_stdout(buf), self.assertRaises(SystemExit) as e:
+            score_lora.main([*args, "--config", str(edited)])
+        self.assertEqual(str(e.exception), f"{edited}: lora-config.json says adapter key {data['adapter_sha']!r}, and its own settings and the two files it records (built_from) make {made!r}: the config was changed "
+                                           "after the build (or it is of another version of the kit). Give the lora-config.json as build_lora.py wrote it (the dataset's); a setting is never edited in it")
+        self.assertEqual((buf.getvalue(), (self.dir / "report.json").exists()), ("", False), "no table and no report: the review got 16 paired replies and no warning")
+        for value in ("yes", 1, 0, None):
+            edited.write_text(json.dumps({**data, "smoke": value}))
+            with self.assertRaisesRegex(SystemExit, "says adapter key", msg=repr(value)):
+                score_lora.read_build(edited)
+        edited.write_text(json.dumps({k: v for k, v in data.items() if k != "smoke"}))
+        with self.assertRaisesRegex(SystemExit, "says adapter key", msg="no `smoke` at all is the kernel's default, false"):
+            score_lora.read_build(edited)
+        edited.write_text(json.dumps({**data, "smoke": False, **keys_of(self.full)}))
+        r = score_lora.score(base, lora, [self.heldout], domain=ARITH, build=score_lora.read_build(edited))
+        self.assertEqual((r["paired"]["overall"]["n"], r["other_adapter"]["replies"]), (0, 2 * len(self.ids)), "with the keys edited too it is the full build's config, and no smoke reply carries its keys")
+        full = json.loads(self.config("full").read_text())
+        edited.write_text(json.dumps({**full, "smoke": True}))
+        with self.assertRaisesRegex(SystemExit, "says adapter key", msg="and the other way: a full build is not made a smoke one"):
+            score_lora.read_build(edited)
+        with contextlib.redirect_stdout(buf):
+            score_lora.main([*args, "--config", str(self.config("smoke"))])
+        self.assertTrue(buf.getvalue().startswith("WARNING: this is a SMOKE run"), "the file as it was built is scored, under the warning")
+
+    def test_the_scorer_refuses_every_edit_of_a_config_that_the_kernel_refuses(self):
+        """One function, `lora_eval.check_keys`: with the dataset (the kernel) and with the shas the config records (the scorer). An edit of a keyed setting, of a key or of what the config records of its
+        files is refused by both; a setting that is in no key is refused by neither."""
         data = json.loads(self.config("full").read_text())
-        for value in ("yes", 1, None):
-            path = self.dir / "c.json"
-            path.write_text(json.dumps({**data, "smoke": value}))
-            self.assertIs(score_lora.read_build(path)["smoke"], False)
+        folder, path = self.dir / "full" / "data", self.dir / "c.json"
+        built = lambda **eval_edit: {"built_from": {**data["built_from"], "eval": {**data["built_from"]["eval"], **eval_edit}}}
+        refused = [({"max_new_tokens": 1024}, "evaluation key"), ({"k": 2}, "evaluation key"), ({"seed_base": 1}, "evaluation key"), ({"sampling": {"temperature": 1.0}}, "evaluation key"), ({"smoke_new_tokens": 8}, "evaluation key"),
+                   ({"max_steps": 3}, "adapter key"), ({"lr": 1e-3}, "adapter key"), ({"gpus": 1}, "adapter key"), ({"pins": ["transformers==9.9.9"]}, "adapter key"), ({"smoke": True}, "adapter key"),
+                   ({"adapter_sha": "0" * 16}, "adapter key"), ({"eval_sha": "0" * 16}, "evaluation key"), ({"eval_sha": self.smoke["eval_sha"]}, "evaluation key"),
+                   (built(excluded={**data["built_from"]["eval"]["excluded"], "sha": "0" * 16}), "evaluation key"), (built(excluded="x"), "evaluation key"), (built(sha256="0" * 16), "evaluation key"),
+                   ({"built_from": {**data["built_from"], "train": {**data["built_from"]["train"], "train_sha256": "0" * 16}}}, "adapter key"),
+                   ({"built_from": {k: v for k, v in data["built_from"].items() if k != "train"}}, "adapter key"), ({"built_from": {**data["built_from"], "train": "x"}}, "adapter key")]
+        for edit, what in refused:
+            path.write_text(json.dumps({**data, **edit}))
+            with self.assertRaisesRegex(SystemExit, f"^{re.escape(str(path))}: lora-config.json says {what} .* its own settings and the two files it records", msg=edit):
+                score_lora.read_build(path)
+        for edit, what in refused[:15]:          # the edits of a setting, of a key and of the exclusion; the kernel reads the two files themselves, not what the config records of them
+            with self.assertRaisesRegex(SystemExit, f"lora-config.json says {what} .* the files and settings of this dataset make", msg=edit):
+                lora_eval.check_keys(lora_eval.resolve_config({**data, **edit}), folder)
+        for edit in ({"train_hours": 1.0}, {"deadline_h": 2.0}, {"save_every": 3}, {"gpu_name": ""}, {"export_gguf": True}, {"eval_reserve_s": 1}):
+            path.write_text(json.dumps({**data, **edit}))
+            self.assertEqual(score_lora.read_build(path), {"ids": set(self.ids), **keys_of(self.full), "smoke": False}, edit)
+            lora_eval.check_keys(lora_eval.resolve_config({**data, **edit}), folder)
+        partial = {**data, "sampling": {"temperature": 1.0}}          # a sampling the kernel completes (`resolve_config`): the keys are of the config as the kernel resolves it, here as there
+        self.assertNotEqual(kernel_cfg(partial)["sampling"], partial["sampling"])
+        partial["adapter_sha"] = lora_eval.adapter_key(data["built_from"]["train"]["train_sha256"], kernel_cfg(partial))
+        partial["eval_sha"] = lora_eval.eval_key(partial["adapter_sha"], data["built_from"]["eval"]["excluded"]["sha"], data["built_from"]["eval"]["sha256"], kernel_cfg(partial))
+        path.write_text(json.dumps(partial))
+        self.assertEqual(score_lora.read_build(path), {"ids": set(self.ids), **keys_of(partial), "smoke": False})
+        lora_eval.check_keys(kernel_cfg(partial), folder)
+        for edit in ({"max_len": 0}, {"k": "two"}, {"epochs": "x"}, {"sampling": 5}):
+            path.write_text(json.dumps({**data, **edit}))
+            with self.assertRaisesRegex(SystemExit, "is not the lora-config.json of a build_lora build \\(the kernel would not take its settings: ", msg=edit):
+                score_lora.read_build(path)
+
+    def test_the_scorer_checks_the_keys_of_a_config_without_the_dataset(self):
+        """`score_lora` is given the config, not the dataset: the two files are the shas the config records, and the set of ids, which the kernel compares with `eval_tasks.jsonl`, is the config's."""
+        data, folder = json.loads(self.config("full").read_text()), self.dir / "full" / "data"
+        moved = self.dir / "alone" / "lora-config.json"
+        moved.parent.mkdir()
+        moved.write_text(json.dumps(data))
+        self.assertEqual(score_lora.read_build(moved), {"ids": set(self.ids), **keys_of(self.full), "smoke": False})
+        lora_eval.check_keys(kernel_cfg(data))
+        with self.assertRaises(FileNotFoundError, msg="with a folder, the files are read"):
+            lora_eval.check_keys(kernel_cfg(data), moved.parent)
+        fewer = {**data, "built_from": {**data["built_from"], "eval": {**data["built_from"]["eval"], "ids": self.ids[1:]}}}
+        lora_eval.check_keys(kernel_cfg(fewer))
+        with self.assertRaisesRegex(SystemExit, "names another evaluation set"):
+            lora_eval.check_keys(kernel_cfg(fewer), folder)
+        moved.write_text(json.dumps(fewer))
+        base, lora = self.replies(keys_of(self.full))
+        r = score_lora.score(base, lora, [self.heldout], domain=ARITH, build=score_lora.read_build(moved))
+        self.assertEqual((r["paired"]["overall"]["n"], r["outside"]["replies"], r["outside"]["tasks"]), (len(self.ids) - 1, 2, self.ids[:1]), "a task taken out of the set by hand is not hidden: its replies are printed as outside the set")
 
     def test_a_smoke_adapter_under_a_full_runs_name_is_refused(self):
         out = self.dir / "in" / "earlier" / "adapter"
@@ -376,10 +458,13 @@ class KernelChecksItsKeys(Kit):
 
     def test_a_dataset_as_it_was_built_passes(self):
         lora_eval.check_keys(self.cfg(), self.data)
+        lora_eval.check_keys(self.cfg())
         for name, kw in (("smoke", {"smoke": True}), ("export", {"export_gguf": True}), ("k", {"k": 2}), ("mix", {"mix": True})):
             self.build(out=self.dir / name, **kw)
             d = self.dir / name / "data"
             lora_eval.check_keys(lora_eval.resolve_config(json.loads((d / "lora-config.json").read_text())), d)
+            lora_eval.check_keys(lora_eval.resolve_config(json.loads((d / "lora-config.json").read_text())))          # and without the dataset, as the scorer checks it
+            self.assertEqual(score_lora.read_build(d / "lora-config.json")["smoke"], name == "smoke")
 
     def test_a_setting_edited_in_the_dataset_stops_the_kernel(self):
         for name, value, what in (("max_new_tokens", 1024, "evaluation key"), ("k", 2, "evaluation key"), ("seed_base", 1, "evaluation key"), ("sampling", {"temperature": 1.0}, "evaluation key"),
@@ -393,8 +478,10 @@ class KernelChecksItsKeys(Kit):
         mine = self.cfg()
         for name, what in (("adapter_sha", "adapter key"), ("eval_sha", "evaluation key")):
             for value in ("0" * 16, "", None):
-                with self.assertRaisesRegex(SystemExit, f"lora-config.json says {what} {value!r}, and the files and settings of this dataset make {mine[name]!r}"):
+                with self.assertRaises(SystemExit) as e:
                     lora_eval.check_keys({**mine, name: value}, self.data)
+                self.assertEqual(str(e.exception), f"lora-config.json says {what} {value!r}, and the files and settings of this dataset make {mine[name]!r}: the config, train.jsonl or eval_tasks.jsonl was changed "
+                                                   "after the build (or the dataset is of another version of the kit). Build again with build_lora.py; a setting is never edited in the dataset")
         with self.assertRaisesRegex(SystemExit, "says evaluation key"):
             lora_eval.check_keys({k: v for k, v in mine.items() if k != "built_from"}, self.data)
         with self.assertRaisesRegex(SystemExit, "says evaluation key"):
@@ -426,6 +513,8 @@ class KernelChecksItsKeys(Kit):
         self.assertNotEqual(cfg["built_from"]["train"]["sha256"], cfg["built_from"]["train"]["train_sha256"])
         self.assertEqual(keys_of(cfg), keys_of(mine))
         lora_eval.check_keys(lora_eval.resolve_config(json.loads((d / "lora-config.json").read_text())), d)
+        lora_eval.check_keys(lora_eval.resolve_config(json.loads((d / "lora-config.json").read_text())))          # without the dataset it is `train_sha256` that stands for the file, not the SFT file's sha
+        self.assertEqual(score_lora.read_build(d / "lora-config.json")["adapter_sha"], mine["adapter_sha"])
 
     def test_the_file_sha_is_of_the_bytes(self):
         import hashlib

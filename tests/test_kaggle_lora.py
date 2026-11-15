@@ -40,8 +40,9 @@ KEPT = [t for t in HELDOUT if t["id"] not in SHARED]
 TRAIN_BY_ID = {t["id"]: t for t in TRAIN}
 PAIR = [json.loads(line) for line in (ROOT / "tests" / "golden" / "kaggle_lora" / "structs-pair.jsonl").read_text().splitlines()]       # structs-7-0292 and structs-1001-0028: the same function, question and answer under two seeds
 TEACHER = "codeforge-27b-heretic-q4"
-SHA = "feedfacefeedface"                   # the adapter key (`adapter_sha`) of the build whose replies the scoring tests read
-EVAL = "0ddba11c0ffee000"                  # and its evaluation key (`eval_sha`)
+RECORDED = {"train": {"train_sha256": "0123456789abcdef"}, "eval": {"sha256": "fedcba9876543210", "excluded": {"sha": "0f0f0f0f0f0f0f0f"}}}      # what the config of the scoring tests' build records of its files (`built_from`)
+SHA = lora_eval.adapter_key(RECORDED["train"]["train_sha256"], lora_eval.resolve_config({}))          # the adapter key (`adapter_sha`) of the build whose replies the scoring tests read: the kernel's defaults over those files
+EVAL = lora_eval.eval_key(SHA, RECORDED["eval"]["excluded"]["sha"], RECORDED["eval"]["sha256"], lora_eval.resolve_config({}))          # and its evaluation key (`eval_sha`)
 KEYS = {"adapter_sha": SHA, "eval_sha": EVAL}
 
 
@@ -924,7 +925,7 @@ class Scoring(unittest.TestCase):
         base, lora = self.files()
         info = self.dir / "run.json"
         config = self.dir / "lora-config.json"
-        config.write_text(json.dumps({**KEYS, "built_from": {"eval": {"ids": sorted(t["id"] for t in HELDOUT)}}}))
+        config.write_text(json.dumps({**KEYS, "built_from": {**RECORDED, "eval": {**RECORDED["eval"], "ids": sorted(t["id"] for t in HELDOUT)}}}))
         info.write_text(json.dumps({"smoke": True, "config": KEYS, "train": {"status": "partial", "steps_done": 40, "steps_planned": 99, "loss_first": 1.5, "loss_last": 0.7, "records": {"think": 800}, "deadline_hit": True}}))
         buf = io.StringIO()
         with contextlib.redirect_stdout(buf):
@@ -1051,6 +1052,29 @@ class Docs(unittest.TestCase):
     def test_the_files_the_readme_names_exist(self):
         for name in re.findall(r"`((?:tests/|distill/)[\w./-]+\.py)`", self.section()):
             self.assertTrue((ROOT / name).exists(), name)
+
+    def test_every_test_file_of_the_kit_is_named_with_what_it_is_for(self):
+        text = self.section()
+        for path in sorted((ROOT / "tests").glob("test_kaggle_lora*.py")):
+            self.assertIn(f"`tests/{path.name}`", text, path.name)
+        self.assertIn("for the two keys `tests/test_kaggle_lora_keys.py` and `tests/test_kaggle_lora_resume.py`, for the kernel's deadline `tests/test_kaggle_lora_plan.py`", text,
+                      "the seventh review, m2: the deadline's tests were listed under the two keys")
+
+    def test_the_scorer_and_the_resume_are_described_as_they_are(self):
+        text = self.section()
+        for needle in ("`score_lora` does not take the config's word for that either", "is refused as the kernel refuses it", "No smoke run is counted in a build with `--resume-from`, with or without `--measured`",
+                       "(none is to come after `--measured`, with `--resume-from`, or for the `--smoke` build itself)", "as `adapter-smoke/` it is not looked at, and renamed `adapter/` it is refused"):
+            self.assertIn(needle, text, needle)
+
+    def test_every_flag_the_section_names_anywhere_is_a_flag_of_some_command(self):
+        """Not only in the commands: the text said `--max-steps`, which no command has (it is `max_steps`, a setting of the config)."""
+        import argparse
+        ap = argparse.ArgumentParser()
+        build_lora.add_arguments(ap)
+        known = {o for a in ap._actions for o in a.option_strings} | {"--domain", "--config", "--heldout", "--base", "--lora", "--run-info", "--out", "--force"}
+        elsewhere = {"--stage", "--seed", "--family", "--n", "--thinking", "--worker"}          # of `modal_rea_data.py`, of `kaggle-score` and of the kernel's own workers
+        self.assertEqual(set(re.findall(r"(?<![\w-])(--[a-z][a-z-]*)", self.section())) - known, elsewhere)
+        self.assertNotIn("--max-steps", "".join(str(a.help) for a in ap._actions) + build_lora.__doc__ + lora_eval.__doc__ + score_lora.__doc__)
 
 
 if __name__ == "__main__":
