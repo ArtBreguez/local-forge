@@ -94,7 +94,7 @@ class EvalSet(Kit):
         import ast
         src = (pathlib.Path(lora_eval.__file__)).read_text()
         main = ast.get_source_segment(src, next(n for n in ast.parse(src).body if isinstance(n, ast.FunctionDef) and n.name == "main"))
-        self.assertIn("merge_shards(OUT, arm, eval_ids(data_dir), prefix)", main)
+        self.assertIn("merge_shards(OUT, arm, eval_ids(data_dir), prefix, replies_root(cfg))", main)
         self.assertEqual(src.count("merge_shards("), 2, "its definition and the one call")
 
     def test_the_scorer_scores_the_evaluation_set_only_and_says_what_it_left_out(self):

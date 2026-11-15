@@ -338,23 +338,33 @@ def smoke_plan(longest: int, *, gpus: int, steps: int, max_new_tokens: int, eval
     return {"smoke": True, "steps": steps, "step_s": round(step_s, 1), "eval_batch": eval_batch, "total_upper_s": round(total), "total_typical_s": round(total), "gpus": gpus, "rates": rates}
 
 
+def resumed_plan(p: dict) -> dict:
+    """`p` (a full run's `plan`) for the session of a resume whose kernel finds the finished adapter of its adapter key in the attached output (`check_resume` on --resume-output): it skips the training
+    (`lora_eval.main`) and with it the training worker's model load. What is left to pay is the setup, the evaluation's load, the evaluation and the export: `train_skipped_s` is out of the overhead and of
+    both totals, so the verdict is about what this session does."""
+    load = round(p["rates"]["load_s"])
+    skipped = p["train_s"] + load
+    return {**p, "resumed": True, "train_skipped_s": skipped, "overhead_s": p["overhead_s"] - load, "total_upper_s": p["total_upper_s"] - skipped, "total_typical_s": p["total_typical_s"] - skipped}
+
+
 def fit_verdict(p: dict, gpu_hours: float, deadline_h: float) -> str:
     """Empty when the plan fits, else why it does not. Two clocks, and both must hold: the QUOTA (`gpu_hours`, with the smoke run that is still to come: `p["smoke_s"]`), and the KERNEL'S OWN DEADLINE: the kernel
     starts nothing `deadline_h` after ITS start (`lora_eval.main`: `T0 + deadline_h`), stops training `eval_reserve_s` before that (`lora_eval.train_deadline`) and starts no batch that would pass it, so this
     run's own work (the setup, the loads, the training, the evaluation's upper bound, the export: `total_upper_s`, the smoke run not in it) has to end by `deadline_h`. A plan inside the quota and past the deadline
-    (the deadline is the quota less the smoke run less a margin) would be cut by the kernel: a `partial` adapter or batches that are never asked."""
+    (the deadline is the quota less the smoke run less a margin) would be cut by the kernel: a `partial` adapter or batches that are never asked (the batches only, for a `resumed_plan`: it does not train)."""
     h = lambda s: f"{s / 3600:.2f} h"
     if p["total_upper_s"] + p.get("smoke_s", 0) > gpu_hours * 3600:
         return "more than the quota"
     if p["total_upper_s"] > deadline_h * 3600:
         return (f"inside the quota, but this run needs {h(p['total_upper_s'])}, {math.ceil((p['total_upper_s'] - deadline_h * 3600) / 60)} min past the {deadline_h:g} h after which the kernel starts nothing: "
-                "it would stop training early or leave the last batches unasked")
+                + ("it would leave the last batches unasked" if p.get("resumed") else "it would stop training early or leave the last batches unasked"))
     return ""
 
 
 def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     """The lines the builder prints about a plan (`plan` or `smoke_plan`): what is assumed, what each stage costs, whether it fits `gpu_hours` (the quota that is left when the kernel starts, with the smoke run
-    that has still to be run added: `p["smoke_s"]`) AND the kernel's own deadline (`fit_verdict`), and what the kernel does at the deadline."""
+    that has still to be run added: `p["smoke_s"]`) AND the kernel's own deadline (`fit_verdict`), and what the kernel does at the deadline. A `resumed_plan` says that its session does not train, counts
+    no training, and is not told to lower --train-hours."""
     h = lambda s: f"{s / 3600:.1f} h"
     r = p["rates"]
     where = "assumed" if r == RATES else "assumed, with the numbers of --measured"
@@ -367,9 +377,11 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
                    f"{p['step_s']} s per step at {r['train_tok_per_s_per_gpu']:.0f} tok/s per GPU ({where})")
         out.append(f"          -> {p['steps']} of the {p['steps_full']} steps = {p['epochs_effective']} epochs, {h(p['train_s'])}" + (f"; the training budget BINDS: --max-steps {p['max_steps']} in the config sizes the cosine schedule to these steps, "
                    "and a step slower than assumed stops the clock before the schedule ends (a higher last learning rate): measure it with the smoke run and --measured" if p["max_steps"] else "; the training budget does not bind"))
+        if p.get("resumed"):
+            out.append(f"          NOT in this session: the finished adapter is attached and training is skipped (`resume:` below), so the {h(p['train_skipped_s'])} of the training and of its model load are not in the total")
         out.append(f"eval:     {p['eval_items_per_arm']} replies per arm (k={p['k']}), batches of {p['eval_batch']}, {p['eval_batches_per_process']} per process and arm, up to {p['max_new_tokens']} new tokens at {r['gen_step_s']} s per step ({where}): "
                    f"{h(p['eval_upper_s'])} assuming every batch runs to the budget, ~{h(p['eval_typical_s'])} assuming {share} of it")
-        out.append(f"overhead: {h(p['overhead_s'])} (pip install, download, two model loads)" + (f"; GGUF export {h(p['export_s'])}" if p["export_s"] else ""))
+        out.append(f"overhead: {h(p['overhead_s'])} (pip install, download, {'one model load' if p.get('resumed') else 'two model loads'})" + (f"; GGUF export {h(p['export_s'])}" if p["export_s"] else ""))
         if p.get("smoke_s"):
             out.append(f"smoke:    + {h(p['smoke_s'])} for the smoke run that comes first (README step 1), out of the same quota")
         elif p.get("smoke_done"):
@@ -378,10 +390,19 @@ def describe(p: dict, gpu_hours: float, deadline_h: float) -> list:
     total, typical = p["total_upper_s"] + extra, p["total_typical_s"] + extra
     verdict = fit_verdict(p, gpu_hours, deadline_h)
     out.append(f"total:    {h(total)} assuming every batch of the evaluation runs to the token budget, ~{h(typical)} assuming {share} of it" + (" (smoke run included)" if extra else "") + f", of the {gpu_hours:g} h of quota left: "
-               + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): lower --train-hours, --k, --per-family or --max-new-tokens (on a resume: a --train-hours that changes the cap on "
-                                                     "the steps is another adapter, and the kernel REFUSES the adapter or the checkpoint it has attached: keep --train-hours, or build without "
-                                                     "--resume-from to train again; the other three are another evaluation of the same adapter, and it asks again)"))
-    out.append(f"the kernel starts nothing after {deadline_h:g} h" + ("" if p.get("smoke") else f", and training stops early enough to leave {h(p['eval_window_s'])} for the evaluation" + (f" and {h(p['export_reserve_s'])} after it for the GGUF export" if p["export_reserve_s"] else "")))
+               + ("it fits" if not verdict else f"IT DOES NOT FIT ({verdict}): " + (
+                   "lower --k, --per-family or --max-new-tokens (another evaluation of the same adapter: the adapter is kept and the replies are asked again); --train-hours is the adapter's and no part "
+                   "of this total: keep it" if p.get("resumed") else
+                   "lower --train-hours, --k, --per-family or --max-new-tokens (on a resume: a --train-hours that changes the cap on "
+                   "the steps is another adapter, and the kernel REFUSES the adapter or the checkpoint it has attached: keep --train-hours, or build without "
+                   "--resume-from to train again; the other three are another evaluation of the same adapter, and it asks again)")))
+    if p.get("smoke"):
+        after = ""
+    elif p.get("resumed"):
+        after = f", and the evaluation ends {h(p['export_reserve_s'])} before that for the GGUF export" if p["export_reserve_s"] else ""
+    else:
+        after = f", and training stops early enough to leave {h(p['eval_window_s'])} for the evaluation" + (f" and {h(p['export_reserve_s'])} after it for the GGUF export" if p["export_reserve_s"] else "")
+    out.append(f"the kernel starts nothing after {deadline_h:g} h" + after)
     return out
 
 
@@ -421,7 +442,8 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
           resume_output=None, gpu_name: str = None, force: bool = False) -> dict:
     """Write the files described above under `out`; returns the config. `train_tasks`: the training task files (ALL the tasks the records were made from). Refuses to overwrite a file that exists, unless `force`.
     The settings that are None take `lora_eval.DEFAULTS` (`gpu_name` "": any card). `resume_output`: the fetched output of the run `resume_from` names; an adapter or a checkpoint of another adapter key in
-    it is SystemExit before anything is written (`check_resume`). `gpu_hours` is the quota left when the kernel starts: the smoke run that has still to be run (no `measured`) is taken out of it for the deadline."""
+    it is SystemExit before anything is written (`check_resume`), and the finished adapter of this build's key in it takes the training out of the lines of the estimate (`resumed_plan`; the config's
+    `built_from.estimate` stays the whole plan: the reserves and the cap on the steps are its numbers). `gpu_hours` is the quota left when the kernel starts: the smoke run that has still to be run (no `measured`) is taken out of it for the deadline."""
     base = domain.name.replace("_", "-")
     owner, dataset_slug, kernel_slug = _slug("--owner", owner), _slug("--dataset-slug", dataset_slug or f"{base}-lora-data"), _slug("--kernel-slug", kernel_slug or f"{base}-lora-eval")
     if resume_from and not OWNER_KERNEL.fullmatch(resume_from):
@@ -445,6 +467,10 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
     given = {"student": student or d["student"], "max_len": max_len, "rank": rank or d["rank"], "epochs": epochs or d["epochs"], "lr": lr or d["lr"], "global_batch": global_batch or d["global_batch"], "mix": mix,
              "gpus": gpus or d["gpus"], "k": k, "max_new_tokens": max_new_tokens or d["max_new_tokens"], "eval_batch": eval_batch or d["eval_batch"], "train_hours": train_hours or d["train_hours"],
              "export_gguf": export_gguf, "fla": fla, "gpu_name": d["gpu_name"] if gpu_name is None else gpu_name}
+    accelerator, cards = lora_eval.accelerator(given["gpu_name"])
+    if given["gpu_name"] and cards is not None and cards < given["gpus"]:
+        raise SystemExit(f"--gpu-name {given['gpu_name']!r} --gpus {given['gpus']}: the accelerator that has this card is {accelerator}, {cards} GPU(s), and the kernel stops when it finds fewer GPUs than the build is for: "
+                         f"give --gpus {cards}, or another --gpu-name ('' = any card)")
     if given["train_hours"] * 3600 <= RATES["load_s"]:
         raise SystemExit(f"--train-hours {given['train_hours']:g}: the kernel's training clock starts before the student is loaded (~{RATES['load_s'] / 60:.0f} min): no step would be taken")
     lengths = trainable_lengths(rows, given["max_len"], mix)
@@ -479,7 +505,7 @@ def build(sft_path, heldout_files, out, owner: str, *, domain, train_tasks, quot
     paths["run"].write_text(LAUNCHER)
     paths["kernel"].write_text(json.dumps({"id": f"{owner}/{kernel_slug}", "title": kernel_slug, "code_file": "run.py", "language": "python", "kernel_type": "script", "is_private": True, "enable_gpu": True,
                                            "enable_internet": True, "dataset_sources": [f"{owner}/{dataset_slug}"], "competition_sources": [], "kernel_sources": [resume_from] if resume_from else []}, indent=1))
-    cfg["plan_lines"] = describe(p, gpu_hours, cfg["deadline_h"])
+    cfg["plan_lines"] = describe(resumed_plan(p) if resumed else p, gpu_hours, cfg["deadline_h"])          # the kernel that finds its finished adapter does not train: the verdict is about what is left
     if resume_from:
         cfg["plan_lines"].append(resume_line(cfg, resume_output, resumed))
     return cfg
@@ -547,7 +573,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--lr", type=float, default=None, help=f"learning rate (default {d['lr']}, as modal_train.py)")
     ap.add_argument("--global-batch", type=int, default=None, help=f"sequences per optimizer step (default {d['global_batch']}, as modal_train.py)")
     ap.add_argument("--mix", action="store_true", help="also train the truth-template records, with an empty think block (modal_train's --mix); default: the thinking records only")
-    ap.add_argument("--gpus", type=int, default=None, help=f"processes/GPUs to train and evaluate on (default {d['gpus']}; the kernel stops when it finds fewer: the number is part of the adapter key)")
+    ap.add_argument("--gpus", type=int, default=None, help=f"processes/GPUs to train and evaluate on (default {d['gpus']}; the kernel stops when it finds fewer: the number is part of the adapter key; one for --gpu-name P100)")
     ap.add_argument("--k", type=int, default=1, help="replies per held-out task and arm (default %(default)s; the evaluation's time grows with it; part of the evaluation key)")
     ap.add_argument("--max-new-tokens", type=int, default=None, help=f"reply budget of the evaluation, reasoning included (default {d['max_new_tokens']}); a reply cut off at it is counted; part of the evaluation key: a resume with another budget asks every reply again")
     ap.add_argument("--eval-batch", type=int, default=None, help=f"replies generated together on one GPU (default {d['eval_batch']})")
@@ -562,7 +588,7 @@ def add_arguments(ap: argparse.ArgumentParser) -> None:
     ap.add_argument("--kernel-slug", default=None, help="default <domain>-lora-eval")
     ap.add_argument("--resume-from", default="", help="owner/kernel-slug of an earlier run: its output (checkpoints, adapter, replies) is attached to this kernel and continued. Keep --sft and the training settings: an adapter or a checkpoint of another adapter key is refused (see --resume-output)")
     ap.add_argument("--resume-output", type=pathlib.Path, default=None, help="with --resume-from: the folder `kaggle kernels output` fetched of that run. The build is refused, before anything is written, when it holds a finished adapter or a checkpoint of another adapter key than this build's (the kernel would refuse it too, before it installs anything)")
-    ap.add_argument("--gpu-name", default=None, help=f"the kernel stops before the download when a GPU's name does not hold this (default {d['gpu_name']!r}; '' = any card). In no key: the same computation on any card")
+    ap.add_argument("--gpu-name", default=None, help=f"the kernel stops before the download when a GPU's name does not hold this (default {d['gpu_name']!r}, the two T4 of the accelerator GPU T4 x2; 'P100' with --gpus 1 for GPU P100; '' = any card). In no key: the same computation on any card")
     ap.add_argument("--force", action="store_true", help="overwrite the files of an earlier build (default: refuse)")
 
 
@@ -576,7 +602,7 @@ def run(a: argparse.Namespace, domain) -> None:
     print(excluded_line(t["eval"]["excluded"]))
     print(keys_line(cfg))
     print("\n".join(cfg["plan_lines"]))
-    print(f"next: kaggle datasets create -p {a.out}/data   then   kaggle kernels push -p {a.out}/kernel   (set the kernel's accelerator to GPU T4 x2; distill/backends/kaggle/README.md)")
+    print(f"next: kaggle datasets create -p {a.out}/data   then   kaggle kernels push -p {a.out}/kernel   (set the kernel's accelerator to {lora_eval.accelerator(cfg['gpu_name'])[0]}; distill/backends/kaggle/README.md)")
 
 
 def keys_line(cfg: dict) -> str:

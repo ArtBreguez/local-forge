@@ -509,6 +509,37 @@ class EvalOnStubs(unittest.TestCase):
         self.assertFalse(list(self.out.glob("replies-*")))
         self.assertEqual(len(self.shard("base", "smoke-")), 8)
 
+    def next_session(self) -> None:
+        """This session's output becomes the attached output of the next one (`--resume-from`), which starts with an empty one."""
+        self.out.rename(self.inp / "earlier")
+        self.out.mkdir()
+
+    def rank_info(self, prefix="") -> dict:
+        return json.loads((self.out / f"{prefix}eval-rank0.json").read_text())
+
+    def test_a_smoke_run_asks_its_batch_again_whatever_smoke_replies_are_attached(self):
+        """PR 34 sixth review, m1: a smoke build with --resume-from is told that no reply of the attached output is used. The smoke kernel read the attached `smoke-replies-*` of the same build, asked
+        nothing (0 `generate` calls) and measured a `gen_step_s` of 0.0, which `build_lora --measured` drops without a word."""
+        kw = dict(n=4, smoke=True, eval_batch=2, smoke_new_tokens=32)
+        self.run_eval(**kw)
+        first = self.rank_info("smoke-")
+        self.assertEqual((len(self.model.calls), first["batches"]), (2, 1))
+        self.assertGreater(first["gen_step_s"], 0)
+        self.next_session()
+        self.assertEqual(len(lora_eval.previous_files("lora", self.out, self.inp, "smoke-")), 1, "the replies of the same smoke build, with its two keys, are attached")
+        self.run_eval(**kw)
+        self.assertEqual([c["adapter_on"] for c in self.model.calls], [False, True], "the review: 0 calls")
+        self.assertEqual(self.rank_info("smoke-"), first, "the same batch, measured again: the review's {batches: 0, gen_tokens: 0, gen_step_s: 0.0}")
+        self.assertEqual(len(self.shard("lora", "smoke-")), 2)
+
+    def test_a_full_run_does_take_the_replies_that_are_attached(self):
+        """The other side of the same line: what a smoke run leaves alone is what a resume of a full run starts from."""
+        self.run_eval()
+        self.assertEqual(len(self.model.calls), 4)
+        self.next_session()
+        self.run_eval()
+        self.assertEqual((self.model.calls, self.rank_info()["batches"]), ([], 0), "every reply is there, under this build's two keys: nothing is asked again")
+
     def test_a_row_the_model_ended_at_its_own_end_token_is_not_counted_as_cut_off(self):
         self.run_eval(n=2, end=77, eos=[99, 77])
         self.assertEqual({o["finish"] for l in self.shard("lora") for o in l["outs"]}, {"stop"})

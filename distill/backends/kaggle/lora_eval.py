@@ -17,7 +17,8 @@ What it does, in order (`main`, no GPU library imported in this process):
      adapter for the same tasks next to each other, so a run stopped by the deadline holds paired answers. Resume asks only what is missing, failed or stale (`run_teacher.pending`);
   4. merges the shards into `replies-base.jsonl` and `replies-lora.jsonl`, optionally (`export_gguf`) merges the adapter into fp16 weights and writes a Q4_K_M GGUF, writes `run.json`.
 `--smoke` does all of it on a few of the longest records and one batch of `eval_batch` (8) tasks per process, 256 new tokens (files are named `smoke-...`, and a smoke build has two keys of its own, so that neither its
-adapter nor a reply of it can be resumed or scored as a full run's, whatever the file is called): it measures the
+adapter nor a reply of it can be resumed or scored as a full run's, whatever the file is called; and a smoke run itself resumes nothing of an attached output, not even the replies of a smoke run of the
+same build, `replies_root`: it always asks its batch): it measures the
 step time, the generation speed AT THE BATCH THE FULL RUN USES and the peak memory that the builder's estimate only assumes (`measured` in run.json, `build_lora.py --measured`).
 Resume is tied to TWO keys of the build, because what makes an adapter and what makes an evaluation are not the same thing. The ADAPTER key (`adapter_sha`, `adapter_key`: the training records, the settings of
 `TRAIN_KEYS`, the base student, the schedule's length `max_steps` and the smoke limits among them, and the LoRA target modules) is what the weights are a function of: an attached adapter or checkpoint of
@@ -371,10 +372,18 @@ def shard_path(out: pathlib.Path, arm: str, rank: int, prefix: str = "") -> path
     return pathlib.Path(out) / f"{prefix}replies-{arm}.r{rank}.jsonl"
 
 
-def previous_files(arm: str, out: pathlib.Path = OUT, input_root: pathlib.Path = INPUT, prefix: str = "") -> list:
-    """The replies of `arm` that earlier sessions wrote (an attached output's `replies-<arm>.jsonl` and its shards), then this kernel's own `replies-<arm>.jsonl` and shards: what a resume starts from."""
+def replies_root(cfg: dict) -> "pathlib.Path | None":
+    """Where the replies of earlier sessions are looked for (`previous_files`, by the evaluation worker and by the merge): the attached outputs, and NOWHERE for a smoke build. A smoke run is there to
+    measure one batch per process: with the replies of an attached smoke run of the same build it would ask nothing and measure a `gen_step_s` of 0. So a smoke run resumes nothing at all: no adapter, no
+    checkpoint (`attached_adapter`, `train_worker`) and no reply."""
+    return None if cfg["smoke"] else INPUT
+
+
+def previous_files(arm: str, out: pathlib.Path = OUT, input_root: "pathlib.Path | None" = INPUT, prefix: str = "") -> list:
+    """The replies of `arm` that earlier sessions wrote (an attached output's `replies-<arm>.jsonl` and its shards, under `input_root`; None: no attached output is looked at, `replies_root`), then this
+    kernel's own `replies-<arm>.jsonl` and shards: what a resume starts from."""
     names = f"{prefix}replies-{arm}*.jsonl"
-    attached = sorted(pathlib.Path(input_root).rglob(names)) if pathlib.Path(input_root).exists() else []
+    attached = sorted(pathlib.Path(input_root).rglob(names)) if input_root is not None and pathlib.Path(input_root).exists() else []
     return [*attached, *sorted(pathlib.Path(out).glob(names))]
 
 
@@ -451,8 +460,8 @@ def eval_ids(data_dir: pathlib.Path) -> set:
     return {json.loads(line)["id"] for line in (pathlib.Path(data_dir) / "eval_tasks.jsonl").read_text().splitlines() if line.strip()}
 
 
-def merge_shards(out: pathlib.Path, arm: str, ids, prefix: str = "", input_root: pathlib.Path = INPUT) -> int:
-    """`<prefix>replies-<arm>.jsonl` from the replies of earlier sessions and this one's shards (the last line of an id wins: `run_teacher.load_previous`), written whole through a `.part` file: the lines of
+def merge_shards(out: pathlib.Path, arm: str, ids, prefix: str = "", input_root: "pathlib.Path | None" = INPUT) -> int:
+    """`<prefix>replies-<arm>.jsonl` from the replies of earlier sessions (under `input_root`; None, a smoke run's: of none) and this one's shards (the last line of an id wins: `run_teacher.load_previous`), written whole through a `.part` file: the lines of
     the tasks in `ids` (the evaluation set of THIS build, `eval_ids`) and of no other. An attached earlier output can hold replies of tasks this build no longer asks, and among them the ones it EXCLUDES for
     sharing content with a training task: they are dropped here, with a log line, and never reach the file that is scored. Returns the number of tasks written."""
     out = pathlib.Path(out)
@@ -653,7 +662,7 @@ def eval_worker(cfg: dict, data_dir: pathlib.Path) -> None:
     if cfg["smoke"]:
         cfg = {**cfg, "k": 1, "max_new_tokens": cfg["smoke_new_tokens"]}
         tasks = sorted(tasks, key=lambda t: -sum(len(m["content"]) for m in t["messages"]))[:world * cfg["eval_batch"]]          # one full batch per process: `gen_step_s` is measured at the batch the run uses
-    previous = {arm: run_teacher.load_previous(previous_files(arm, OUT, INPUT, prefix)) for arm in ARMS}
+    previous = {arm: run_teacher.load_previous(previous_files(arm, OUT, replies_root(cfg), prefix)) for arm in ARMS}          # a smoke run takes no reply of an attached output: it always asks its batch, and measures it
     items = assign(work_items(tasks, previous, cfg), rank, world)
     tok = AutoTokenizer.from_pretrained(str(STUDENT_DIR), padding_side="left")
     model = load_student(torch, cfg, local, adapter=adapter).eval()
@@ -720,6 +729,18 @@ def find_data(root: pathlib.Path = INPUT) -> pathlib.Path:
     return next(pathlib.Path(root).rglob("lora-config.json")).parent
 
 
+ACCELERATORS = (("Tesla T4", "GPU T4 x2", 2), ("Tesla P100-PCIE-16GB", "GPU P100", 1))          # (a card's name in `nvidia-smi`, the accelerator of Kaggle's kernel settings that gives it, its GPUs)
+
+
+def accelerator(gpu_name: str) -> tuple:
+    """(the accelerator to select in the kernel's settings for a build whose `gpu_name` is this, its number of GPUs): the first of `ACCELERATORS` whose card's name holds `gpu_name` ("": any card, so the
+    two T4 the kit is made for). A name that none of them holds: the card by the name that was asked, and None (the number is not known here)."""
+    for card, name, gpus in ACCELERATORS:
+        if gpu_name in card:
+            return name, gpus
+    return f"the one whose GPUs are named {gpu_name!r}", None
+
+
 def gpu_names() -> list:
     r = subprocess.run("nvidia-smi --query-gpu=name --format=csv,noheader", shell=True, capture_output=True, text=True)
     return [line.strip() for line in r.stdout.splitlines() if line.strip()]
@@ -752,10 +773,11 @@ def main() -> None:
     if not names:
         raise SystemExit("no GPU: turn the accelerator on in the kernel's settings (kernel-metadata.json: enable_gpu)")
     if cfg["gpu_name"] and not all(cfg["gpu_name"] in n for n in names):
-        raise SystemExit(f"the kernel got {names}, not {cfg['gpu_name']}: set the accelerator to GPU T4 x2 in the kernel's settings (or build again with --gpu-name '' to run on whatever it is: the card is in no key)")
+        raise SystemExit(f"the kernel got {names}, not {cfg['gpu_name']}: set the accelerator to {accelerator(cfg['gpu_name'])[0]} in the kernel's settings (or build again with --gpu-name '' to run on whatever it is: the card is in no key)")
     if len(names) < cfg["gpus"]:
+        wanted, has = accelerator(cfg["gpu_name"])          # named only when it would give the GPUs the build is for: a build for two P100 is not told to select the T4 its --gpu-name refuses
         raise SystemExit(f"the kernel got {len(names)} GPU(s) and the build is for {cfg['gpus']}: the adapter key holds the number of processes (a step's share per process follows it, and the estimate "
-                         f"its speed), so build again with --gpus {len(names)}, or set the accelerator to GPU T4 x2")
+                         f"its speed), so build again with --gpus {len(names)}" + (f", or set the accelerator to {wanted}" if has is not None and has >= cfg["gpus"] else ""))
     gpus = cfg["gpus"]
     existing = attached_adapter(cfg, [OUT, INPUT])          # an adapter or a checkpoint of another adapter key stops the kernel here, before the setup
     run_teacher.sh([sys.executable, "-m", "pip", "install", "-q", *cfg["pins"], *(["flash-linear-attention"] if cfg["fla"] else [])])
@@ -775,7 +797,7 @@ def main() -> None:
         info["error"] = "training left no adapter"
     elif time.time() < deadline:
         info["eval_rc"] = run_worker("eval", gpus, data_dir, {"LORA_DEADLINE": str(eval_deadline(cfg, deadline))})
-        info["replies"] = {arm: merge_shards(OUT, arm, eval_ids(data_dir), prefix) for arm in ARMS}
+        info["replies"] = {arm: merge_shards(OUT, arm, eval_ids(data_dir), prefix, replies_root(cfg)) for arm in ARMS}
     else:
         info["error"] = "the deadline came before the evaluation"
     if cfg["export_gguf"] and final and not cfg["smoke"] and "error" not in info and time.time() + cfg["export_reserve_s"] < deadline:

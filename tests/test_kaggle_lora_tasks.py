@@ -4,6 +4,10 @@ m1: `eval_tasks.jsonl` is in the evaluation key as `train.jsonl` is in the adapt
 scorer takes a row's family from the held-out file. m2: the mutants that survived (a `--gpus` that moves the cap on the steps, `k` > 1 in `work_items`, and the training worker's own use of the seed, the
 loss chunk, the smoke steps and the smoke guard, run on stand-ins). m3: the builder says what a resume with another `--train-hours` does (it is refused), and refuses it itself, with the reason, when it is
 given the fetched output of the run that is resumed; the kernel refuses it before it installs anything.
+
+Sixth review. m1: a smoke run takes no reply of an attached output (the builder said so, the kernel read them, asked nothing and measured nothing). m2: the kernel's refusals and the builder's last line name
+the accelerator the build asks for, not always the two T4. Its notes: the estimate of a resume that skips training counts no training, and the mutants that survived (`any` for `all` over the cards, the
+default pins, the smoke guard of the checkpoints, an empty list of differences).
 """
 from __future__ import annotations
 
@@ -308,13 +312,14 @@ class TrainWorker(unittest.TestCase):
 
     def test_a_smoke_run_takes_the_configs_steps_on_the_longest_records_and_looks_for_no_checkpoint(self):
         """The mutants: the default `smoke_steps` for the steps (and for the records), and `latest_checkpoint` without the smoke guard: a smoke run would refuse an attached full checkpoint."""
-        got = self.run_worker(smoke=True, smoke_steps=3)
+        got = self.run_worker(smoke=True, smoke_steps=3, save_every=2)          # a step at which a full run would save: the smoke guard decides, not the 4 steps under a `save_every` of 10
         self.assertEqual((got["train"]["steps_planned"], got["train"]["steps_done"], got["train"]["status"], got["train"]["smoke"]), (3, 3, "done", True))
         self.assertEqual(got["train"]["examples"], 6, "3 steps of 2 per process, one process")
         self.assertEqual(len(got["steps"]), 3)
         self.assertEqual({i for step in got["steps"] for i in step}, {4, 5, 6, 7, 8, 9}, "the six longest records, each once")
         self.assertEqual(got["checkpoint_lookups"], [], "a smoke run resumes nothing")
-        self.assertEqual(got["saved"], [])
+        self.assertEqual(got["saved"], [], "and it writes no checkpoint")
+        self.assertEqual(self.run_worker(global_batch=4, epochs=1.0, save_every=2)["saved"], [(2, "feedfacefeedface")], "a full run of 3 steps does, at the same step")
         five = self.run_worker(smoke=True, smoke_steps=5)
         self.assertEqual((five["train"]["steps_planned"], five["train"]["examples"]), (5, 10))
 
@@ -450,6 +455,17 @@ class BuilderRefusesTheResume(Kit):
         again = self.resume(out=self.dir / "smoke-again", smoke=True)
         self.assertEqual(again["plan_lines"][-1], "resume:   a smoke run resumes nothing: no adapter, no checkpoint and no reply of the attached output is used")
         self.assertIsNone(build_lora.check_resume(again, self.fetched))
+        # the sentence is the builder's; what is used is the kernel's (sixth review, m1: it read the attached smoke replies). The same output, with the replies of that very smoke build, as the kernel sees it:
+        tasks = tasks_of(self.dir / "smoke-again" / "data")
+        self.assertEqual(keys_of(again), keys_of(smoke), "the same smoke build: its replies carry this build's two keys")
+        for arm in lora_eval.ARMS:
+            write_jsonl(self.fetched / f"smoke-replies-{arm}.jsonl", [line(t, [reply(t, True, keys_of(smoke))]) for t in HELDOUT if t["id"] in smoke["built_from"]["eval"]["ids"]])
+        with mock.patch.object(lora_eval, "INPUT", self.fetched):
+            for cfg, used in ((kernel_cfg(again), 0), ({**kernel_cfg(again), "smoke": False}, 1)):
+                root = lora_eval.replies_root(cfg)
+                previous = {arm: run_teacher.load_previous(lora_eval.previous_files(arm, self.dir / "working", root, "smoke-")) for arm in lora_eval.ARMS}
+                self.assertEqual({arm: len(v) for arm, v in previous.items()}, {arm: used * len(tasks) for arm in lora_eval.ARMS}, "no reply of the attached output is used")
+                self.assertEqual(len(lora_eval.work_items(tasks, previous, {**kernel_cfg(again), "k": 1, "max_tokens": 4096, "max_new_tokens": 4096})), (1 - used) * len(tasks), "and every task is asked")
         with self.assertRaisesRegex(SystemExit, "^--resume-output: the adapter"):
             self.resume(out=self.dir / "full")
 
@@ -504,7 +520,95 @@ class BuilderRefusesTheResume(Kit):
         cfg = json.loads((self.dir / "cli" / "data" / "lora-config.json").read_text())
         self.assertEqual((cfg["gpu_name"], keys_of(cfg)), ("", keys_of(self.first)), "any card: the same adapter, the same evaluation")
         self.assertEqual(self.first["gpu_name"], "T4")
-        self.assertEqual(self.build(out=self.dir / "p100", gpu_name="P100")["gpu_name"], "P100")
+        self.assertEqual(self.build(out=self.dir / "p100", gpu_name="P100", gpus=1)["gpu_name"], "P100")
+
+    def test_the_last_line_names_the_accelerator_the_build_asks_for(self):
+        """Sixth review, m2, at the builder: "set the kernel's accelerator to GPU T4 x2" was printed for every build, the one with --gpu-name P100 too."""
+        args = ["--domain", "example_arith", "--sft", str(self.sft), "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), "--owner", "someone", "--per-family", "3", "--min-family", "1"]
+        for name, more, want in (("t4", [], "GPU T4 x2"), ("p100", ["--gpu-name", "P100", "--gpus", "1"], "GPU P100"), ("any", ["--gpu-name", ""], "GPU T4 x2"), ("a100", ["--gpu-name", "A100"], "the one whose GPUs are named 'A100'")):
+            buf = io.StringIO()
+            with contextlib.redirect_stdout(buf):
+                build_lora.main([*args, "--out", str(self.dir / name), *more])
+            self.assertTrue(buf.getvalue().rstrip().endswith(f"(set the kernel's accelerator to {want}; distill/backends/kaggle/README.md)"), buf.getvalue()[-200:])
+
+    def test_a_card_whose_accelerator_has_fewer_gpus_than_the_build_is_for_is_refused(self):
+        """A build the kernel could only refuse (it stops when it finds fewer GPUs than the build is for): --gpu-name P100 with the two processes of the default."""
+        with self.assertRaisesRegex(SystemExit, "^--gpu-name 'P100' --gpus 2: the accelerator that has this card is GPU P100, 1 GPU\\(s\\), and the kernel stops when it finds fewer GPUs than the build is for: "
+                                                "give --gpus 1, or another --gpu-name \\('' = any card\\)$"):
+            self.build(out=self.dir / "two-p100", gpu_name="P100")
+        with self.assertRaisesRegex(SystemExit, "^--gpu-name 'T4' --gpus 3: the accelerator that has this card is GPU T4 x2, 2 GPU\\(s\\)"):
+            self.build(out=self.dir / "three-t4", gpus=3)
+        self.assertFalse((self.dir / "two-p100").exists() or (self.dir / "three-t4").exists(), "before anything is written")
+        for name, kw in (("any card", {"gpu_name": "", "gpus": 3}), ("a card that is not known here", {"gpu_name": "A100", "gpus": 3}), ("one T4", {"gpus": 1}), ("two T4", {"gpu_name": "Tesla T4"})):
+            self.assertEqual(self.build(out=self.dir / name, **kw)["gpus"], kw.get("gpus", 2), name)
+
+    def test_the_accelerator_of_a_card_name(self):
+        for name, want in (("T4", ("GPU T4 x2", 2)), ("Tesla T4", ("GPU T4 x2", 2)), ("", ("GPU T4 x2", 2)), ("P100", ("GPU P100", 1)), ("Tesla P100-PCIE-16GB", ("GPU P100", 1)), ("Tesla", ("GPU T4 x2", 2)),
+                           ("L4", ("the one whose GPUs are named 'L4'", None)), ("Tesla T4 x2", ("the one whose GPUs are named 'Tesla T4 x2'", None))):
+            self.assertEqual(lora_eval.accelerator(name), want, name)
+        self.assertEqual(lora_eval.accelerator(lora_eval.DEFAULTS["gpu_name"]), ("GPU T4 x2", 2), "the default build is for the two T4")
+
+    def test_a_resume_that_skips_training_is_judged_without_the_training(self):
+        """The sixth review's note: "training is skipped" under a plan that counted the training again, so a session with only the evaluation left was told IT DOES NOT FIT."""
+        hours = 2.0
+        whole = self.build(out=self.dir / "whole", measured=slow(self.dir), train_hours=2.0, gpu_hours=hours)
+        total = lambda cfg: next(x for x in cfg["plan_lines"] if x.startswith("total:"))
+        self.assertIn("IT DOES NOT FIT (more than the quota)", total(whole), "the build that trains does not fit these hours")
+        nothing = self.resume(out=self.dir / "nothing", gpu_hours=hours)
+        self.assertEqual(nothing["plan_lines"][:-1], whole["plan_lines"], "an output with no finished adapter: the kernel trains (from a checkpoint or from the start), and the plan counts it")
+        self.assertEqual(self.resume(out=self.dir / "unchecked", gpu_hours=hours, resume_output=None)["plan_lines"][:-1], whole["plan_lines"], "an output that was not given: nothing is known")
+        self.assertFalse([x for x in whole["plan_lines"] + nothing["plan_lines"] if "NOT in this session" in x or "one model load" in x], "a session that trains is not told that it does not")
+        put_adapter(self.fetched, self.first["adapter_sha"], "partial")
+        cfg = self.resume(out=self.dir / "kept", gpu_hours=hours)
+        est, h = cfg["built_from"]["estimate"], lambda s: f"{s / 3600:.1f} h"
+        left = est["total_upper_s"] - est["train_s"] - 300
+        self.assertGreater(est["total_upper_s"], hours * 3600)
+        self.assertLess(left, cfg["deadline_h"] * 3600)
+        self.assertTrue(total(cfg).startswith(f"total:    {h(left)} assuming every batch of the evaluation runs to the token budget"), total(cfg))
+        self.assertTrue(total(cfg).endswith(f"of the {hours:g} h of quota left: it fits"), total(cfg))
+        self.assertIn(f"          NOT in this session: the finished adapter is attached and training is skipped (`resume:` below), so the {h(est['train_s'] + 300)} of the training and of its model load are not in the total", cfg["plan_lines"])
+        self.assertIn(f"overhead: {h(est['overhead_s'] - 300)} (pip install, download, one model load)", cfg["plan_lines"])
+        self.assertEqual(cfg["plan_lines"][-2], f"the kernel starts nothing after {cfg['deadline_h']:g} h", "no word of a training that stops early")
+        self.assertIn("training is skipped", cfg["plan_lines"][-1])
+        self.assertEqual((keys_of(cfg), est), (keys_of(whole), whole["built_from"]["estimate"]), "the config is the whole plan's: the cap on the steps and the reserves are its numbers, and the keys with them")
+        self.assertEqual(json.loads((self.dir / "kept" / "data" / "lora-config.json").read_text())["built_from"]["estimate"], est)
+
+    def test_a_resume_that_skips_training_and_still_does_not_fit_is_told_what_is_left_to_lower(self):
+        put_adapter(self.fetched, self.first["adapter_sha"])
+        cfg = self.resume(out=self.dir / "short", gpu_hours=4.0, deadline_h=0.2, export_gguf=True)
+        est = cfg["built_from"]["estimate"]
+        over = -(-(est["total_upper_s"] - est["train_s"] - 300 - 0.2 * 3600) // 60)
+        self.assertTrue(cfg["plan_lines"][-3].endswith(
+            f"IT DOES NOT FIT (inside the quota, but this run needs {(est['total_upper_s'] - est['train_s'] - 300) / 3600:.2f} h, {over:.0f} min past the 0.2 h after which the kernel starts nothing: it would leave the last "
+            "batches unasked): lower --k, --per-family or --max-new-tokens (another evaluation of the same adapter: the adapter is kept and the replies are asked again); --train-hours is the adapter's and "
+            "no part of this total: keep it"), cfg["plan_lines"][-3])
+        self.assertEqual(cfg["plan_lines"][-2], "the kernel starts nothing after 0.2 h, and the evaluation ends 0.5 h before that for the GGUF export")
+        whole = self.build(out=self.dir / "whole", measured=slow(self.dir), train_hours=2.0, gpu_hours=4.0, deadline_h=0.2, export_gguf=True)
+        self.assertIn("it would stop training early or leave the last batches unasked): lower --train-hours, --k, --per-family or --max-new-tokens (on a resume", whole["plan_lines"][-2])
+        self.assertIn("(pip install, download, two model loads); GGUF export", "\n".join(whole["plan_lines"]))
+
+    def test_the_plan_of_a_resume_that_skips_training(self):
+        p = build_lora.plan([3000] * 1200, [2000] * 70, epochs=2.0, gpus=2, global_batch=16, train_hours=3.0, k=1, max_new_tokens=4096, eval_batch=8, export=True, rates=build_lora.RATES)
+        r = build_lora.resumed_plan(p)
+        load = build_lora.RATES["load_s"]
+        self.assertEqual((r["train_skipped_s"], r["overhead_s"], r["total_upper_s"], r["total_typical_s"]), (p["train_s"] + load, p["overhead_s"] - load, p["total_upper_s"] - p["train_s"] - load, p["total_typical_s"] - p["train_s"] - load))
+        self.assertEqual(r["total_upper_s"], round(build_lora.RATES["setup_s"] + load) + p["eval_upper_s"] + p["export_s"], "the setup, one load, the evaluation and the export")
+        self.assertEqual({k: v for k, v in r.items() if k not in ("resumed", "train_skipped_s", "overhead_s", "total_upper_s", "total_typical_s")}, {k: v for k, v in p.items() if k not in ("overhead_s", "total_upper_s", "total_typical_s")})
+        self.assertNotIn("resumed", p)
+        self.assertEqual(build_lora.fit_verdict(r, r["total_upper_s"] / 3600, 7.5), "")
+        self.assertEqual(build_lora.fit_verdict(r, (r["total_upper_s"] - 1) / 3600, 7.5), "more than the quota")
+        self.assertEqual(build_lora.fit_verdict(p, (p["total_upper_s"] - 1) / 3600, 7.5), "more than the quota")
+
+    def test_the_difference_is_not_printed_when_no_setting_differs(self):
+        """The review's surviving mutant: an empty "What differs ..." list. The run.json is of the key that is refused and every setting and the records are this build's: the LoRA target modules moved."""
+        with mock.patch.object(lora_eval.sft, "LORA_TARGETS", ("q_proj",)):
+            older = self.build(out=self.dir / "older", measured=slow(self.dir), train_hours=2.0)
+        self.assertNotEqual(older["adapter_sha"], self.first["adapter_sha"])
+        put_adapter(self.fetched, older["adapter_sha"])
+        self.run_json(older)
+        with self.assertRaises(SystemExit) as caught:
+            self.resume()
+        self.assertTrue(str(caught.exception).endswith("or without --resume-from to train again. Nothing was written"), str(caught.exception))
 
 
 class KernelRefusesBeforeTheSetup(Kit):
@@ -541,8 +645,23 @@ class KernelRefusesBeforeTheSetup(Kit):
         self.build(out=self.dir / "smoke", smoke=True)
         put_adapter(self.dir / "input" / "earlier", OTHER)
         put_checkpoint(self.dir / "input" / "earlier", OTHER)
+        cfg = json.loads((self.dir / "smoke" / "data" / "lora-config.json").read_text())
+        ids = cfg["built_from"]["eval"]["ids"]
+        for arm in lora_eval.ARMS:          # the replies of a smoke run of this very build (sixth review, m1: the merge took them for this session's)
+            write_jsonl(self.dir / "input" / "earlier" / f"smoke-replies-{arm}.jsonl", [line(t, [reply(t, True, keys_of(cfg))]) for t in HELDOUT if t["id"] in ids])
         run = self.run_built(self.dir / "smoke")
         self.assertEqual(([s for s, _, _, _ in self.calls], run["smoke"]), (["train", "eval"], True))
+        self.assertEqual(run["replies"], {"base": 0, "lora": 0}, "the stand-in worker asked nothing, and no reply of the attached output is this session's")
+        self.assertEqual([(self.out / f"smoke-replies-{arm}.jsonl").read_text() for arm in lora_eval.ARMS], ["", ""])
+
+    def test_a_full_run_merges_the_replies_that_are_attached(self):
+        self.build()
+        cfg = json.loads((self.dir / "out" / "data" / "lora-config.json").read_text())
+        ids = cfg["built_from"]["eval"]["ids"]
+        (self.dir / "input" / "earlier").mkdir(parents=True)
+        for arm in lora_eval.ARMS:
+            write_jsonl(self.dir / "input" / "earlier" / f"replies-{arm}.jsonl", [line(t, [reply(t, True, keys_of(cfg))]) for t in HELDOUT if t["id"] in ids])
+        self.assertEqual(self.run_built(self.dir / "out")["replies"], {"base": len(ids), "lora": len(ids)})
 
     def test_a_dataset_that_was_edited_is_said_before_the_cards_are_looked_at(self):
         self.build()
@@ -553,11 +672,62 @@ class KernelRefusesBeforeTheSetup(Kit):
                 self.run_built(self.dir / "out", names=names)
 
     def test_the_card_message_names_the_flag_and_no_edit_of_the_dataset(self):
-        with self.assertRaisesRegex(SystemExit, "not T4: set the accelerator to GPU T4 x2 in the kernel's settings \\(or build again with --gpu-name '' to run on whatever it is: the card is in no key\\)$"):
+        with self.assertRaisesRegex(SystemExit, "^the kernel got \\['Tesla P100-PCIE-16GB'\\], not T4: set the accelerator to GPU T4 x2 in the kernel's settings \\(or build again with --gpu-name '' to run on whatever it is: the card is in no key\\)$"):
             self.run_main(names=("Tesla P100-PCIE-16GB",))
         self.assertEqual((self.sh, self.downloads), ([], []))
         self.run_main(names=("Tesla P100-PCIE-16GB", "Tesla P100-PCIE-16GB"), out=self.dir / "any", gpu_name="")
         self.assertEqual([s for s, _, _, _ in self.calls], ["train", "eval"])
+
+    def test_the_card_message_names_the_accelerator_the_build_asks_for(self):
+        """Sixth review, m2: a build with --gpu-name P100 on two T4 was told to set the accelerator to GPU T4 x2, which it has."""
+        with self.assertRaises(SystemExit) as caught:
+            self.run_main(gpu_name="P100", gpus=1)
+        self.assertEqual(str(caught.exception), "the kernel got ['Tesla T4', 'Tesla T4'], not P100: set the accelerator to GPU P100 in the kernel's settings (or build again with --gpu-name '' to run on whatever it is: "
+                                                "the card is in no key)")
+        self.assertEqual((self.sh, self.downloads, self.calls), ([], [], []))
+        run = self.run_built(self.dir / "out", names=("Tesla P100-PCIE-16GB",))
+        self.assertEqual(([(s, g) for s, g, _, _ in self.calls], run["gpus"]), ([("train", 1), ("eval", 1)], 1), "on the card it asks for the same build runs")
+
+    def test_a_card_that_is_not_one_of_kaggles_is_named_as_it_was_asked(self):
+        with self.assertRaisesRegex(SystemExit, "^the kernel got \\['Tesla T4', 'Tesla T4'\\], not A100: set the accelerator to the one whose GPUs are named 'A100' in the kernel's settings \\(or build again"):
+            self.run_main(gpu_name="A100")
+
+    def test_every_card_has_to_be_the_one_asked_for(self):
+        """The review's surviving mutant: `any` for `all` in the card check."""
+        for names in (("Tesla T4", "Tesla P100-PCIE-16GB"), ("Tesla P100-PCIE-16GB", "Tesla T4")):
+            with self.assertRaisesRegex(SystemExit, "not T4: set the accelerator to GPU T4 x2"):
+                self.run_main(names=names, out=self.dir / "mixed", force=True)
+            self.assertEqual((self.sh, self.downloads, self.calls), ([], [], []))
+
+    def with_card(self, out, gpu_name: str) -> None:
+        """The dataset under `out` with another `gpu_name`: it is in no key, so the kernel takes it (a builder refuses the pairs below, and a dataset can still say them)."""
+        path = out / "data" / "lora-config.json"
+        path.write_text(json.dumps({**json.loads(path.read_text()), "gpu_name": gpu_name}))
+
+    def test_too_few_gpus_are_told_the_accelerator_only_when_it_has_the_gpus_of_the_build(self):
+        """With m2: "or set the accelerator to GPU T4 x2" was the advice for every build that found too few GPUs, the one whose --gpu-name refuses a T4 too."""
+        said = "the kernel got 1 GPU\\(s\\) and the build is for 2: .* so build again with --gpus 1"
+        with self.assertRaisesRegex(SystemExit, said + ", or set the accelerator to GPU T4 x2$"):
+            self.run_main(names=("Tesla T4",))
+        with self.assertRaisesRegex(SystemExit, said + ", or set the accelerator to GPU T4 x2$"):
+            self.run_main(names=("Tesla P100-PCIE-16GB",), out=self.dir / "any", gpu_name="")
+        for card, names in (("P100", ("Tesla P100-PCIE-16GB",)), ("A100", ("NVIDIA A100-SXM4-40GB",))):
+            self.with_card(self.dir / "out", card)
+            with self.assertRaisesRegex(SystemExit, said + "$", msg=card):
+                self.run_built(self.dir / "out", names=names)
+            self.assertEqual((self.sh, self.downloads, self.calls), ([], [], []))
+
+    def test_the_pins_installed_are_the_configs(self):
+        """The review's surviving mutant: `DEFAULTS["pins"]` for `cfg["pins"]` in `main`. The builder writes no pins; a dataset whose config names its own, under the keys they make, installs those."""
+        self.build()
+        data = self.dir / "out" / "data"
+        cfg = {**json.loads((data / "lora-config.json").read_text()), "pins": ["onelib==1.0"]}
+        resolved = lora_eval.resolve_config(cfg)
+        cfg["adapter_sha"] = lora_eval.adapter_key(lora_eval.file_sha(data / "train.jsonl"), resolved)
+        cfg["eval_sha"] = lora_eval.eval_key(cfg["adapter_sha"], cfg["built_from"]["eval"]["excluded"]["sha"], lora_eval.file_sha(data / "eval_tasks.jsonl"), resolved)
+        (data / "lora-config.json").write_text(json.dumps(cfg))
+        self.run_built(self.dir / "out")
+        self.assertEqual(self.sh[0][0][5:], ["onelib==1.0"])
 
     def test_the_setup_installs_the_pins_and_downloads_the_student_of_the_config(self):
         self.run_main(student="someone/another-student", fla=True)
