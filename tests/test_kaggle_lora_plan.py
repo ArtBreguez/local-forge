@@ -126,6 +126,22 @@ class Deadline(Kit):
             self.assertIn("lower --train-hours, --k, --per-family or --max-new-tokens", total(full), "a full run reads all four")
             self.assertNotIn("a smoke run has one size", total(full))
 
+    def test_the_hours_a_smoke_build_is_told_it_needs_are_hours_with_which_it_fits(self):
+        """The deadline is the quota less the margin in hundredths of an hour and never later: 0.7 less 0.25 is 0.44, not 0.45, in floating point, so the need is searched with the builder's arithmetic."""
+        kw = dict(gpus=2, steps=4, max_new_tokens=256, eval_batch=8)
+        fits = lambda p, hours: build_lora.describe(p, hours, build_lora.default_deadline(hours - build_lora.DEADLINE_MARGIN_H))[-2].endswith("of quota left: it fits")
+        self.assertEqual((build_lora.default_deadline(0.7 - 0.25), build_lora.default_deadline(0.71 - 0.25), build_lora.default_deadline(9.0)), (0.44, 0.46, 7.5))
+        for setup_s, need in ((1620 - 600 - 154, 0.71), (1584 - 600 - 154, 0.7), (1585 - 600 - 154, 0.71), (2172 - 600 - 154, 0.86)):
+            p = build_lora.smoke_plan(0, **kw, rates={**build_lora.RATES, "setup_s": setup_s})
+            self.assertEqual((p["total_upper_s"], build_lora.smoke_need_h(p)), (setup_s + 754, need))
+            self.assertEqual((fits(p, need), fits(p, round(need - 0.01, 2))), (True, False), need)
+            self.assertIn(f": it needs --gpu-hours {need:g} or more (and no --deadline-h under its size). --train-hours", build_lora.describe(p, 0.3, 0.05)[-2])
+        slow = build_lora.smoke_plan(0, **kw, rates={**build_lora.RATES, "gen_step_s": 60.0})          # a --measured that says so: over the 7.5 h the kernel ever runs
+        self.assertEqual((slow["total_upper_s"] > 7.5 * 3600, build_lora.smoke_need_h(slow)), (True, None))
+        self.assertIn("the quota left less 0.25 h and never later than 7.5 h: no --gpu-hours is enough for it. --train-hours", build_lora.describe(slow, 20.0, 7.5)[-2])
+        edge = build_lora.smoke_plan(0, **kw, rates={**build_lora.RATES, "setup_s": 7.5 * 3600 - 754})
+        self.assertEqual((edge["total_upper_s"], build_lora.smoke_need_h(edge), fits(edge, 7.75)), (27000, 7.75, True), "exactly the 7.5 h: it fits")
+
     def test_the_deadline_is_what_the_kernel_reads(self):
         cfg = self.build()
         got = lora_eval.resolve_config(json.loads((self.dir / "out" / "data" / "lora-config.json").read_text()))

@@ -156,6 +156,15 @@ class Builder(Kit):
         text = buf.getvalue()
         for needle in ("60 training records", "9 held-out tasks", "excluded from the evaluation: 2 of 12", "training:", "eval:", "overhead:", "smoke:", "total:", "it fits", "kaggle datasets create", "kaggle kernels push", "GPU T4 x2"):
             self.assertIn(needle, text)
+        self.assertEqual(text.splitlines()[-1], build_lora.next_line(self.dir / "cli", lora_eval.resolve_config({})))
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            build_lora.main(["--domain", "example_arith", "--sft", str(self.sft), "--train-tasks", str(self.train_tasks), "--heldout", str(self.heldout), "--owner", "someone", "--out", str(self.dir / "again"),
+                             "--per-family", "3", "--min-family", "1", "--resume-from", "someone/example-arith-lora-eval"])
+        last = buf.getvalue().splitlines()[-1]
+        self.assertEqual(last, build_lora.next_line(self.dir / "again", lora_eval.resolve_config({}), "someone/example-arith-lora-eval"))
+        self.assertIn(f'next: kaggle datasets version -p {self.dir / "again"}/data -m "resume"', last, "the dataset of a resume exists: `kaggle datasets create` fails for it")
+        self.assertNotIn("kaggle datasets create -p", last)
 
     def test_a_smoke_build_is_marked_and_measures_instead_of_capping(self):
         cfg = self.build(smoke=True)
@@ -1138,7 +1147,10 @@ class Docs(unittest.TestCase):
         self.assertIn(f"build the SMOKE run: {d['smoke_steps']} steps on the longest records and one batch of --eval-batch replies (default {d['eval_batch']}) per process and arm,", help_)
         report = {"smoke": True, "arms": {arm: {"overall": None, "by_kind": {}} for arm in ("base", "lora")}, "paired": {"overall": {"n": 0}, "unpaired": 0}, "tasks_answered": 0, "tasks_in_set": 0, "adapter_sha": "a", "eval_sha": "e",
                   "outside": {"replies": 0}, "other_adapter": {"replies": 0}, "other_eval": {"replies": 0}}
-        with mock.patch.dict(lora_eval.DEFAULTS, {"smoke_steps": 6}):
+        with mock.patch.dict(lora_eval.DEFAULTS, {"smoke_steps": 6, "eval_batch": 4}):
+            other = argparse.ArgumentParser()
+            build_lora.add_arguments(other)
+            self.assertIn("build the SMOKE run: 6 steps on the longest records and one batch of --eval-batch replies (default 4) per process and arm,", next(a.help for a in other._actions if "--smoke" in a.option_strings))
             self.assertEqual(score_lora.lines_of(report)[0], "WARNING: this is a SMOKE run (6 steps, one batch of replies): its numbers say nothing about the adapter")
         self.assertEqual(score_lora.lines_of(report)[0], f"WARNING: this is a SMOKE run ({d['smoke_steps']} steps, one batch of replies): its numbers say nothing about the adapter")
 

@@ -367,9 +367,11 @@ def default_deadline(limit_h: float) -> float:
     return min(lora_eval.DEFAULTS["deadline_h"], math.floor(limit_h * 100) / 100)
 
 
-def smoke_need_h(p: dict) -> float:
-    """The least --gpu-hours, in hundredths, with which a `smoke_plan` fits the deadline `build` gives it by default (`default_deadline` of the quota less `DEADLINE_MARGIN_H`): found with that very
-    arithmetic, so the hours `smoke_advice` names are hours with which the build says `it fits`."""
+def smoke_need_h(p: dict) -> "float | None":
+    """The least --gpu-hours, in hundredths, with which a `smoke_plan` fits the deadline `build` gives it by default (`default_deadline` of the quota less `DEADLINE_MARGIN_H`): searched with that very
+    arithmetic from the hours the run takes, so the hours `smoke_advice` names are hours with which the build says `it fits`. None when no quota is enough: the deadline is never later than the kit's own."""
+    if p["total_upper_s"] > lora_eval.DEFAULTS["deadline_h"] * 3600:
+        return None
     need = math.ceil(p["total_upper_s"] / 36) / 100 + DEADLINE_MARGIN_H
     while default_deadline(round(need, 2) - DEADLINE_MARGIN_H) * 3600 < p["total_upper_s"]:
         need += 0.01
@@ -380,10 +382,11 @@ def smoke_advice(p: dict) -> str:
     """What `describe` tells a `smoke_plan` that does not fit. Not what it tells a full run: `smoke_plan` reads no --train-hours, --k, --per-family or --max-new-tokens (`smoke_steps` steps, one batch per
     process and arm, `smoke_new_tokens`), so lowering them leaves the same run. Its size is the setup, the two loads, the batch and the steps; only the steps follow a flag: they run on the longest records that
     --max-len keeps."""
-    steps_s = p["steps"] * p["step_s"]
+    steps_s, need = p["steps"] * p["step_s"], smoke_need_h(p)
     steps = f"{steps_s / 60:.0f} min" if steps_s >= 90 else f"{steps_s:.0f} s"
-    return (f"a smoke run has one size, {p['total_upper_s'] / 3600:.2f} h here, and the kernel's deadline is at most the quota left less {DEADLINE_MARGIN_H} h: it needs --gpu-hours {smoke_need_h(p):g} or more "
-            "(and no --deadline-h under its size). --train-hours, --k, --per-family and --max-new-tokens change nothing of a smoke run; only a lower --max-len shortens it, by part of the "
+    return (f"a smoke run has one size, {p['total_upper_s'] / 3600:.2f} h here, and the kernel's deadline is at most the quota left less {DEADLINE_MARGIN_H} h"
+            + (f": it needs --gpu-hours {need:g} or more (and no --deadline-h under its size)" if need else f" and never later than {lora_eval.DEFAULTS['deadline_h']:g} h: no --gpu-hours is enough for it")
+            + ". --train-hours, --k, --per-family and --max-new-tokens change nothing of a smoke run; only a lower --max-len shortens it, by part of the "
             f"{steps} of its {p['steps']} steps, which run on the longest records it keeps (and the memory the run measures is then that window's)")
 
 
